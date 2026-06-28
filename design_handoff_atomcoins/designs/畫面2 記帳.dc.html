@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .npc::-webkit-scrollbar { height:0; width:0; }
+</style>
+</helmet>
+
+<div style="width:max-content; min-width:100%; min-height:100vh; box-sizing:border-box; padding:48px; background:#e7e5df; font-family:'Noto Sans TC',sans-serif;">
+  <div style="display:flex; gap:64px; align-items:flex-start;">
+
+    <!-- ===================== MOBILE FRAME ===================== -->
+    <div style="flex:none; display:flex; flex-direction:column; gap:14px;">
+      <div style="font-size:12px; font-weight:600; letter-spacing:.06em; color:#6C7480; text-transform:uppercase;">畫面 2 · 記帳 Add — 手機版（全螢幕）</div>
+
+      <div data-screen-label="畫面2 記帳 · 手機" style="position:relative; width:390px; height:844px; display:flex; flex-direction:column; background:#F6F7F9; border-radius:28px; overflow:hidden; border:1px solid #E6E8EB; box-shadow:0 12px 40px rgba(27,31,36,.14); color:#1B1F24;">
+
+        <!-- header -->
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:16px 14px 12px; background:#FFFFFF; border-bottom:1px solid #E6E8EB; flex:none;">
+          <button style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; border:none; color:#6C7480; font-size:17px; cursor:pointer; display:flex; align-items:center; justify-content:center;"><i class="fa-solid fa-xmark"></i></button>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:16px; font-weight:600;">記帳</span>
+            <button style="display:flex; align-items:center; gap:5px; height:30px; padding:0 10px; border-radius:8px; background:#F1F3F5; border:none; color:#6C7480; font-size:12px; cursor:pointer;"><i class="fa-regular fa-bookmark" style="font-size:11px;"></i> 範本</button>
+          </div>
+          <button style="{{ saveStyle }}"><i class="fa-solid fa-check" style="font-size:12px;"></i> 儲存</button>
+        </div>
+
+        <!-- type switcher -->
+        <div class="npc" style="display:flex; gap:8px; padding:12px 14px; overflow-x:auto; background:#FFFFFF; border-bottom:1px solid #E6E8EB; flex:none;">
+          <sc-for list="{{ pills }}" as="p" hint-placeholder-count="6">
+            <button onClick="{{ p.onClick }}" style="{{ p.style }}">{{ p.label }}</button>
+          </sc-for>
+        </div>
+
+        <!-- scroll body -->
+        <div class="npc" style="flex:1; overflow-y:auto; display:flex; flex-direction:column;">
+
+          <!-- amount display -->
+          <div style="padding:22px 18px 18px; background:#FFFFFF; border-bottom:1px solid #E6E8EB;">
+            <div style="font-size:13px; color:#6C7480;">{{ typeLabel }}</div>
+            <div style="font-size:36px; font-weight:700; line-height:1.1; letter-spacing:-.01em; font-variant-numeric:tabular-nums; color:{{ amountColor }}; margin-top:2px;">{{ amountDisplay }}</div>
+            <sc-if value="{{ showExpr }}" hint-placeholder-val="{{ false }}">
+              <div style="font-size:15px; color:#9AA1AC; font-variant-numeric:tabular-nums; margin-top:5px;">{{ exprDisplay }}</div>
+            </sc-if>
+            <sc-if value="{{ showAcctRow }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex; gap:8px; margin-top:14px;">
+                <button style="display:flex; align-items:center; gap:7px; height:34px; padding:0 12px; border-radius:8px; background:#F1F3F5; border:none; color:#1B1F24; font-size:13px; font-weight:500; cursor:pointer;"><i class="fa-solid fa-wallet" style="color:#6C7480; font-size:12px;"></i> 現金錢包</button>
+                <button style="display:flex; align-items:center; gap:7px; height:34px; padding:0 12px; border-radius:8px; background:#F1F3F5; border:none; color:#1B1F24; font-size:13px; font-weight:500; cursor:pointer;"><i class="fa-regular fa-calendar" style="color:#6C7480; font-size:12px;"></i> 今天 6/23</button>
+              </div>
+            </sc-if>
+          </div>
+
+          <!-- CATEGORY CHIP (expense / income) — opens 2-level picker -->
+          <sc-if value="{{ showCat }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:16px 14px;">
+              <div style="font-size:13px; font-weight:600; color:#6C7480; margin:2px 4px 12px;">分類</div>
+              <button onClick="{{ openCat }}" style="{{ catChipStyle }}">
+                <div style="{{ catChipIconStyle }}"><i class="fa-solid {{ catChipIcon }}"></i></div>
+                <div style="flex:1; min-width:0;">
+                  <div style="{{ catChipMainStyle }}">{{ catChipMain }}</div>
+                  <sc-if value="{{ showCatSub }}" hint-placeholder-val="{{ true }}">
+                    <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">{{ catChipSub }}</div>
+                  </sc-if>
+                </div>
+                <i class="fa-solid fa-chevron-down" style="color:#9AA1AC; font-size:13px;"></i>
+              </button>
+            </div>
+          </sc-if>
+
+          <!-- COUNTERPARTY (receivable / payable) -->
+          <sc-if value="{{ showCounter }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:16px 16px 6px; display:flex; flex-direction:column; gap:12px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:12px;">
+                <span style="font-size:14px; color:#6C7480;">對象</span>
+                <span style="font-size:15px; font-weight:600;">同事 · 阿哲</span>
+              </div>
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:12px;">
+                <span style="font-size:14px; color:#6C7480;">關聯帳戶</span>
+                <span style="font-size:15px; font-weight:600;">信用卡 · 玉山 Unicard</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px; padding:2px 2px 0;">
+                <span style="font-size:12px; color:#9AA1AC;">狀態</span>
+                <span style="font-size:12px; font-weight:600; color:#F08C00; background:#FFF4E6; border-radius:99px; padding:4px 10px;">未結清</span>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- TRANSFER -->
+          <sc-if value="{{ isTr }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:16px 16px 6px; display:flex; flex-direction:column; gap:10px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:12px;">
+                <span style="font-size:14px; color:#6C7480;">轉出</span>
+                <span style="font-size:15px; font-weight:600;">現金錢包</span>
+              </div>
+              <div style="display:flex; justify-content:center; margin:-4px 0;"><i class="fa-solid fa-arrow-down" style="color:#9AA1AC; font-size:13px;"></i></div>
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:12px;">
+                <span style="font-size:14px; color:#6C7480;">轉入</span>
+                <span style="font-size:15px; font-weight:600;">台新 Richart</span>
+              </div>
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:12px;">
+                <span style="font-size:14px; color:#6C7480;">手續費</span>
+                <span style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">NT$ 0</span>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- STOCK -->
+          <sc-if value="{{ isStock }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:14px 16px; display:flex; flex-direction:column; gap:12px;">
+              <div style="display:flex; gap:8px;">
+                <button onClick="{{ buy }}" style="{{ buyStyle }}">買進</button>
+                <button onClick="{{ sell }}" style="{{ sellStyle }}">賣出</button>
+              </div>
+
+              <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:12px; overflow:hidden;">
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:13px 16px; border-bottom:1px solid #F1F3F5;"><span style="font-size:14px; color:#6C7480;">代號 / 名稱</span><span style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">2330 台積電</span></div>
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:13px 16px; border-bottom:1px solid #F1F3F5;"><span style="font-size:14px; color:#6C7480;">股數</span><span style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">1,000</span></div>
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:13px 16px; border-bottom:1px solid #F1F3F5;"><span style="font-size:14px; color:#6C7480;">成交價</span><span style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">642.00</span></div>
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:13px 16px; border-bottom:1px solid #F1F3F5;"><span style="font-size:14px; color:#6C7480;">券商 · 手續費</span><span style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">永豐金 · NT$ 915</span></div>
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:13px 16px;"><span style="font-size:14px; color:#6C7480;">成交日 · 交割</span><span style="font-size:15px; font-weight:600;">6/23 → <span style="color:#6C7480;">T+2 6/25</span></span></div>
+              </div>
+
+              <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:12px; padding:14px 16px;">
+                <div style="display:flex; align-items:center; justify-content:space-between;"><span style="font-size:14px; color:#6C7480;">應付交割金額</span><span style="font-size:17px; font-weight:700; font-variant-numeric:tabular-nums;">NT$ 642,915</span></div>
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-top:8px;"><span style="font-size:13px; color:#6C7480;">交割銀行 永豐銀行 餘額</span><span style="font-size:14px; font-weight:600; color:#E03131; font-variant-numeric:tabular-nums;">NT$ 45,000</span></div>
+              </div>
+
+              <div style="display:flex; align-items:flex-start; gap:10px; background:#FFF4E6; border:1px solid #FFE3BF; border-radius:12px; padding:13px 14px;">
+                <i class="fa-solid fa-triangle-exclamation" style="color:#F08C00; font-size:15px; margin-top:1px;"></i>
+                <div style="font-size:13px; color:#8A5800; line-height:1.5;">交割銀行餘額不足 <b style="font-variant-numeric:tabular-nums;">NT$ 597,915</b>，請於 6/25 前入金。仍可儲存此筆交易。</div>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- action chips + advanced -->
+          <sc-if value="{{ showActions }}" hint-placeholder-val="{{ true }}">
+            <div style="padding:6px 16px 18px;">
+              <div style="display:flex; gap:8px;">
+                <button style="flex:1; display:flex; align-items:center; justify-content:center; gap:7px; height:42px; border-radius:10px; background:#FFFFFF; border:1px solid #E6E8EB; color:#1B1F24; font-size:13px; font-weight:500; cursor:pointer;"><i class="fa-solid fa-scissors" style="color:#6C7480; font-size:12px;"></i> 拆帳</button>
+                <button style="flex:1; display:flex; align-items:center; justify-content:center; gap:7px; height:42px; border-radius:10px; background:#FFFFFF; border:1px solid #E6E8EB; color:#1B1F24; font-size:13px; font-weight:500; cursor:pointer;"><i class="fa-solid fa-hand-holding-dollar" style="color:#6C7480; font-size:12px;"></i> 代墊</button>
+                <button onClick="{{ toggleAdv }}" style="flex:1; display:flex; align-items:center; justify-content:center; gap:7px; height:42px; border-radius:10px; background:#FFFFFF; border:1px solid #E6E8EB; color:#1B1F24; font-size:13px; font-weight:500; cursor:pointer;"><i class="fa-solid fa-sliders" style="color:#6C7480; font-size:12px;"></i> 進階 <i class="{{ advIcon }}" style="font-size:9px; color:#9AA1AC;"></i></button>
+              </div>
+              <sc-if value="{{ adv }}" hint-placeholder-val="{{ true }}">
+                <div style="margin-top:10px; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:12px; overflow:hidden;">
+                  <div style="display:flex; align-items:center; gap:12px; padding:13px 16px; border-bottom:1px solid #F1F3F5;"><i class="fa-regular fa-note-sticky" style="color:#9AA1AC; width:16px;"></i><span style="font-size:14px; color:#9AA1AC;">新增備註…</span></div>
+                  <div style="display:flex; align-items:center; gap:12px; padding:13px 16px; border-bottom:1px solid #F1F3F5;"><i class="fa-solid fa-tag" style="color:#9AA1AC; width:16px;"></i><span style="font-size:14px; color:#9AA1AC;">標籤</span></div>
+                  <div style="display:flex; align-items:center; gap:12px; padding:13px 16px;"><i class="fa-solid fa-folder" style="color:#9AA1AC; width:16px;"></i><span style="font-size:14px; color:#9AA1AC;">專案</span></div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+        </div>
+
+        <!-- NUMBER PAD (calculator) -->
+        <sc-if value="{{ showPad }}" hint-placeholder-val="{{ true }}">
+          <div style="background:#FFFFFF; border-top:1px solid #E6E8EB; padding:10px 12px 18px; flex:none;">
+            <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px;">
+              <sc-for list="{{ keypad }}" as="k" hint-placeholder-count="19">
+                <button onClick="{{ k.onClick }}" style="{{ k.style }}">
+                  <sc-if value="{{ k.isBack }}" hint-placeholder-val="{{ true }}"><i class="fa-solid fa-delete-left" style="font-size:18px;"></i></sc-if>
+                  <sc-if value="{{ k.notBack }}" hint-placeholder-val="{{ true }}">{{ k.label }}</sc-if>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- CATEGORY PICKER — bottom sheet (2 columns: 主分類 | 子分類) -->
+        <sc-if value="{{ catOpen }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ closeCat }}" style="position:absolute; inset:0; background:rgba(17,20,24,.4); z-index:20;"></div>
+          <div style="position:absolute; left:0; right:0; bottom:0; height:560px; background:#FFFFFF; border-radius:22px 22px 0 0; z-index:21; display:flex; flex-direction:column; box-shadow:0 -10px 40px rgba(17,20,24,.18);">
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:16px 18px 12px;">
+              <span style="font-size:16px; font-weight:600;">選擇分類</span>
+              <button onClick="{{ closeCat }}" style="width:32px; height:32px; border-radius:8px; background:#F1F3F5; border:none; color:#6C7480; font-size:15px; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div style="flex:1; display:flex; min-height:0; border-top:1px solid #E6E8EB;">
+              <!-- 主分類 -->
+              <div class="npc" style="width:148px; flex:none; background:#F6F7F9; border-right:1px solid #E6E8EB; overflow-y:auto; padding:8px;">
+                <sc-for list="{{ pickerCats }}" as="c" hint-placeholder-count="8">
+                  <button onClick="{{ c.onClick }}" style="{{ c.rowStyle }}">
+                    <div style="{{ c.iconStyle }}"><i class="fa-solid {{ c.icon }}"></i></div>
+                    <span style="{{ c.labelStyle }}">{{ c.label }}</span>
+                  </button>
+                </sc-for>
+              </div>
+              <!-- 子分類 -->
+              <div class="npc" style="flex:1; overflow-y:auto; padding:8px;">
+                <div style="font-size:12px; font-weight:600; color:#9AA1AC; padding:8px 10px 6px;">{{ pickSubTitle }}</div>
+                <sc-for list="{{ pickerSubs }}" as="s" hint-placeholder-count="5">
+                  <button onClick="{{ s.onClick }}" style="{{ s.rowStyle }}">
+                    <span style="{{ s.labelStyle }}">{{ s.label }}</span>
+                    <sc-if value="{{ s.active }}" hint-placeholder-val="{{ false }}"><i class="fa-solid fa-check" style="color:#3B5BDB; font-size:13px;"></i></sc-if>
+                  </button>
+                </sc-for>
+                <sc-if value="{{ pickerEmpty }}" hint-placeholder-val="{{ false }}">
+                  <div style="padding:30px 10px; text-align:center; color:#9AA1AC; font-size:13px;">此分類無子項目</div>
+                </sc-if>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+
+    <!-- ===================== DESKTOP FRAME ===================== -->
+    <div style="flex:none; display:flex; flex-direction:column; gap:14px;">
+      <div style="font-size:12px; font-weight:600; letter-spacing:.06em; color:#6C7480; text-transform:uppercase;">畫面 2 · 記帳 Add — 桌面版（置中 Modal）</div>
+
+      <div data-screen-label="畫面2 記帳 · 桌面" style="position:relative; width:1280px; height:860px; background:#F6F7F9; border:1px solid #E6E8EB; border-radius:14px; overflow:hidden; box-shadow:0 12px 40px rgba(27,31,36,.14); color:#1B1F24;">
+
+        <!-- dimmed home backdrop -->
+        <div style="position:absolute; inset:0; display:flex;">
+          <aside style="width:236px; flex:none; background:#FFFFFF; border-right:1px solid #E6E8EB; padding:20px 14px; display:flex; flex-direction:column; gap:2px;">
+            <div style="display:flex; align-items:center; gap:10px; padding:6px 8px 18px;">
+              <div style="width:34px; height:34px; border-radius:10px; background:#3B5BDB; color:#FFFFFF; display:flex; align-items:center; justify-content:center; font-size:16px;"><i class="fa-solid fa-coins"></i></div>
+              <div><div style="font-size:15px; font-weight:700; line-height:1.1;">原子記帳</div><div style="font-size:11px; color:#9AA1AC;">AtomCoins</div></div>
+            </div>
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; color:#6C7480; font-size:15px;"><i class="fa-solid fa-house" style="width:18px;"></i> 首頁</div>
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; color:#6C7480; font-size:15px;"><i class="fa-solid fa-receipt" style="width:18px;"></i> 明細</div>
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; color:#6C7480; font-size:15px;"><i class="fa-solid fa-chart-pie" style="width:18px;"></i> 報表</div>
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; color:#6C7480; font-size:15px;"><i class="fa-solid fa-gear" style="width:18px;"></i> 設定</div>
+          </aside>
+          <div style="flex:1; padding:24px 28px;">
+            <div style="height:120px; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px;"></div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:24px;">
+              <div style="height:120px; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px;"></div>
+              <div style="height:120px; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px;"></div>
+            </div>
+          </div>
+        </div>
+        <div style="position:absolute; inset:0; background:rgba(17,20,24,.45);"></div>
+
+        <!-- modal -->
+        <div style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:760px; max-height:780px; display:flex; flex-direction:column; background:#FFFFFF; border-radius:18px; overflow:hidden; box-shadow:0 24px 70px rgba(17,20,24,.4);">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:18px 22px; border-bottom:1px solid #E6E8EB;">
+            <span style="font-size:18px; font-weight:600;">記帳</span>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <button style="display:flex; align-items:center; gap:6px; height:34px; padding:0 12px; border-radius:8px; background:#F1F3F5; border:none; color:#6C7480; font-size:13px; cursor:pointer;"><i class="fa-regular fa-bookmark" style="font-size:12px;"></i> 範本</button>
+              <button style="width:34px; height:34px; border-radius:8px; background:#F1F3F5; border:none; color:#6C7480; font-size:15px; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+          </div>
+
+          <div class="npc" style="display:flex; gap:8px; padding:14px 22px; border-bottom:1px solid #E6E8EB; overflow-x:auto;">
+            <sc-for list="{{ pills }}" as="p" hint-placeholder-count="6">
+              <button onClick="{{ p.onClick }}" style="{{ p.style }}">{{ p.label }}</button>
+            </sc-for>
+          </div>
+
+          <div style="flex:1; overflow-y:auto; display:flex;">
+            <!-- left: amount + pad / stock summary -->
+            <div style="width:328px; flex:none; border-right:1px solid #E6E8EB; padding:22px; display:flex; flex-direction:column;">
+              <div style="font-size:13px; color:#6C7480;">{{ typeLabel }}</div>
+              <div style="font-size:38px; font-weight:700; line-height:1.1; letter-spacing:-.01em; font-variant-numeric:tabular-nums; color:{{ amountColor }}; margin-top:2px;">{{ amountDisplay }}</div>
+              <sc-if value="{{ showExpr }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size:15px; color:#9AA1AC; font-variant-numeric:tabular-nums; margin-top:5px;">{{ exprDisplay }}</div>
+              </sc-if>
+              <sc-if value="{{ showAcctRow }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex; gap:8px; margin-top:14px;">
+                  <button style="display:flex; align-items:center; gap:7px; height:34px; padding:0 12px; border-radius:8px; background:#F1F3F5; border:none; color:#1B1F24; font-size:13px; font-weight:500; cursor:pointer;"><i class="fa-solid fa-wallet" style="color:#6C7480; font-size:12px;"></i> 現金錢包</button>
+                  <button style="display:flex; align-items:center; gap:7px; height:34px; padding:0 12px; border-radius:8px; background:#F1F3F5; border:none; color:#1B1F24; font-size:13px; font-weight:500; cursor:pointer;"><i class="fa-regular fa-calendar" style="color:#6C7480; font-size:12px;"></i> 今天 6/23</button>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ showPad }}" hint-placeholder-val="{{ true }}">
+                <div style="flex:1;"></div>
+                <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:18px;">
+                  <sc-for list="{{ keypad }}" as="k" hint-placeholder-count="19">
+                    <button onClick="{{ k.onClick }}" style="{{ k.style }}">
+                      <sc-if value="{{ k.isBack }}" hint-placeholder-val="{{ true }}"><i class="fa-solid fa-delete-left" style="font-size:17px;"></i></sc-if>
+                      <sc-if value="{{ k.notBack }}" hint-placeholder-val="{{ true }}">{{ k.label }}</sc-if>
+                    </button>
+                  </sc-for>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ isStock }}" hint-placeholder-val="{{ true }}">
+                <div style="flex:1;"></div>
+                <div style="background:#F6F7F9; border:1px solid #E6E8EB; border-radius:12px; padding:16px;">
+                  <div style="font-size:13px; color:#6C7480;">應付交割金額</div>
+                  <div style="font-size:26px; font-weight:700; font-variant-numeric:tabular-nums; margin-top:2px;">NT$ 642,915</div>
+                  <div style="display:flex; align-items:center; justify-content:space-between; margin-top:12px; padding-top:12px; border-top:1px solid #E6E8EB;"><span style="font-size:13px; color:#6C7480;">永豐銀行餘額</span><span style="font-size:14px; font-weight:600; color:#E03131; font-variant-numeric:tabular-nums;">NT$ 45,000</span></div>
+                </div>
+                <div style="display:flex; align-items:flex-start; gap:9px; background:#FFF4E6; border:1px solid #FFE3BF; border-radius:12px; padding:12px 13px; margin-top:10px;">
+                  <i class="fa-solid fa-triangle-exclamation" style="color:#F08C00; font-size:14px; margin-top:1px;"></i>
+                  <div style="font-size:12px; color:#8A5800; line-height:1.5;">交割銀行不足 <b>NT$ 597,915</b>，6/25 前入金。</div>
+                </div>
+              </sc-if>
+            </div>
+
+            <!-- right: details -->
+            <div style="flex:1; min-width:0; padding:22px;">
+
+              <sc-if value="{{ showCat }}" hint-placeholder-val="{{ true }}">
+                <div style="font-size:13px; font-weight:600; color:#6C7480; margin:0 0 12px;">分類</div>
+                <div style="position:relative;">
+                  <button onClick="{{ openCat }}" style="{{ catChipStyle }}">
+                    <div style="{{ catChipIconStyle }}"><i class="fa-solid {{ catChipIcon }}"></i></div>
+                    <div style="flex:1; min-width:0;">
+                      <div style="{{ catChipMainStyle }}">{{ catChipMain }}</div>
+                      <sc-if value="{{ showCatSub }}" hint-placeholder-val="{{ true }}">
+                        <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">{{ catChipSub }}</div>
+                      </sc-if>
+                    </div>
+                    <i class="fa-solid fa-chevron-down" style="color:#9AA1AC; font-size:13px;"></i>
+                  </button>
+                  <sc-if value="{{ catOpen }}" hint-placeholder-val="{{ false }}">
+                    <div style="position:absolute; top:calc(100% + 8px); left:0; right:0; height:340px; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:14px; box-shadow:0 16px 44px rgba(17,20,24,.18); z-index:30; display:flex; overflow:hidden;">
+                      <div class="npc" style="width:160px; flex:none; background:#F6F7F9; border-right:1px solid #E6E8EB; overflow-y:auto; padding:8px;">
+                        <sc-for list="{{ pickerCats }}" as="c" hint-placeholder-count="8">
+                          <button onClick="{{ c.onClick }}" style="{{ c.rowStyle }}">
+                            <div style="{{ c.iconStyle }}"><i class="fa-solid {{ c.icon }}"></i></div>
+                            <span style="{{ c.labelStyle }}">{{ c.label }}</span>
+                          </button>
+                        </sc-for>
+                      </div>
+                      <div class="npc" style="flex:1; overflow-y:auto; padding:8px;">
+                        <div style="font-size:12px; font-weight:600; color:#9AA1AC; padding:8px 10px 6px;">{{ pickSubTitle }}</div>
+                        <sc-for list="{{ pickerSubs }}" as="s" hint-placeholder-count="5">
+                          <button onClick="{{ s.onClick }}" style="{{ s.rowStyle }}">
+                            <span style="{{ s.labelStyle }}">{{ s.label }}</span>
+                            <sc-if value="{{ s.active }}" hint-placeholder-val="{{ false }}"><i class="fa-solid fa-check" style="color:#3B5BDB; font-size:13px;"></i></sc-if>
+                          </button>
+                        </sc-for>
+                        <sc-if value="{{ pickerEmpty }}" hint-placeholder-val="{{ false }}">
+                          <div style="padding:30px 10px; text-align:center; color:#9AA1AC; font-size:13px;">此分類無子項目</div>
+                        </sc-if>
+                      </div>
+                    </div>
+                  </sc-if>
+                </div>
+                <div style="display:flex; gap:8px; margin-top:18px;">
+                  <button style="flex:1; display:flex; align-items:center; justify-content:center; gap:7px; height:44px; border-radius:10px; background:#FFFFFF; border:1px solid #E6E8EB; color:#1B1F24; font-size:14px; font-weight:500; cursor:pointer;"><i class="fa-solid fa-scissors" style="color:#6C7480; font-size:12px;"></i> 拆帳</button>
+                  <button style="flex:1; display:flex; align-items:center; justify-content:center; gap:7px; height:44px; border-radius:10px; background:#FFFFFF; border:1px solid #E6E8EB; color:#1B1F24; font-size:14px; font-weight:500; cursor:pointer;"><i class="fa-solid fa-hand-holding-dollar" style="color:#6C7480; font-size:12px;"></i> 代墊</button>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ showCounter }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:#F6F7F9; border:1px solid #E6E8EB; border-radius:12px;"><span style="font-size:14px; color:#6C7480;">對象</span><span style="font-size:15px; font-weight:600;">同事 · 阿哲</span></div>
+                  <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:#F6F7F9; border:1px solid #E6E8EB; border-radius:12px;"><span style="font-size:14px; color:#6C7480;">關聯帳戶</span><span style="font-size:15px; font-weight:600;">玉山 Unicard</span></div>
+                  <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:#F6F7F9; border:1px solid #E6E8EB; border-radius:12px;"><span style="font-size:14px; color:#6C7480;">狀態</span><span style="font-size:12px; font-weight:600; color:#F08C00; background:#FFF4E6; border-radius:99px; padding:5px 12px;">未結清</span></div>
+                  <div style="display:flex; align-items:center; gap:12px; padding:13px 16px; background:#F6F7F9; border:1px solid #E6E8EB; border-radius:12px;"><i class="fa-regular fa-note-sticky" style="color:#9AA1AC; width:16px;"></i><span style="font-size:14px; color:#9AA1AC;">新增備註…</span></div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ isTr }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:#F6F7F9; border:1px solid #E6E8EB; border-radius:12px;"><span style="font-size:14px; color:#6C7480;">轉出帳戶</span><span style="font-size:15px; font-weight:600;">現金錢包</span></div>
+                  <div style="display:flex; justify-content:center; margin:-2px 0;"><i class="fa-solid fa-arrow-down" style="color:#9AA1AC; font-size:13px;"></i></div>
+                  <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:#F6F7F9; border:1px solid #E6E8EB; border-radius:12px;"><span style="font-size:14px; color:#6C7480;">轉入帳戶</span><span style="font-size:15px; font-weight:600;">台新 Richart</span></div>
+                  <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 16px; background:#F6F7F9; border:1px solid #E6E8EB; border-radius:12px;"><span style="font-size:14px; color:#6C7480;">手續費</span><span style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">NT$ 0</span></div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ isStock }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex; gap:8px; margin-bottom:14px;">
+                  <button onClick="{{ buy }}" style="{{ buyStyle }}">買進</button>
+                  <button onClick="{{ sell }}" style="{{ sellStyle }}">賣出</button>
+                </div>
+                <div style="background:#F6F7F9; border:1px solid #E6E8EB; border-radius:12px; overflow:hidden;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; padding:13px 16px; border-bottom:1px solid #E6E8EB;"><span style="font-size:14px; color:#6C7480;">代號 / 名稱</span><span style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">2330 台積電</span></div>
+                  <div style="display:flex; align-items:center; justify-content:space-between; padding:13px 16px; border-bottom:1px solid #E6E8EB;"><span style="font-size:14px; color:#6C7480;">股數 · 成交價</span><span style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">1,000 · 642.00</span></div>
+                  <div style="display:flex; align-items:center; justify-content:space-between; padding:13px 16px; border-bottom:1px solid #E6E8EB;"><span style="font-size:14px; color:#6C7480;">券商 · 手續費</span><span style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">永豐金 · NT$ 915</span></div>
+                  <div style="display:flex; align-items:center; justify-content:space-between; padding:13px 16px; border-bottom:1px solid #E6E8EB;"><span style="font-size:14px; color:#6C7480;">交割銀行</span><span style="font-size:15px; font-weight:600;">永豐銀行</span></div>
+                  <div style="display:flex; align-items:center; justify-content:space-between; padding:13px 16px;"><span style="font-size:14px; color:#6C7480;">成交日 · 交割</span><span style="font-size:15px; font-weight:600;">6/23 → <span style="color:#6C7480;">T+2 6/25</span></span></div>
+                </div>
+              </sc-if>
+
+            </div>
+          </div>
+
+          <div style="display:flex; align-items:center; justify-content:flex-end; gap:10px; padding:16px 22px; border-top:1px solid #E6E8EB;">
+            <button style="height:42px; padding:0 18px; border-radius:10px; background:#FFFFFF; border:1px solid #E6E8EB; color:#6C7480; font-size:14px; font-weight:500; cursor:pointer;">取消</button>
+            <button style="{{ saveStyleLg }}"><i class="fa-solid fa-check" style="font-size:12px;"></i> 儲存</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;auto&quot;},&quot;colorblind&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;brand&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#3B5BDB&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { type: 'expense', amount: '55', cat: 'food', sub: 'breakfast', side: 'buy', hidden: false, adv: false, catOpen: false, pickCat: 'food' };
+  }
+
+  pillsDef = [['expense','支出'],['income','收入'],['transfer','轉帳'],['receivable','應收'],['payable','應付'],['stock','股票']];
+
+  catsExpense = [
+    { id:'food', label:'餐飲', icon:'fa-utensils', children:[['breakfast','早餐'],['lunch','午餐'],['dinner','晚餐'],['drink','飲料'],['snack','點心']] },
+    { id:'transit', label:'交通', icon:'fa-car', children:[['gas','加油'],['parking','停車'],['mrt','捷運／公車'],['taxi','計程車']] },
+    { id:'shopping', label:'購物', icon:'fa-bag-shopping', children:[['daily','日用品'],['clothes','服飾'],['digital','3C 數位']] },
+    { id:'home', label:'居住', icon:'fa-house-chimney', children:[['rent','房租'],['water','水費'],['elec','電費'],['gas2','瓦斯']] },
+    { id:'medical', label:'醫療', icon:'fa-kit-medical', children:[['clinic','門診'],['pharmacy','藥品']] },
+    { id:'fun', label:'娛樂', icon:'fa-gamepad', children:[['game','遊戲'],['movie','電影'],['travel','旅遊']] },
+    { id:'comm', label:'通訊', icon:'fa-wifi', children:[['phone','手機費'],['net','網路費']] },
+    { id:'more', label:'更多', icon:'fa-ellipsis', children:[] },
+  ];
+
+  catsIncome = [
+    { id:'salary', label:'薪資', icon:'fa-money-check-dollar', children:[['monthly','月薪'],['ot','加班費']] },
+    { id:'bonus', label:'獎金', icon:'fa-gift', children:[['year','年終'],['perf','績效']] },
+    { id:'invest', label:'投資', icon:'fa-chart-line', children:[['dividend','股利'],['interest','利息']] },
+    { id:'other', label:'其他', icon:'fa-circle-plus', children:[] },
+  ];
+
+  formatNumber(a) {
+    return a.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  }
+
+  evaluate(expr) {
+    if (!expr) return 0;
+    let e = expr.replace(/[+\-*/]$/, '');
+    if (e === '' || e === '-') return 0;
+    e = e.replace(/(\d+(?:\.\d+)?)%/g, '($1/100)');
+    if (!/^[-0-9.+*/() ]*$/.test(e)) return NaN;
+    try {
+      const r = Function('"use strict"; return (' + e + ')')();
+      return typeof r === 'number' ? r : NaN;
+    } catch (_) { return NaN; }
+  }
+
+  press(k) {
+    this.setState(st => {
+      let a = st.amount;
+      const ops = ['+', '-', '*', '/'];
+      if (k === 'clear') return { amount: '' };
+      if (k === 'back') return { amount: a.slice(0, -1) };
+      if (k === '=') {
+        const r = this.evaluate(a);
+        if (isNaN(r) || !isFinite(r)) return {};
+        return { amount: String(Math.round(r * 100) / 100) };
+      }
+      if (ops.includes(k)) {
+        if (a === '') return k === '-' ? { amount: '-' } : {};
+        if (a.endsWith('%')) return { amount: a + k };
+        if (ops.includes(a.slice(-1))) return { amount: a.slice(0, -1) + k };
+        return { amount: a + k };
+      }
+      if (k === '%') {
+        if (a === '' || a.endsWith('%') || ops.includes(a.slice(-1)) || a.endsWith('.')) return {};
+        return { amount: a + '%' };
+      }
+      if (k === '.') {
+        const seg = a.split(/[+\-*/%]/).pop();
+        if (seg.includes('.')) return {};
+        return { amount: (seg === '' ? a + '0.' : a + '.') };
+      }
+      // digit
+      if (a.endsWith('%')) return { amount: a + '*' + k };
+      return { amount: (a === '0' ? '' : a) + k };
+    });
+  }
+
+  renderVals() {
+    const { type, hidden } = this.state;
+    const cb = this.props.colorblind ?? false;
+    const brand = this.props.brand ?? '#3B5BDB';
+    const RED = cb ? '#E8590C' : '#E03131';
+    const GREEN = cb ? '#1971C2' : '#2F9E44';
+
+    const isExp = type === 'expense', isInc = type === 'income', isTr = type === 'transfer',
+          isRec = type === 'receivable', isPay = type === 'payable', isStock = type === 'stock';
+
+    const amountColor = (isExp || isPay) ? RED : (isInc || isRec) ? GREEN : '#1B1F24';
+    const sign = (isExp || isPay) ? '−' : (isInc || isRec) ? '+' : '';
+    const typeLabel = { expense:'支出 金額', income:'收入 金額', transfer:'轉帳 金額', receivable:'應收 金額', payable:'應付 金額', stock:'股票交易' }[type];
+
+    const expr = this.state.amount;
+    const res = this.evaluate(expr);
+    const resStr = (isNaN(res) || !isFinite(res)) ? '—' : this.formatNumber(Math.abs(res));
+    const amountDisplay = isStock ? 'NT$ 642,915' : (hidden ? '••••••' : (resStr === '—' ? '—' : sign + 'NT$ ' + resStr));
+    const exprDisplay = expr.replace(/\*/g, ' × ').replace(/\//g, ' ÷ ').replace(/\+/g, ' + ').replace(/-/g, ' − ').replace(/\s+/g, ' ').trim();
+    const showExpr = !isStock && /[+*/%]/.test(expr);
+
+    const pills = this.pillsDef.map(([id, label]) => {
+      const active = id === type;
+      return {
+        id, label,
+        onClick: () => this.setState({ type: id }),
+        style: `flex:none; padding:9px 18px; border-radius:999px; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap; border:1px solid ${active ? brand : '#E6E8EB'}; background:${active ? brand : '#FFFFFF'}; color:${active ? '#FFFFFF' : '#6C7480'};`
+      };
+    });
+
+    const parents = isInc ? this.catsIncome : this.catsExpense;
+    const cats = parents.map(p => {
+      const active = p.id === this.state.cat;
+      return {
+        id: p.id, label: p.label, icon: p.icon,
+        onClick: () => this.setState({ cat: p.id, sub: null }),
+        boxStyle: `display:flex; flex-direction:column; align-items:center; gap:7px; padding:14px 4px; border-radius:12px; cursor:pointer; border:1px solid ${active ? brand : '#E6E8EB'}; background:${active ? '#EEF2FF' : '#FFFFFF'};`,
+        iconStyle: `width:42px; height:42px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:17px; background:${active ? brand : '#F1F3F5'}; color:${active ? '#FFFFFF' : '#6C7480'};`,
+        labelStyle: `font-size:12px; font-weight:500; color:${active ? brand : '#6C7480'};`
+      };
+    });
+
+    const selectedParent = parents.find(p => p.id === this.state.cat);
+    const childList = (selectedParent && selectedParent.children) || [];
+
+    // committed selection -> chip label
+    const selSub = childList.find(([sid]) => sid === this.state.sub);
+    const catChipIcon = selectedParent ? selectedParent.icon : 'fa-tag';
+    const catChipMain = selectedParent ? selectedParent.label : '選擇分類';
+    const catChipSub = selSub ? selSub[1] : (childList.length ? '選擇子分類' : '');
+    const catPlaceholder = !selectedParent;
+
+    // ---- two-column picker (主分類 | 子分類) ----
+    const pickParent = parents.find(p => p.id === this.state.pickCat) || parents[0];
+    const pickChildren = (pickParent && pickParent.children) || [];
+    const pickerCats = parents.map(p => {
+      const active = p.id === (pickParent && pickParent.id);
+      return {
+        id: p.id, label: p.label, icon: p.icon,
+        onClick: () => this.setState({ pickCat: p.id }),
+        rowStyle: `display:flex; align-items:center; gap:11px; width:100%; padding:12px 14px; border:none; border-radius:10px; cursor:pointer; text-align:left; background:${active ? '#FFFFFF' : 'transparent'}; box-shadow:${active ? '0 1px 3px rgba(27,31,36,.08)' : 'none'};`,
+        iconStyle: `width:30px; height:30px; flex:none; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:13px; background:${active ? brand : '#FFFFFF'}; color:${active ? '#FFFFFF' : '#6C7480'}; border:1px solid ${active ? brand : '#E6E8EB'};`,
+        labelStyle: `font-size:14px; font-weight:${active ? '600' : '500'}; color:${active ? '#1B1F24' : '#6C7480'}; flex:1;`,
+        chevColor: active ? brand : '#CDD2D9'
+      };
+    });
+    const pickerSubs = pickChildren.map(([sid, slabel]) => {
+      const active = (this.state.pickCat === this.state.cat) && sid === this.state.sub;
+      return {
+        id: sid, label: slabel,
+        onClick: () => this.setState({ cat: this.state.pickCat, sub: sid, catOpen: false }),
+        rowStyle: `display:flex; align-items:center; justify-content:space-between; width:100%; padding:13px 14px; border:none; border-radius:10px; cursor:pointer; text-align:left; background:${active ? '#EEF2FF' : 'transparent'};`,
+        labelStyle: `font-size:14px; font-weight:${active ? '600' : '500'}; color:${active ? brand : '#1B1F24'};`,
+        active
+      };
+    });
+    const pickerEmpty = pickChildren.length === 0;
+
+    // calculator keypad
+    const mk = (k, label, kind, opts = {}) => {
+      let bg = '#F6F7F9', color = '#1B1F24', fw = '600', border = '#EEF0F2';
+      if (kind === 'fn') { bg = '#F1F3F5'; color = '#6C7480'; border = '#ECEEF0'; }
+      else if (kind === 'op') { bg = '#EEF2FF'; color = brand; fw = '700'; border = 'transparent'; }
+      else if (kind === 'eq') { bg = brand; color = '#FFFFFF'; fw = '700'; border = 'transparent'; }
+      const span = opts.span ? 'grid-column:span 2;' : '';
+      return {
+        label, isBack: !!opts.isBack, notBack: !opts.isBack,
+        onClick: () => this.press(k),
+        style: `height:52px; border-radius:12px; border:1px solid ${border}; background:${bg}; color:${color}; font-size:21px; font-weight:${fw}; cursor:pointer; font-variant-numeric:tabular-nums; display:flex; align-items:center; justify-content:center; ${span}`
+      };
+    };
+    const keypad = [
+      mk('clear', 'AC', 'fn'), mk('%', '%', 'fn'), mk('/', '÷', 'op'), mk('back', '', 'fn', { isBack: true }),
+      mk('7', '7', 'digit'), mk('8', '8', 'digit'), mk('9', '9', 'digit'), mk('*', '×', 'op'),
+      mk('4', '4', 'digit'), mk('5', '5', 'digit'), mk('6', '6', 'digit'), mk('-', '−', 'op'),
+      mk('1', '1', 'digit'), mk('2', '2', 'digit'), mk('3', '3', 'digit'), mk('+', '+', 'op'),
+      mk('0', '0', 'digit', { span: true }), mk('.', '.', 'digit'), mk('=', '=', 'eq'),
+    ];
+
+    const saveBase = `display:flex; align-items:center; gap:6px; border:none; border-radius:10px; background:${brand}; color:#FFFFFF; font-weight:600; cursor:pointer;`;
+    const sideBtn = (on) => `flex:1; height:42px; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer; border:1px solid ${on ? brand : '#E6E8EB'}; background:${on ? '#EEF2FF' : '#FFFFFF'}; color:${on ? brand : '#6C7480'};`;
+
+    return {
+      pills, cats, keypad,
+      pickerCats, pickerSubs, pickerEmpty,
+      catChipIcon, catChipMain, catChipSub, catPlaceholder,
+      catOpen: this.state.catOpen,
+      pickSubTitle: (pickParent ? pickParent.label : '') + ' · 子分類',
+      openCat: () => this.setState({ catOpen: true, pickCat: this.state.cat }),
+      closeCat: () => this.setState({ catOpen: false }),
+      catChipStyle: `width:100%; display:flex; align-items:center; gap:12px; padding:13px 15px; background:#FFFFFF; border:1px solid ${this.state.catOpen ? brand : '#E6E8EB'}; border-radius:12px; cursor:pointer; text-align:left;`,
+      catChipIconStyle: `width:40px; height:40px; flex:none; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:16px; background:${catPlaceholder ? '#F1F3F5' : brand}; color:${catPlaceholder ? '#9AA1AC' : '#FFFFFF'};`,
+      catChipMainStyle: `font-size:15px; font-weight:600; color:${catPlaceholder ? '#9AA1AC' : '#1B1F24'};`,
+      typeLabel, amountColor, amountDisplay, exprDisplay, showExpr,
+      isExp, isInc, isTr, isRec, isPay, isStock,
+      showCat: isExp || isInc,
+      showCatSub: !!catChipSub,
+      showCounter: isRec || isPay,
+      showPad: !isStock,
+      showAcctRow: !isStock,
+      showActions: isExp || isInc,
+      adv: this.state.adv,
+      advIcon: this.state.adv ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down',
+      toggleAdv: () => this.setState(st => ({ adv: !st.adv })),
+      buy: () => this.setState({ side: 'buy' }),
+      sell: () => this.setState({ side: 'sell' }),
+      buyStyle: sideBtn(this.state.side === 'buy'),
+      sellStyle: sideBtn(this.state.side === 'sell'),
+      saveStyle: saveBase + ' height:38px; padding:0 16px; font-size:13px;',
+      saveStyleLg: saveBase + ' height:42px; padding:0 22px; font-size:14px;',
+    };
+  }
+}
+</script>
+</body>
+</html>

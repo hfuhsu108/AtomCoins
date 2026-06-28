@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+</style>
+</helmet>
+
+<div style="width:max-content; min-width:100%; min-height:100vh; box-sizing:border-box; padding:48px; background:#e7e5df; font-family:'Noto Sans TC',sans-serif;">
+  <div style="display:flex; gap:64px; align-items:flex-start;">
+
+    <!-- ===================== MOBILE FRAME ===================== -->
+    <div style="flex:none; display:flex; flex-direction:column; gap:14px;">
+      <div style="font-size:12px; font-weight:600; letter-spacing:.06em; color:#6C7480; text-transform:uppercase;">畫面 5 · 設定 Settings — 手機版</div>
+
+      <div data-screen-label="畫面5 設定 · 手機" style="width:390px; background:#F6F7F9; border-radius:28px; overflow:hidden; border:1px solid #E6E8EB; box-shadow:0 12px 40px rgba(27,31,36,.14); color:#1B1F24;">
+
+        <!-- top bar -->
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:18px 16px 10px;">
+          <div style="font-size:20px; font-weight:600;">設定</div>
+          <div style="display:flex; gap:8px;">
+            <button style="position:relative; width:38px; height:38px; border-radius:10px; background:#FFFFFF; border:1px solid #E6E8EB; color:#6C7480; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+              <i class="fa-solid fa-bell"></i>
+              <span style="position:absolute; top:8px; right:9px; width:7px; height:7px; border-radius:50%; background:#E03131;"></span>
+            </button>
+            <button onClick="{{ toggle }}" style="width:38px; height:38px; border-radius:10px; background:#FFFFFF; border:1px solid #E6E8EB; color:#6C7480; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+              <i class="{{ eyeIcon }}"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- content -->
+        <div style="padding:4px 16px 14px; display:flex; flex-direction:column; gap:12px;">
+
+          <!-- profile card -->
+          <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:16px;">
+            <div style="display:flex; align-items:center; gap:14px;">
+              <div style="width:48px; height:48px; border-radius:50%; background:#EEF2FF; display:flex; align-items:center; justify-content:center; color:#3B5BDB; font-size:20px; flex:none;">
+                <i class="fa-solid fa-user"></i>
+              </div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:16px; font-weight:600;">使用者</div>
+                <div style="font-size:13px; color:#9AA1AC; margin-top:2px;">本機帳戶 · 尚未登入</div>
+              </div>
+              <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:13px;"></i>
+            </div>
+            <button style="display:flex; align-items:center; justify-content:center; gap:8px; width:100%; height:42px; margin-top:14px; border-radius:10px; background:#FFFFFF; border:1px solid #E6E8EB; color:#1B1F24; font-size:14px; font-weight:500; cursor:pointer;">
+              <i class="fa-brands fa-google" style="font-size:15px; color:#4285F4;"></i> 以 Google 帳號登入
+            </button>
+          </div>
+
+          <!-- 備份與同步 -->
+          <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); overflow:hidden;">
+            <div style="padding:14px 16px 8px;">
+              <div style="font-size:13px; font-weight:600; color:#6C7480;">備份與同步</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:14px; padding:12px 16px; cursor:pointer;">
+              <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-cloud-arrow-up"></i></div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:15px; font-weight:500;">雲端備份</div>
+                <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">上次備份：今天 08:30</div>
+              </div>
+              <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+            </div>
+            <div style="height:1px; background:#F1F3F5; margin:0 16px;"></div>
+            <div style="display:flex; align-items:center; gap:14px; padding:12px 16px; cursor:pointer;">
+              <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-file-export"></i></div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:15px; font-weight:500;">匯出 / 匯入資料</div>
+                <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">CSV、JSON 格式</div>
+              </div>
+              <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+            </div>
+          </div>
+
+          <!-- 帳戶管理 -->
+          <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); overflow:hidden;">
+            <div style="padding:14px 16px 8px;">
+              <div style="font-size:13px; font-weight:600; color:#6C7480;">帳戶與資產</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:14px; padding:12px 16px; cursor:pointer;">
+              <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-wallet"></i></div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:15px; font-weight:500;">帳戶管理</div>
+                <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">現金、銀行、信用卡、證券</div>
+              </div>
+              <span style="font-size:12px; color:#9AA1AC; font-variant-numeric:tabular-nums; margin-right:4px;">4 個帳戶</span>
+              <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+            </div>
+            <div style="height:1px; background:#F1F3F5; margin:0 16px;"></div>
+            <div style="display:flex; align-items:center; gap:14px; padding:12px 16px; cursor:pointer;">
+              <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-credit-card"></i></div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:15px; font-weight:500;">信用卡設定</div>
+                <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">出帳日、繳費日、額度</div>
+              </div>
+              <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+            </div>
+            <div style="height:1px; background:#F1F3F5; margin:0 16px;"></div>
+            <div style="display:flex; align-items:center; gap:14px; padding:12px 16px; cursor:pointer;">
+              <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-building-columns"></i></div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:15px; font-weight:500;">券商設定</div>
+                <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">手續費折扣、交割銀行</div>
+              </div>
+              <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+            </div>
+          </div>
+
+          <!-- 分類與標籤 -->
+          <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); overflow:hidden;">
+            <div style="padding:14px 16px 8px;">
+              <div style="font-size:13px; font-weight:600; color:#6C7480;">分類與標籤</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:14px; padding:12px 16px; cursor:pointer;">
+              <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-grid-2"></i></div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:15px; font-weight:500;">分類設定</div>
+                <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">支出 8 類 · 收入 4 類</div>
+              </div>
+              <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+            </div>
+            <div style="height:1px; background:#F1F3F5; margin:0 16px;"></div>
+            <div style="display:flex; align-items:center; gap:14px; padding:12px 16px; cursor:pointer;">
+              <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-tags"></i></div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:15px; font-weight:500;">標籤管理</div>
+                <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">5 個標籤</div>
+              </div>
+              <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+            </div>
+            <div style="height:1px; background:#F1F3F5; margin:0 16px;"></div>
+            <div style="display:flex; align-items:center; gap:14px; padding:12px 16px; cursor:pointer;">
+              <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-folder"></i></div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:15px; font-weight:500;">專案管理</div>
+                <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">2 個專案</div>
+              </div>
+              <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+            </div>
+            <div style="height:1px; background:#F1F3F5; margin:0 16px;"></div>
+            <div style="display:flex; align-items:center; gap:14px; padding:12px 16px; cursor:pointer;">
+              <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-user-group"></i></div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:15px; font-weight:500;">對象管理</div>
+                <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">應收 / 應付對象</div>
+              </div>
+              <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+            </div>
+          </div>
+
+          <!-- 範本管理 -->
+          <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); overflow:hidden;">
+            <div style="display:flex; align-items:center; gap:14px; padding:14px 16px; cursor:pointer;">
+              <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-bookmark"></i></div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:15px; font-weight:500;">範本管理</div>
+                <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">快速記帳範本 · 3 個</div>
+              </div>
+              <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+            </div>
+          </div>
+
+          <!-- 偏好設定 -->
+          <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); overflow:hidden;">
+            <div style="padding:14px 16px 8px;">
+              <div style="font-size:13px; font-weight:600; color:#6C7480;">偏好設定</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:14px; padding:12px 16px; cursor:pointer;">
+              <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-palette"></i></div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:15px; font-weight:500;">外觀主題</div>
+              </div>
+              <span style="font-size:13px; color:#9AA1AC; margin-right:4px;">淺色</span>
+              <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+            </div>
+            <div style="height:1px; background:#F1F3F5; margin:0 16px;"></div>
+            <div style="display:flex; align-items:center; gap:14px; padding:12px 16px; cursor:pointer;">
+              <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-eye-low-vision"></i></div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:15px; font-weight:500;">收支配色</div>
+                <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">色弱友善模式</div>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px; margin-right:4px;">
+                <span style="width:14px; height:14px; border-radius:50%; background:#E03131; border:1px solid rgba(0,0,0,.06);"></span>
+                <span style="width:14px; height:14px; border-radius:50%; background:#2F9E44; border:1px solid rgba(0,0,0,.06);"></span>
+              </div>
+              <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+            </div>
+            <div style="height:1px; background:#F1F3F5; margin:0 16px;"></div>
+            <div style="display:flex; align-items:center; gap:14px; padding:12px 16px;">
+              <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-eye-slash"></i></div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:15px; font-weight:500;">預設隱藏金額</div>
+                <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">開啟 App 自動隱藏</div>
+              </div>
+              <div onClick="{{ toggleDefault }}" style="width:44px; height:26px; border-radius:99px; background:{{ defaultHideColor }}; cursor:pointer; position:relative; transition:background .2s;">
+                <div style="position:absolute; top:3px; left:{{ defaultHideLeft }}; width:20px; height:20px; border-radius:50%; background:#FFFFFF; box-shadow:0 1px 3px rgba(0,0,0,.15); transition:left .2s;"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 通知 -->
+          <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); overflow:hidden;">
+            <div style="display:flex; align-items:center; gap:14px; padding:14px 16px; cursor:pointer;">
+              <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-bell"></i></div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:15px; font-weight:500;">通知設定</div>
+                <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">記帳提醒、交割提醒、繳費提醒</div>
+              </div>
+              <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+            </div>
+          </div>
+
+          <!-- 關於 -->
+          <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); overflow:hidden;">
+            <div style="display:flex; align-items:center; gap:14px; padding:14px 16px; cursor:pointer;">
+              <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-circle-info"></i></div>
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:15px; font-weight:500;">關於原子記帳</div>
+                <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">版本 1.0.0</div>
+              </div>
+              <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+            </div>
+          </div>
+
+          <div style="height:8px;"></div>
+        </div>
+
+        <!-- bottom nav -->
+        <div style="position:relative; background:#FFFFFF; border-top:1px solid #E6E8EB; display:flex; justify-content:space-around; align-items:flex-end; padding:8px 6px 22px;">
+          <button style="display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none; cursor:pointer; color:#9AA1AC; font-size:11px; padding:4px 10px;">
+            <i class="fa-solid fa-house" style="font-size:18px;"></i><span>首頁</span>
+          </button>
+          <button style="display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none; cursor:pointer; color:#9AA1AC; font-size:11px; padding:4px 10px;">
+            <i class="fa-solid fa-receipt" style="font-size:18px;"></i><span>明細</span>
+          </button>
+          <div style="display:flex; flex-direction:column; align-items:center; width:60px;">
+            <button style="width:56px; height:56px; border-radius:50%; background:#3B5BDB; color:#FFFFFF; border:none; font-size:22px; transform:translateY(-16px); box-shadow:0 8px 18px rgba(59,91,219,.42); cursor:pointer;"><i class="fa-solid fa-plus"></i></button>
+          </div>
+          <button style="display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none; cursor:pointer; color:#9AA1AC; font-size:11px; padding:4px 10px;">
+            <i class="fa-solid fa-chart-pie" style="font-size:18px;"></i><span>報表</span>
+          </button>
+          <button style="display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none; cursor:pointer; color:#3B5BDB; font-size:11px; font-weight:500; padding:4px 10px;">
+            <i class="fa-solid fa-gear" style="font-size:18px;"></i><span>設定</span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ===================== DESKTOP FRAME ===================== -->
+    <div style="flex:none; display:flex; flex-direction:column; gap:14px;">
+      <div style="font-size:12px; font-weight:600; letter-spacing:.06em; color:#6C7480; text-transform:uppercase;">畫面 5 · 設定 Settings — 桌面版 (≥1024)</div>
+
+      <div data-screen-label="畫面5 設定 · 桌面" style="width:1280px; height:860px; display:flex; background:#F6F7F9; border:1px solid #E6E8EB; border-radius:14px; overflow:hidden; box-shadow:0 12px 40px rgba(27,31,36,.14); color:#1B1F24;">
+
+        <!-- side nav -->
+        <aside style="width:236px; flex:none; background:#FFFFFF; border-right:1px solid #E6E8EB; display:flex; flex-direction:column; padding:20px 14px;">
+          <div style="display:flex; align-items:center; gap:10px; padding:6px 8px 18px;">
+            <div style="width:34px; height:34px; border-radius:10px; background:#3B5BDB; color:#FFFFFF; display:flex; align-items:center; justify-content:center; font-size:16px;"><i class="fa-solid fa-coins"></i></div>
+            <div>
+              <div style="font-size:15px; font-weight:700; line-height:1.1;">原子記帳</div>
+              <div style="font-size:11px; color:#9AA1AC; letter-spacing:.04em;">AtomCoins</div>
+            </div>
+          </div>
+
+          <button style="display:flex; align-items:center; gap:12px; background:#EEF2FF; border:none; border-radius:10px; padding:11px 14px; color:#3B5BDB; font-size:15px; font-weight:600; cursor:pointer; margin-bottom:14px; width:100%;">
+            <i class="fa-solid fa-plus" style="font-size:14px;"></i> 記帳
+          </button>
+
+          <nav style="display:flex; flex-direction:column; gap:2px;">
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; color:#6C7480; font-size:15px; font-weight:500; cursor:pointer;" style-hover="background:#F1F3F5;"><i class="fa-solid fa-house" style="width:18px;"></i> 首頁</div>
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; color:#6C7480; font-size:15px; font-weight:500; cursor:pointer;" style-hover="background:#F1F3F5;"><i class="fa-solid fa-receipt" style="width:18px;"></i> 明細</div>
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; color:#6C7480; font-size:15px; font-weight:500; cursor:pointer;" style-hover="background:#F1F3F5;"><i class="fa-solid fa-chart-pie" style="width:18px;"></i> 報表</div>
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; background:#EEF2FF; color:#3B5BDB; font-size:15px; font-weight:600; cursor:pointer;"><i class="fa-solid fa-gear" style="width:18px;"></i> 設定</div>
+          </nav>
+
+          <div style="flex:1;"></div>
+          <div style="display:flex; align-items:center; gap:10px; padding:10px 8px; border-top:1px solid #E6E8EB;">
+            <div style="width:32px; height:32px; border-radius:50%; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:13px;"><i class="fa-solid fa-user"></i></div>
+            <div style="font-size:13px; color:#6C7480;">本機帳戶</div>
+          </div>
+        </aside>
+
+        <!-- main -->
+        <main style="flex:1; min-width:0; display:flex; flex-direction:column;">
+          <header style="display:flex; align-items:center; justify-content:space-between; padding:20px 28px; border-bottom:1px solid #E6E8EB; background:#FFFFFF;">
+            <div>
+              <div style="font-size:20px; font-weight:600;">設定</div>
+              <div style="font-size:13px; color:#9AA1AC; margin-top:2px;">管理帳戶、分類、偏好</div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center;">
+              <button onClick="{{ toggle }}" style="display:flex; align-items:center; gap:8px; height:40px; padding:0 14px; border-radius:10px; background:#FFFFFF; border:1px solid #E6E8EB; color:#6C7480; font-size:14px; cursor:pointer;"><i class="{{ eyeIcon }}"></i> 金額</button>
+              <button style="position:relative; width:40px; height:40px; border-radius:10px; background:#FFFFFF; border:1px solid #E6E8EB; color:#6C7480; font-size:15px; cursor:pointer;"><i class="fa-solid fa-bell"></i><span style="position:absolute; top:9px; right:10px; width:7px; height:7px; border-radius:50%; background:#E03131;"></span></button>
+            </div>
+          </header>
+
+          <div style="flex:1; overflow-y:auto; padding:24px 28px;">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+
+              <!-- LEFT COLUMN -->
+              <div style="display:flex; flex-direction:column; gap:20px;">
+
+                <!-- profile card -->
+                <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:24px;">
+                  <div style="font-size:14px; font-weight:600; color:#6C7480; margin-bottom:16px;">個人資料</div>
+                  <div style="display:flex; align-items:center; gap:16px;">
+                    <div style="width:56px; height:56px; border-radius:50%; background:#EEF2FF; display:flex; align-items:center; justify-content:center; color:#3B5BDB; font-size:22px; flex:none;">
+                      <i class="fa-solid fa-user"></i>
+                    </div>
+                    <div style="flex:1; min-width:0;">
+                      <div style="font-size:17px; font-weight:600;">使用者</div>
+                      <div style="font-size:13px; color:#9AA1AC; margin-top:3px;">本機帳戶 · 尚未登入</div>
+                    </div>
+                  </div>
+                  <button style="display:flex; align-items:center; justify-content:center; gap:8px; width:100%; height:44px; margin-top:18px; border-radius:10px; background:#FFFFFF; border:1px solid #E6E8EB; color:#1B1F24; font-size:14px; font-weight:500; cursor:pointer;">
+                    <i class="fa-brands fa-google" style="font-size:16px; color:#4285F4;"></i> 以 Google 帳號登入
+                  </button>
+                </div>
+
+                <!-- 帳戶與資產 -->
+                <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); overflow:hidden;">
+                  <div style="padding:18px 20px 10px;">
+                    <div style="font-size:14px; font-weight:600; color:#6C7480;">帳戶與資產</div>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:14px; padding:13px 20px; cursor:pointer;" style-hover="background:#FAFBFC;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-wallet"></i></div>
+                    <div style="flex:1;">
+                      <div style="font-size:15px; font-weight:500;">帳戶管理</div>
+                      <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">現金、銀行、信用卡、證券</div>
+                    </div>
+                    <span style="font-size:12px; color:#9AA1AC; font-variant-numeric:tabular-nums;">4 個帳戶</span>
+                    <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+                  </div>
+                  <div style="height:1px; background:#F1F3F5; margin:0 20px;"></div>
+                  <div style="display:flex; align-items:center; gap:14px; padding:13px 20px; cursor:pointer;" style-hover="background:#FAFBFC;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-credit-card"></i></div>
+                    <div style="flex:1;">
+                      <div style="font-size:15px; font-weight:500;">信用卡設定</div>
+                      <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">出帳日、繳費日、額度</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+                  </div>
+                  <div style="height:1px; background:#F1F3F5; margin:0 20px;"></div>
+                  <div style="display:flex; align-items:center; gap:14px; padding:13px 20px; cursor:pointer;" style-hover="background:#FAFBFC;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-building-columns"></i></div>
+                    <div style="flex:1;">
+                      <div style="font-size:15px; font-weight:500;">券商設定</div>
+                      <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">手續費折扣、交割銀行</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+                  </div>
+                </div>
+
+                <!-- 備份與同步 -->
+                <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); overflow:hidden;">
+                  <div style="padding:18px 20px 10px;">
+                    <div style="font-size:14px; font-weight:600; color:#6C7480;">備份與同步</div>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:14px; padding:13px 20px; cursor:pointer;" style-hover="background:#FAFBFC;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-cloud-arrow-up"></i></div>
+                    <div style="flex:1;">
+                      <div style="font-size:15px; font-weight:500;">雲端備份</div>
+                      <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">上次備份：今天 08:30</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+                  </div>
+                  <div style="height:1px; background:#F1F3F5; margin:0 20px;"></div>
+                  <div style="display:flex; align-items:center; gap:14px; padding:13px 20px; cursor:pointer;" style-hover="background:#FAFBFC;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-file-export"></i></div>
+                    <div style="flex:1;">
+                      <div style="font-size:15px; font-weight:500;">匯出 / 匯入資料</div>
+                      <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">CSV、JSON 格式</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+                  </div>
+                </div>
+
+              </div>
+
+              <!-- RIGHT COLUMN -->
+              <div style="display:flex; flex-direction:column; gap:20px;">
+
+                <!-- 分類與標籤 -->
+                <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); overflow:hidden;">
+                  <div style="padding:18px 20px 10px;">
+                    <div style="font-size:14px; font-weight:600; color:#6C7480;">分類與標籤</div>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:14px; padding:13px 20px; cursor:pointer;" style-hover="background:#FAFBFC;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-grid-2"></i></div>
+                    <div style="flex:1;">
+                      <div style="font-size:15px; font-weight:500;">分類設定</div>
+                      <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">支出 8 類 · 收入 4 類</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+                  </div>
+                  <div style="height:1px; background:#F1F3F5; margin:0 20px;"></div>
+                  <div style="display:flex; align-items:center; gap:14px; padding:13px 20px; cursor:pointer;" style-hover="background:#FAFBFC;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-tags"></i></div>
+                    <div style="flex:1;">
+                      <div style="font-size:15px; font-weight:500;">標籤管理</div>
+                      <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">5 個標籤</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+                  </div>
+                  <div style="height:1px; background:#F1F3F5; margin:0 20px;"></div>
+                  <div style="display:flex; align-items:center; gap:14px; padding:13px 20px; cursor:pointer;" style-hover="background:#FAFBFC;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-folder"></i></div>
+                    <div style="flex:1;">
+                      <div style="font-size:15px; font-weight:500;">專案管理</div>
+                      <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">2 個專案</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+                  </div>
+                  <div style="height:1px; background:#F1F3F5; margin:0 20px;"></div>
+                  <div style="display:flex; align-items:center; gap:14px; padding:13px 20px; cursor:pointer;" style-hover="background:#FAFBFC;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-user-group"></i></div>
+                    <div style="flex:1;">
+                      <div style="font-size:15px; font-weight:500;">對象管理</div>
+                      <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">應收 / 應付對象</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+                  </div>
+                </div>
+
+                <!-- 範本管理 -->
+                <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); overflow:hidden;">
+                  <div style="display:flex; align-items:center; gap:14px; padding:16px 20px; cursor:pointer;" style-hover="background:#FAFBFC;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-bookmark"></i></div>
+                    <div style="flex:1;">
+                      <div style="font-size:15px; font-weight:500;">範本管理</div>
+                      <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">快速記帳範本 · 3 個</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+                  </div>
+                </div>
+
+                <!-- 偏好設定 -->
+                <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); overflow:hidden;">
+                  <div style="padding:18px 20px 10px;">
+                    <div style="font-size:14px; font-weight:600; color:#6C7480;">偏好設定</div>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:14px; padding:13px 20px; cursor:pointer;" style-hover="background:#FAFBFC;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-palette"></i></div>
+                    <div style="flex:1;">
+                      <div style="font-size:15px; font-weight:500;">外觀主題</div>
+                    </div>
+                    <span style="font-size:13px; color:#9AA1AC;">淺色</span>
+                    <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+                  </div>
+                  <div style="height:1px; background:#F1F3F5; margin:0 20px;"></div>
+                  <div style="display:flex; align-items:center; gap:14px; padding:13px 20px; cursor:pointer;" style-hover="background:#FAFBFC;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-eye-low-vision"></i></div>
+                    <div style="flex:1;">
+                      <div style="font-size:15px; font-weight:500;">收支配色</div>
+                      <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">色弱友善模式</div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:6px; margin-right:4px;">
+                      <span style="width:14px; height:14px; border-radius:50%; background:#E03131; border:1px solid rgba(0,0,0,.06);"></span>
+                      <span style="width:14px; height:14px; border-radius:50%; background:#2F9E44; border:1px solid rgba(0,0,0,.06);"></span>
+                    </div>
+                    <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+                  </div>
+                  <div style="height:1px; background:#F1F3F5; margin:0 20px;"></div>
+                  <div style="display:flex; align-items:center; gap:14px; padding:13px 20px;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-eye-slash"></i></div>
+                    <div style="flex:1;">
+                      <div style="font-size:15px; font-weight:500;">預設隱藏金額</div>
+                      <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">開啟 App 自動隱藏</div>
+                    </div>
+                    <div onClick="{{ toggleDefault }}" style="width:44px; height:26px; border-radius:99px; background:{{ defaultHideColor }}; cursor:pointer; position:relative; transition:background .2s;">
+                      <div style="position:absolute; top:3px; left:{{ defaultHideLeft }}; width:20px; height:20px; border-radius:50%; background:#FFFFFF; box-shadow:0 1px 3px rgba(0,0,0,.15); transition:left .2s;"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 通知 + 關於 -->
+                <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); overflow:hidden;">
+                  <div style="display:flex; align-items:center; gap:14px; padding:16px 20px; cursor:pointer; border-bottom:1px solid #F1F3F5;" style-hover="background:#FAFBFC;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-bell"></i></div>
+                    <div style="flex:1;">
+                      <div style="font-size:15px; font-weight:500;">通知設定</div>
+                      <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">記帳提醒、交割提醒、繳費提醒</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:14px; padding:16px 20px; cursor:pointer;" style-hover="background:#FAFBFC;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-circle-info"></i></div>
+                    <div style="flex:1;">
+                      <div style="font-size:15px; font-weight:500;">關於原子記帳</div>
+                      <div style="font-size:12px; color:#9AA1AC; margin-top:2px;">版本 1.0.0</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right" style="color:#CDD2D9; font-size:12px;"></i>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+
+class Component extends DCLogic {
+  state = {
+    hidden: false,
+    defaultHide: false
+  };
+
+  renderVals() {
+    const hidden = this.state.hidden;
+    const dh = this.state.defaultHide;
+
+    return {
+      eyeIcon: hidden ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye',
+      toggle: () => this.setState(st => ({ hidden: !st.hidden })),
+      defaultHideColor: dh ? '#3B5BDB' : '#CDD2D9',
+      defaultHideLeft: dh ? '21px' : '3px',
+      toggleDefault: () => this.setState(st => ({ defaultHide: !st.defaultHide })),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

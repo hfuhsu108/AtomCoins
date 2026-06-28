@@ -62,4 +62,4 @@
 
 ## 現況
 
-階段 0 — Claude 開發文件與專案 memory 已建立；**設計稿已完成**（`design_handoff_atomcoins/`，已與規格文件對齊）；Vite 專案骨架**尚未** scaffold（下一步）。
+階段 0 完成（2026-06-28，commit `9bdd78d`）。技術決策：JavaScript + Tailwind v4。骨架含 5 頁路由、RWD 導覽、Dexie 11 table、PWA。下一步＝**Stage 1：核心記帳 MVP**。設計稿 HTML 原型需從 Claude Design 重新匯出（README.md 已恢復）。

@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .npc::-webkit-scrollbar { height:0; width:0; }
+</style>
+</helmet>
+
+<div style="width:max-content; min-width:100%; min-height:100vh; box-sizing:border-box; padding:48px; background:#e7e5df; font-family:'Noto Sans TC',sans-serif;">
+  <div style="display:flex; gap:64px; align-items:flex-start;">
+
+    <!-- ===================== MOBILE FRAME ===================== -->
+    <div style="flex:none; display:flex; flex-direction:column; gap:14px;">
+      <div style="font-size:12px; font-weight:600; letter-spacing:.06em; color:#6C7480; text-transform:uppercase;">畫面 3 · 明細 Transactions — 手機版</div>
+
+      <div data-screen-label="畫面3 明細 · 手機" style="position:relative; width:390px; height:844px; display:flex; flex-direction:column; background:#F6F7F9; border-radius:28px; overflow:hidden; border:1px solid #E6E8EB; box-shadow:0 12px 40px rgba(27,31,36,.14); color:#1B1F24;">
+
+        <!-- header -->
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:16px 16px 10px; background:#FFFFFF; flex:none;">
+          <div style="font-size:20px; font-weight:600;">明細</div>
+          <div style="display:flex; gap:8px;">
+            <button style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; border:none; color:#6C7480; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center;"><i class="fa-solid fa-magnifying-glass"></i></button>
+            <button onClick="{{ toggleHide }}" style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; border:none; color:#6C7480; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center;"><i class="{{ eyeIcon }}"></i></button>
+          </div>
+        </div>
+
+        <!-- top tabs (帳本 / 股票 / 發票載具) -->
+        <div style="display:flex; gap:6px; padding:4px; margin:0 16px 12px; background:#F1F3F5; border-radius:12px; flex:none;">
+          <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+            <button onClick="{{ t.onClick }}" style="{{ t.segStyle }}">{{ t.label }}</button>
+          </sc-for>
+        </div>
+
+        <!-- ============ LEDGER ============ -->
+        <sc-if value="{{ isLedger }}" hint-placeholder-val="{{ true }}">
+          <!-- summary card -->
+          <div style="margin:2px 16px 12px; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:14px 16px; flex:none;">
+            <div style="display:flex; align-items:center; justify-content:space-between; height:34px;">
+              <div style="display:flex; align-items:center; gap:14px;">
+                <button style="width:28px; height:28px; border-radius:8px; background:#F1F3F5; border:none; color:#6C7480; font-size:12px; cursor:pointer;"><i class="fa-solid fa-chevron-left"></i></button>
+                <span style="font-size:15px; font-weight:600;">{{ monthLabel }}</span>
+                <button style="width:28px; height:28px; border-radius:8px; background:#F1F3F5; border:none; color:#6C7480; font-size:12px; cursor:pointer;"><i class="fa-solid fa-chevron-right"></i></button>
+              </div>
+              <div style="display:flex; padding:3px; background:#F1F3F5; border-radius:9px;">
+                <button onClick="{{ setList }}" style="{{ listToggleStyle }}"><i class="fa-solid fa-list-ul"></i></button>
+                <button onClick="{{ setCal }}" style="{{ calToggleStyle }}"><i class="fa-solid fa-calendar-days"></i></button>
+              </div>
+            </div>
+            <div style="display:flex; margin-top:13px; padding-top:13px; border-top:1px solid #F1F3F5;">
+              <div style="flex:1;"><div style="font-size:11px; color:#6C7480;">收入</div><div style="font-size:16px; font-weight:600; color:{{ green }}; font-variant-numeric:tabular-nums; margin-top:2px;">{{ income }}</div></div>
+              <div style="flex:1;"><div style="font-size:11px; color:#6C7480;">支出</div><div style="font-size:16px; font-weight:600; color:{{ red }}; font-variant-numeric:tabular-nums; margin-top:2px;">{{ expense }}</div></div>
+              <div style="flex:1;"><div style="font-size:11px; color:#6C7480;">結餘</div><div style="font-size:16px; font-weight:600; color:{{ green }}; font-variant-numeric:tabular-nums; margin-top:2px;">{{ balance }}</div></div>
+            </div>
+          </div>
+          <!-- filter chips -->
+          <div class="npc" style="display:flex; gap:8px; padding:0 16px 12px; overflow-x:auto; flex:none;">
+            <sc-for list="{{ filters }}" as="f" hint-placeholder-count="6">
+              <button style="{{ f.style }}"><i class="fa-solid {{ f.icon }}" style="font-size:11px; color:{{ f.iconColor }};"></i> {{ f.label }} <i class="fa-solid fa-chevron-down" style="font-size:8px; opacity:.5;"></i></button>
+            </sc-for>
+          </div>
+
+          <!-- LIST view -->
+          <sc-if value="{{ isListView }}" hint-placeholder-val="{{ true }}">
+            <div class="npc" style="flex:1; overflow-y:auto; padding:8px 0 16px;">
+              <sc-for list="{{ days }}" as="d" hint-placeholder-count="4">
+                <div style="padding:0 14px 8px;">
+                  <div style="display:flex; align-items:baseline; justify-content:space-between; padding:10px 4px 7px;">
+                    <div style="display:flex; align-items:baseline; gap:8px;">
+                      <span style="font-size:15px; font-weight:600;">{{ d.md }}</span>
+                      <span style="font-size:13px; color:#9AA1AC;">{{ d.wd }}</span>
+                      <sc-if value="{{ d.tagShow }}" hint-placeholder-val="{{ true }}"><span style="font-size:11px; font-weight:600; color:{{ brandColor }}; background:#EEF2FF; border-radius:99px; padding:2px 8px;">{{ d.tag }}</span></sc-if>
+                    </div>
+                    <div style="display:flex; gap:10px; font-size:12px; font-weight:600; font-variant-numeric:tabular-nums;">
+                      <sc-if value="{{ d.inShow }}" hint-placeholder-val="{{ true }}"><span style="color:{{ green }};">{{ d.inStr }}</span></sc-if>
+                      <sc-if value="{{ d.outShow }}" hint-placeholder-val="{{ true }}"><span style="color:{{ red }};">{{ d.outStr }}</span></sc-if>
+                    </div>
+                  </div>
+                  <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:2px 16px;">
+                    <sc-for list="{{ d.items }}" as="t" hint-placeholder-count="3">
+                      <sc-if value="{{ t.divider }}" hint-placeholder-val="{{ true }}"><div style="height:1px; background:#F1F3F5;"></div></sc-if>
+                      <div style="display:flex; align-items:center; gap:12px; padding:13px 0;">
+                        <div style="{{ t.iconWrap }}"><i class="fa-solid {{ t.icon }}"></i></div>
+                        <div style="flex:1; min-width:0;">
+                          <div style="display:flex; align-items:center; gap:7px;">
+                            <span style="font-size:15px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ t.title }}</span>
+                            <sc-if value="{{ t.badgeShow }}" hint-placeholder-val="{{ true }}"><span style="{{ t.badgeStyle }}">{{ t.badge }}</span></sc-if>
+                          </div>
+                          <div style="display:flex; align-items:center; gap:7px; margin-top:3px; min-width:0;">
+                            <sc-if value="{{ t.acctShow }}" hint-placeholder-val="{{ true }}"><span style="flex:none; font-size:12px; color:#6C7480; background:#F1F3F5; border-radius:6px; padding:2px 7px;">{{ t.acct }}</span></sc-if>
+                            <sc-if value="{{ t.noteShow }}" hint-placeholder-val="{{ true }}"><span style="font-size:12px; color:#9AA1AC; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ t.note }}</span></sc-if>
+                          </div>
+                        </div>
+                        <div style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap; color:{{ t.amountColor }};">{{ t.amountStr }}</div>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <!-- CALENDAR view -->
+          <sc-if value="{{ isCalView }}" hint-placeholder-val="{{ false }}">
+            <div class="npc" style="flex:1; overflow-y:auto; padding:14px;">
+              <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:5px;">
+                <sc-for list="{{ dow }}" as="w" hint-placeholder-count="7">
+                  <div style="text-align:center; font-size:11px; color:#9AA1AC; padding-bottom:4px;">{{ w }}</div>
+                </sc-for>
+                <sc-for list="{{ calCells }}" as="c" hint-placeholder-count="35">
+                  <div style="{{ c.style }}">
+                    <sc-if value="{{ c.show }}" hint-placeholder-val="{{ true }}">
+                      <div style="font-size:12px; font-weight:600; color:{{ c.numColor }};">{{ c.day }}</div>
+                      <sc-if value="{{ c.outShow }}" hint-placeholder-val="{{ true }}"><div style="font-size:9px; font-weight:600; color:{{ red }}; font-variant-numeric:tabular-nums;">{{ c.out }}</div></sc-if>
+                      <sc-if value="{{ c.inShow }}" hint-placeholder-val="{{ true }}"><div style="font-size:9px; font-weight:600; color:{{ green }}; font-variant-numeric:tabular-nums;">{{ c.in }}</div></sc-if>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+        </sc-if>
+
+        <!-- ============ STOCK ============ -->
+        <sc-if value="{{ isStock }}" hint-placeholder-val="{{ false }}">
+          <!-- summary card -->
+          <div style="margin:2px 16px 12px; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:14px 16px; flex:none;">
+            <div style="display:flex; align-items:center; justify-content:space-between; height:34px;">
+              <span style="font-size:14px; font-weight:600;">投資總覽</span>
+              <span style="font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; color:{{ green }}; background:#EBFBEE; border-radius:99px; padding:4px 11px;">報酬率 {{ stk.retStr }}</span>
+            </div>
+            <div style="display:flex; margin-top:13px; padding-top:13px; border-top:1px solid #F1F3F5;">
+              <div style="flex:1;"><div style="font-size:11px; color:#6C7480;">總市值</div><div style="font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; margin-top:2px;">{{ stk.totalValue }}</div></div>
+              <div style="flex:1;"><div style="font-size:11px; color:#6C7480;">未實現損益</div><div style="font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; margin-top:2px; color:{{ green }};">{{ stk.unrealStr }}</div></div>
+              
+            </div>
+          </div>
+          <!-- sub tabs -->
+          <div style="display:flex; gap:18px; padding:0 18px; border-bottom:1px solid #E6E8EB; flex:none;">
+            <sc-for list="{{ stockTabs }}" as="s" hint-placeholder-count="3">
+              <button onClick="{{ s.onClick }}" style="{{ s.style }}">{{ s.label }}</button>
+            </sc-for>
+          </div>
+          <div class="npc" style="flex:1; overflow-y:auto; padding-top:8px;">
+            <!-- holdings -->
+            <sc-if value="{{ stkHoldings }}" hint-placeholder-val="{{ true }}">
+              <sc-for list="{{ holdings }}" as="g" hint-placeholder-count="2">
+                <div style="padding:8px 14px 4px;">
+                  <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 4px;">
+                    <span style="font-size:13px; font-weight:600; color:#6C7480;"><i class="fa-solid fa-building-columns" style="font-size:11px; margin-right:6px; color:#9AA1AC;"></i>{{ g.broker }}</span>
+                    <span style="font-size:12px; color:#9AA1AC; font-variant-numeric:tabular-nums;">{{ g.value }}</span>
+                  </div>
+                  <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); overflow:hidden;">
+                    <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="2">
+                      <sc-if value="{{ r.divider }}" hint-placeholder-val="{{ true }}"><div style="height:1px; background:#F1F3F5; margin:0 14px;"></div></sc-if>
+                      <div style="display:flex; align-items:center; gap:12px; padding:13px 14px;">
+                        <div style="flex:1; min-width:0;">
+                          <div style="display:flex; align-items:baseline; gap:7px;"><span style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">{{ r.code }}</span><span style="font-size:13px; color:#6C7480; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ r.name }}</span></div>
+                          <div style="font-size:12px; color:#9AA1AC; margin-top:3px; font-variant-numeric:tabular-nums;">{{ r.shares }} 股 · 均價 {{ r.cost }} · 現 {{ r.price }}</div>
+                        </div>
+                        <div style="text-align:right;">
+                          <div style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">{{ r.value }}</div>
+                          <div style="font-size:12px; font-weight:600; margin-top:3px; font-variant-numeric:tabular-nums; color:{{ r.plColor }};">{{ r.pl }} · {{ r.ret }}</div>
+                        </div>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-for>
+            </sc-if>
+            <!-- transactions -->
+            <sc-if value="{{ stkTrades }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:4px 14px 16px;">
+                <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:2px 16px;">
+                  <sc-for list="{{ trades }}" as="t" hint-placeholder-count="4">
+                    <sc-if value="{{ t.divider }}" hint-placeholder-val="{{ true }}"><div style="height:1px; background:#F1F3F5;"></div></sc-if>
+                    <div style="display:flex; align-items:center; gap:12px; padding:13px 0;">
+                      <span style="{{ t.tagStyle }}">{{ t.side }}</span>
+                      <div style="flex:1; min-width:0;">
+                        <div style="font-size:15px; font-weight:500;">{{ t.code }} {{ t.name }}</div>
+                        <div style="font-size:12px; color:#9AA1AC; margin-top:3px; font-variant-numeric:tabular-nums;">{{ t.date }} · {{ t.shares }} 股 @ {{ t.price }}</div>
+                      </div>
+                      <div style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">{{ t.amount }}</div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+            <!-- realized -->
+            <sc-if value="{{ stkRealized }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:4px 14px 16px;">
+                <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:2px 16px;">
+                  <sc-for list="{{ realized }}" as="t" hint-placeholder-count="3">
+                    <sc-if value="{{ t.divider }}" hint-placeholder-val="{{ true }}"><div style="height:1px; background:#F1F3F5;"></div></sc-if>
+                    <div style="display:flex; align-items:center; gap:12px; padding:13px 0;">
+                      <div style="flex:1; min-width:0;">
+                        <div style="font-size:15px; font-weight:500;">{{ t.code }} {{ t.name }}</div>
+                        <div style="font-size:12px; color:#9AA1AC; margin-top:3px;">{{ t.date }} · 持有 {{ t.held }}</div>
+                      </div>
+                      <div style="text-align:right;">
+                        <div style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums; color:{{ t.plColor }};">{{ t.pl }}</div>
+                        <div style="font-size:12px; font-weight:600; margin-top:3px; font-variant-numeric:tabular-nums; color:{{ t.plColor }};">{{ t.ret }}</div>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <!-- ============ INVOICE ============ -->
+        <sc-if value="{{ isInvoice }}" hint-placeholder-val="{{ false }}">
+          <!-- summary card -->
+          <div style="margin:2px 16px 12px; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:14px 16px; flex:none;">
+            <div style="display:flex; align-items:center; justify-content:space-between; height:34px;">
+              <span style="font-size:14px; font-weight:600;">財政部載具</span>
+              <button style="display:flex; align-items:center; gap:7px; height:34px; padding:0 14px; border-radius:9px; background:{{ brandColor }}; border:none; color:#FFFFFF; font-size:13px; font-weight:600; cursor:pointer;"><i class="fa-solid fa-cloud-arrow-down" style="font-size:13px;"></i> 匯入載具</button>
+            </div>
+            <div style="display:flex; margin-top:13px; padding-top:13px; border-top:1px solid #F1F3F5;">
+              <div style="flex:1;"><div style="font-size:11px; color:#6C7480;">未歸帳</div><div style="font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; margin-top:2px;">{{ inv.unbooked }}</div></div>
+              <div style="flex:1;"><div style="font-size:11px; color:#6C7480;">已歸帳</div><div style="font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; margin-top:2px;">{{ inv.booked }}</div></div>
+              <div style="flex:1;"><div style="font-size:11px; color:#6C7480;">發票金額</div><div style="font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; margin-top:2px;">{{ inv.total }}</div></div>
+            </div>
+          </div>
+          <!-- status tabs -->
+          <div style="display:flex; gap:18px; padding:0 18px; border-bottom:1px solid #E6E8EB; flex:none;">
+            <sc-for list="{{ invoiceTabs }}" as="i" hint-placeholder-count="3">
+              <button onClick="{{ i.onClick }}" style="{{ i.style }}">{{ i.label }} <span style="{{ i.countStyle }}">{{ i.count }}</span></button>
+            </sc-for>
+          </div>
+          <!-- swipe hint -->
+          <div style="padding:10px 18px 2px; flex:none;"></div>
+          <!-- inbox -->
+          <div class="npc" style="flex:1; overflow-y:auto; padding:8px 14px 16px;">
+            <sc-for list="{{ invoices }}" as="v" hint-placeholder-count="4">
+              <div style="position:relative; margin-bottom:10px; border-radius:14px; overflow:hidden;">
+                <!-- swipe actions behind -->
+                <div style="position:absolute; inset:0; display:flex; justify-content:flex-end;">
+                  <div style="display:flex; align-items:center; justify-content:center; width:78px; background:{{ green }}; color:#FFFFFF; font-size:13px; font-weight:600; flex-direction:column; gap:3px;"><i class="fa-solid fa-folder-plus"></i>歸帳</div>
+                  <div style="display:flex; align-items:center; justify-content:center; width:70px; background:#9AA1AC; color:#FFFFFF; font-size:13px; font-weight:600; flex-direction:column; gap:3px;"><i class="fa-solid fa-forward"></i>略過</div>
+                </div>
+                <!-- front card -->
+                <div onClick="{{ v.onClick }}" style="{{ v.frontStyle }}">
+                  <div style="width:42px; height:42px; flex:none; border-radius:11px; background:#F1F3F5; color:#6C7480; display:flex; align-items:center; justify-content:center; font-size:16px;"><i class="fa-solid fa-receipt"></i></div>
+                  <div style="flex:1; min-width:0;">
+                    <div style="font-size:15px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ v.merchant }}</div>
+                    <div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+                      <span style="font-size:12px; color:#9AA1AC; font-variant-numeric:tabular-nums;">{{ v.date }}</span>
+                      <span style="font-size:12px; color:#C2C7CE; font-variant-numeric:tabular-nums;">{{ v.num }}</span>
+                    </div>
+                  </div>
+                  <div style="font-size:15px; font-weight:700; font-variant-numeric:tabular-nums;">{{ v.amount }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+        <!-- bottom nav -->
+        <div style="position:relative; background:#FFFFFF; border-top:1px solid #E6E8EB; display:flex; justify-content:space-around; align-items:flex-end; padding:8px 6px 22px; flex:none;">
+          <button style="display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none; cursor:pointer; color:#9AA1AC; font-size:11px; padding:4px 10px;"><i class="fa-solid fa-house" style="font-size:18px;"></i><span>首頁</span></button>
+          <button style="display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none; cursor:pointer; color:{{ brandColor }}; font-size:11px; font-weight:500; padding:4px 10px;"><i class="fa-solid fa-receipt" style="font-size:18px;"></i><span>明細</span></button>
+          <div style="display:flex; flex-direction:column; align-items:center; width:60px;">
+            <button style="width:56px; height:56px; border-radius:50%; background:{{ brandColor }}; color:#FFFFFF; border:none; font-size:22px; transform:translateY(-16px); box-shadow:0 8px 18px rgba(59,91,219,.42); cursor:pointer;"><i class="fa-solid fa-plus"></i></button>
+          </div>
+          <button style="display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none; cursor:pointer; color:#9AA1AC; font-size:11px; padding:4px 10px;"><i class="fa-solid fa-chart-pie" style="font-size:18px;"></i><span>報表</span></button>
+          <button style="display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none; cursor:pointer; color:#9AA1AC; font-size:11px; padding:4px 10px;"><i class="fa-solid fa-gear" style="font-size:18px;"></i><span>設定</span></button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ===================== DESKTOP FRAME ===================== -->
+    <div style="flex:none; display:flex; flex-direction:column; gap:14px;">
+      <div style="font-size:12px; font-weight:600; letter-spacing:.06em; color:#6C7480; text-transform:uppercase;">畫面 3 · 明細 Transactions — 桌面版（雙欄：列表 + 詳情）</div>
+
+      <div data-screen-label="畫面3 明細 · 桌面" style="width:1280px; height:860px; display:flex; background:#F6F7F9; border:1px solid #E6E8EB; border-radius:14px; overflow:hidden; box-shadow:0 12px 40px rgba(27,31,36,.14); color:#1B1F24;">
+
+        <!-- side nav -->
+        <aside style="width:236px; flex:none; background:#FFFFFF; border-right:1px solid #E6E8EB; display:flex; flex-direction:column; padding:20px 14px;">
+          <div style="display:flex; align-items:center; gap:10px; padding:6px 8px 18px;">
+            <div style="width:34px; height:34px; border-radius:10px; background:{{ brandColor }}; color:#FFFFFF; display:flex; align-items:center; justify-content:center; font-size:16px;"><i class="fa-solid fa-coins"></i></div>
+            <div><div style="font-size:15px; font-weight:700; line-height:1.1;">原子記帳</div><div style="font-size:11px; color:#9AA1AC; letter-spacing:.04em;">AtomCoins</div></div>
+          </div>
+          <button style="display:flex; align-items:center; gap:12px; background:#EEF2FF; border:none; border-radius:10px; padding:11px 14px; color:{{ brandColor }}; font-size:15px; font-weight:600; cursor:pointer; margin-bottom:14px; width:100%;"><i class="fa-solid fa-plus" style="font-size:14px;"></i> 記帳</button>
+          <nav style="display:flex; flex-direction:column; gap:2px;">
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; color:#6C7480; font-size:15px; font-weight:500; cursor:pointer;"><i class="fa-solid fa-house" style="width:18px;"></i> 首頁</div>
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; background:#EEF2FF; color:{{ brandColor }}; font-size:15px; font-weight:600; cursor:pointer;"><i class="fa-solid fa-receipt" style="width:18px;"></i> 明細</div>
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; color:#6C7480; font-size:15px; font-weight:500; cursor:pointer;"><i class="fa-solid fa-chart-pie" style="width:18px;"></i> 報表</div>
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; color:#6C7480; font-size:15px; font-weight:500; cursor:pointer;"><i class="fa-solid fa-gear" style="width:18px;"></i> 設定</div>
+          </nav>
+          <div style="flex:1;"></div>
+          <div style="display:flex; align-items:center; gap:10px; padding:10px 8px; border-top:1px solid #E6E8EB;"><div style="width:32px; height:32px; border-radius:50%; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:13px;"><i class="fa-solid fa-user"></i></div><div style="font-size:13px; color:#6C7480;">本機帳戶</div></div>
+        </aside>
+
+        <!-- main -->
+        <main style="flex:1; min-width:0; display:flex; flex-direction:column;">
+          <header style="padding:18px 28px 0; border-bottom:1px solid #E6E8EB; background:#FFFFFF;">
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+              <div style="font-size:20px; font-weight:600;">明細</div>
+              <div style="display:flex; gap:10px; align-items:center;">
+                <div style="display:flex; align-items:center; height:38px; padding:0 8px; gap:8px; border-radius:9px; border:1px solid #E6E8EB; color:#9AA1AC;"><i class="fa-solid fa-magnifying-glass" style="font-size:13px;"></i><span style="font-size:13px;">搜尋商家、備註、金額…</span></div>
+                <button onClick="{{ toggleHide }}" style="display:flex; align-items:center; gap:7px; height:38px; padding:0 13px; border-radius:9px; background:#FFFFFF; border:1px solid #E6E8EB; color:#6C7480; font-size:13px; cursor:pointer;"><i class="{{ eyeIcon }}"></i> 金額</button>
+              </div>
+            </div>
+            <!-- top tabs -->
+            <div style="display:flex; gap:24px; margin-top:14px;">
+              <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+                <button onClick="{{ t.onClick }}" style="{{ t.deskStyle }}">{{ t.label }}</button>
+              </sc-for>
+            </div>
+          </header>
+
+          <div style="flex:1; min-height:0; display:flex;">
+
+            <!-- LEFT: list -->
+            <div style="width:560px; flex:none; border-right:1px solid #E6E8EB; display:flex; flex-direction:column; min-height:0;">
+
+              <!-- LEDGER list -->
+              <sc-if value="{{ isLedger }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:14px 22px; border-bottom:1px solid #E6E8EB; background:#FFFFFF;">
+                  <div style="display:flex; align-items:center; gap:12px;">
+                    <button style="width:28px; height:28px; border-radius:8px; background:#F1F3F5; border:none; color:#6C7480; font-size:12px; cursor:pointer;"><i class="fa-solid fa-chevron-left"></i></button>
+                    <span style="font-size:15px; font-weight:600;">{{ monthLabel }}</span>
+                    <button style="width:28px; height:28px; border-radius:8px; background:#F1F3F5; border:none; color:#6C7480; font-size:12px; cursor:pointer;"><i class="fa-solid fa-chevron-right"></i></button>
+                  </div>
+                  <div style="display:flex; padding:3px; background:#F1F3F5; border-radius:9px;">
+                    <button onClick="{{ setList }}" style="{{ listToggleStyle }}"><i class="fa-solid fa-list-ul"></i></button>
+                    <button onClick="{{ setCal }}" style="{{ calToggleStyle }}"><i class="fa-solid fa-calendar-days"></i></button>
+                  </div>
+                </div>
+                <div class="npc" style="display:flex; gap:8px; padding:11px 22px; border-bottom:1px solid #E6E8EB; overflow-x:auto; background:#FFFFFF;">
+                  <sc-for list="{{ filters }}" as="f" hint-placeholder-count="6">
+                    <button style="{{ f.style }}"><i class="fa-solid {{ f.icon }}" style="font-size:11px; color:{{ f.iconColor }};"></i> {{ f.label }} <i class="fa-solid fa-chevron-down" style="font-size:8px; opacity:.5;"></i></button>
+                  </sc-for>
+                </div>
+                <div class="npc" style="flex:1; overflow-y:auto; padding:6px 0 16px;">
+                  <sc-for list="{{ days }}" as="d" hint-placeholder-count="4">
+                    <div style="display:flex; align-items:baseline; justify-content:space-between; padding:12px 22px 8px;">
+                      <div style="display:flex; align-items:baseline; gap:8px;">
+                        <span style="font-size:14px; font-weight:600;">{{ d.md }}</span>
+                        <span style="font-size:13px; color:#9AA1AC;">{{ d.wd }}</span>
+                        <sc-if value="{{ d.tagShow }}" hint-placeholder-val="{{ true }}"><span style="font-size:11px; font-weight:600; color:{{ brandColor }}; background:#EEF2FF; border-radius:99px; padding:2px 8px;">{{ d.tag }}</span></sc-if>
+                      </div>
+                      <div style="display:flex; gap:10px; font-size:12px; font-weight:600; font-variant-numeric:tabular-nums;">
+                        <sc-if value="{{ d.inShow }}" hint-placeholder-val="{{ true }}"><span style="color:{{ green }};">{{ d.inStr }}</span></sc-if>
+                        <sc-if value="{{ d.outShow }}" hint-placeholder-val="{{ true }}"><span style="color:{{ red }};">{{ d.outStr }}</span></sc-if>
+                      </div>
+                    </div>
+                    <sc-for list="{{ d.items }}" as="t" hint-placeholder-count="3">
+                      <div onClick="{{ t.onClick }}" style="{{ t.rowStyle }}">
+                        <div style="{{ t.iconWrap }}"><i class="fa-solid {{ t.icon }}"></i></div>
+                        <div style="flex:1; min-width:0;">
+                          <div style="display:flex; align-items:center; gap:7px;">
+                            <span style="font-size:15px; font-weight:500;">{{ t.title }}</span>
+                            <sc-if value="{{ t.badgeShow }}" hint-placeholder-val="{{ true }}"><span style="{{ t.badgeStyle }}">{{ t.badge }}</span></sc-if>
+                          </div>
+                          <sc-if value="{{ t.noteShow }}" hint-placeholder-val="{{ true }}"><div style="font-size:12px; color:#9AA1AC; margin-top:2px;">{{ t.note }}</div></sc-if>
+                        </div>
+                        <sc-if value="{{ t.acctShow }}" hint-placeholder-val="{{ true }}"><span style="flex:none; font-size:12px; color:#6C7480; background:#F1F3F5; border-radius:6px; padding:3px 8px; margin-right:12px;">{{ t.acct }}</span></sc-if>
+                        <div style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums; white-space:nowrap; color:{{ t.amountColor }};">{{ t.amountStr }}</div>
+                      </div>
+                    </sc-for>
+                  </sc-for>
+                </div>
+              </sc-if>
+
+              <!-- STOCK list -->
+              <sc-if value="{{ isStock }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex; gap:24px; padding:14px 22px 0; border-bottom:1px solid #E6E8EB; background:#FFFFFF;">
+                  <sc-for list="{{ stockTabs }}" as="s" hint-placeholder-count="3">
+                    <button onClick="{{ s.onClick }}" style="{{ s.style }}">{{ s.label }}</button>
+                  </sc-for>
+                </div>
+                <div class="npc" style="flex:1; overflow-y:auto; padding:14px 22px 16px;">
+                  <sc-if value="{{ stkHoldings }}" hint-placeholder-val="{{ true }}">
+                    <sc-for list="{{ holdings }}" as="g" hint-placeholder-count="2">
+                      <div style="font-size:13px; font-weight:600; color:#6C7480; padding:6px 2px 8px;"><i class="fa-solid fa-building-columns" style="font-size:11px; margin-right:6px; color:#9AA1AC;"></i>{{ g.broker }}</div>
+                      <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:14px; overflow:hidden; margin-bottom:14px;">
+                        <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="2">
+                          <div onClick="{{ r.onClick }}" style="{{ r.rowStyle }}">
+                            <div style="flex:1; min-width:0;">
+                              <div style="display:flex; align-items:baseline; gap:7px;"><span style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">{{ r.code }}</span><span style="font-size:13px; color:#6C7480;">{{ r.name }}</span></div>
+                              <div style="font-size:12px; color:#9AA1AC; margin-top:3px; font-variant-numeric:tabular-nums;">{{ r.shares }} 股 · 均價 {{ r.cost }} · 現 {{ r.price }}</div>
+                            </div>
+                            <div style="text-align:right;">
+                              <div style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">{{ r.value }}</div>
+                              <div style="font-size:12px; font-weight:600; margin-top:3px; font-variant-numeric:tabular-nums; color:{{ r.plColor }};">{{ r.pl }} · {{ r.ret }}</div>
+                            </div>
+                          </div>
+                        </sc-for>
+                      </div>
+                    </sc-for>
+                  </sc-if>
+                  <sc-if value="{{ stkTrades }}" hint-placeholder-val="{{ false }}">
+                    <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:14px; padding:2px 16px;">
+                      <sc-for list="{{ trades }}" as="t" hint-placeholder-count="4">
+                        <sc-if value="{{ t.divider }}" hint-placeholder-val="{{ true }}"><div style="height:1px; background:#F1F3F5;"></div></sc-if>
+                        <div style="display:flex; align-items:center; gap:12px; padding:13px 0;">
+                          <span style="{{ t.tagStyle }}">{{ t.side }}</span>
+                          <div style="flex:1; min-width:0;"><div style="font-size:15px; font-weight:500;">{{ t.code }} {{ t.name }}</div><div style="font-size:12px; color:#9AA1AC; margin-top:3px; font-variant-numeric:tabular-nums;">{{ t.date }} · {{ t.shares }} 股 @ {{ t.price }}</div></div>
+                          <div style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">{{ t.amount }}</div>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ stkRealized }}" hint-placeholder-val="{{ false }}">
+                    <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:14px; padding:2px 16px;">
+                      <sc-for list="{{ realized }}" as="t" hint-placeholder-count="3">
+                        <sc-if value="{{ t.divider }}" hint-placeholder-val="{{ true }}"><div style="height:1px; background:#F1F3F5;"></div></sc-if>
+                        <div style="display:flex; align-items:center; gap:12px; padding:13px 0;">
+                          <div style="flex:1; min-width:0;"><div style="font-size:15px; font-weight:500;">{{ t.code }} {{ t.name }}</div><div style="font-size:12px; color:#9AA1AC; margin-top:3px;">{{ t.date }} · 持有 {{ t.held }}</div></div>
+                          <div style="text-align:right;"><div style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums; color:{{ t.plColor }};">{{ t.pl }}</div><div style="font-size:12px; font-weight:600; margin-top:3px; font-variant-numeric:tabular-nums; color:{{ t.plColor }};">{{ t.ret }}</div></div>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-if>
+
+              <!-- INVOICE list -->
+              <sc-if value="{{ isInvoice }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex; align-items:center; gap:12px; padding:14px 22px; border-bottom:1px solid #E6E8EB; background:#FFFFFF;">
+                  <button style="display:flex; align-items:center; gap:8px; height:40px; padding:0 16px; border-radius:10px; background:{{ brandColor }}; border:none; color:#FFFFFF; font-size:14px; font-weight:600; cursor:pointer;"><i class="fa-solid fa-cloud-arrow-down"></i> 從財政部載具匯入</button>
+                  <span style="font-size:12px; color:#9AA1AC;">上次同步 6/23 09:12</span>
+                  <div style="flex:1;"></div>
+                </div>
+                <div style="display:flex; gap:24px; padding:0 22px; border-bottom:1px solid #E6E8EB; background:#FFFFFF;">
+                  <sc-for list="{{ invoiceTabs }}" as="i" hint-placeholder-count="3">
+                    <button onClick="{{ i.onClick }}" style="{{ i.style }}">{{ i.label }} <span style="{{ i.countStyle }}">{{ i.count }}</span></button>
+                  </sc-for>
+                </div>
+                <div class="npc" style="flex:1; overflow-y:auto; padding:14px 22px 16px;">
+                  <sc-for list="{{ invoices }}" as="v" hint-placeholder-count="4">
+                    <div onClick="{{ v.onClick }}" style="{{ v.deskRowStyle }}">
+                      <div style="width:42px; height:42px; flex:none; border-radius:11px; background:#F1F3F5; color:#6C7480; display:flex; align-items:center; justify-content:center; font-size:16px;"><i class="fa-solid fa-receipt"></i></div>
+                      <div style="flex:1; min-width:0;">
+                        <div style="font-size:15px; font-weight:600;">{{ v.merchant }}</div>
+                        <div style="display:flex; align-items:center; gap:8px; margin-top:4px;"><span style="font-size:12px; color:#9AA1AC; font-variant-numeric:tabular-nums;">{{ v.date }}</span><span style="font-size:12px; color:#C2C7CE; font-variant-numeric:tabular-nums;">{{ v.num }}</span></div>
+                      </div>
+                      <div style="font-size:15px; font-weight:700; font-variant-numeric:tabular-nums;">{{ v.amount }}</div>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+
+            </div>
+
+            <!-- RIGHT: detail -->
+            <div class="npc" style="flex:1; min-width:0; overflow-y:auto; padding:26px; background:#F6F7F9;">
+              <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:18px; box-shadow:0 1px 2px rgba(27,31,36,.04); overflow:hidden;">
+                <!-- detail header -->
+                <div style="padding:22px 24px; border-bottom:1px solid #F1F3F5; display:flex; align-items:center; gap:14px;">
+                  <div style="{{ detail.iconWrap }}"><i class="fa-solid {{ detail.icon }}"></i></div>
+                  <div style="flex:1; min-width:0;">
+                    <div style="display:flex; align-items:center; gap:8px;"><span style="font-size:17px; font-weight:600;">{{ detail.title }}</span><sc-if value="{{ detail.badgeShow }}" hint-placeholder-val="{{ true }}"><span style="{{ detail.badgeStyle }}">{{ detail.badge }}</span></sc-if></div>
+                    <div style="font-size:13px; color:#9AA1AC; margin-top:3px;">{{ detail.subtitle }}</div>
+                  </div>
+                  <div style="font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; color:{{ detail.amountColor }};">{{ detail.amount }}</div>
+                </div>
+                <!-- detail fields -->
+                <div style="padding:6px 24px;">
+                  <sc-for list="{{ detail.fields }}" as="f" hint-placeholder-count="5">
+                    <div style="display:flex; align-items:center; justify-content:space-between; padding:13px 0; border-bottom:1px solid #F4F5F7;">
+                      <span style="font-size:14px; color:#6C7480;">{{ f.k }}</span>
+                      <span style="font-size:14px; font-weight:600; font-variant-numeric:tabular-nums; color:{{ f.color }};">{{ f.v }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+                <!-- detail extra block (split breakdown / prize / lots) -->
+                <sc-if value="{{ detail.extraShow }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin:6px 24px 22px; background:#F6F7F9; border:1px solid #E6E8EB; border-radius:12px; padding:6px 16px;">
+                    <sc-for list="{{ detail.extra }}" as="e" hint-placeholder-count="3">
+                      <div style="display:flex; align-items:center; justify-content:space-between; padding:11px 0; border-bottom:1px solid #ECEEF0;">
+                        <span style="font-size:13px; color:#1B1F24;">{{ e.k }}</span>
+                        <span style="font-size:13px; font-weight:600; font-variant-numeric:tabular-nums; color:{{ e.color }};">{{ e.v }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <!-- detail actions -->
+                <div style="padding:0 24px 22px; display:flex; gap:10px;">
+                  <sc-for list="{{ detail.actions }}" as="a" hint-placeholder-count="2">
+                    <button style="{{ a.style }}"><i class="fa-solid {{ a.icon }}" style="font-size:13px;"></i> {{ a.label }}</button>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </main>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;auto&quot;},&quot;colorblind&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;brand&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#3B5BDB&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = { tab:'ledger', view:'list', stockTab:'holdings', invoiceTab:'unbooked', hidden:false,
+            selLedger:'l0', selHolding:'h0', selInvoice:'v0' };
+
+  // ---------- LEDGER DATA ----------
+  ledger = [
+    { date:'6/23', wd:'週二', tag:'今天', items:[
+      { id:'l0', type:'expense', icon:'fa-utensils', title:'午餐', note:'自助餐', acct:'現金錢包', amt:120 },
+      { id:'l1', type:'split', icon:'fa-people-group', title:'部門聚餐', note:'你的份額 · 共 NT$1,350 / 3 人', acct:'玉山 Unicard', amt:450 },
+      { id:'l2', type:'transfer', icon:'fa-right-left', title:'轉帳', fromTo:'現金錢包 → 台新 Richart', amt:5000 },
+    ]},
+    { date:'6/22', wd:'週一', items:[
+      { id:'l3', type:'expense', icon:'fa-bag-shopping', title:'日用品', note:'全聯福利中心', acct:'玉山 Unicard', amt:432 },
+      { id:'l4', type:'receivable', icon:'fa-hand-holding-dollar', title:'借款 · 阿哲', note:'代訂機票', acct:'玉山 Unicard', amt:600, settled:false },
+      { id:'l5', type:'expense', icon:'fa-utensils', title:'早餐', note:'美而美', acct:'現金錢包', amt:55 },
+    ]},
+    { date:'6/21', wd:'週日', items:[
+      { id:'l6', type:'income', icon:'fa-chart-line', title:'股利', note:'0056 元大高股息', acct:'永豐金證券', amt:1840 },
+      { id:'l7', type:'expense', icon:'fa-clapperboard', title:'電影', note:'信義威秀', acct:'玉山 Unicard', amt:640 },
+    ]},
+    { date:'6/20', wd:'週六', items:[
+      { id:'l8', type:'payable', icon:'fa-file-invoice-dollar', title:'代墊房租', note:'室友 · 小宇', acct:'台新 Richart', amt:8000, settled:true },
+      { id:'l9', type:'expense', icon:'fa-gas-pump', title:'加油', note:'中油', acct:'玉山 Unicard', amt:1000 },
+    ]},
+  ];
+
+  // day-net map for calendar (date number -> {in,out})
+  calData = { 23:{out:5570,in:0}, 22:{out:487,in:600}, 21:{out:640,in:1840}, 20:{out:9000,in:0}, 18:{out:1280,in:0}, 15:{out:899,in:52000}, 10:{out:2400,in:0}, 5:{out:760,in:0} };
+
+  // ---------- STOCK DATA ----------
+  holdingsData = [
+    { broker:'永豐金證券', rows:[
+      { id:'h0', code:'2330', name:'台積電', shares:1000, price:985, cost:642, value:985000, pl:343000, ret:53.4 },
+      { id:'h1', code:'0056', name:'元大高股息', shares:5000, price:36.8, cost:35.2, value:184000, pl:8000, ret:4.5 },
+    ]},
+    { broker:'玉山證券', rows:[
+      { id:'h2', code:'2454', name:'聯發科', shares:100, price:1150, cost:1200, value:115000, pl:-5000, ret:-4.2 },
+      { id:'h3', code:'00878', name:'國泰永續高股息', shares:1000, price:22.4, cost:21.5, value:22400, pl:900, ret:4.2 },
+    ]},
+  ];
+  tradesData = [
+    { id:'t0', side:'買', code:'2330', name:'台積電', date:'6/20', shares:1000, price:642, amt:642915 },
+    { id:'t1', side:'買', code:'00878', name:'國泰永續高股息', date:'6/12', shares:1000, price:21.5, amt:21520 },
+    { id:'t2', side:'賣', code:'2603', name:'長榮', date:'6/05', shares:1000, price:205, amt:204410 },
+    { id:'t3', side:'買', code:'0056', name:'元大高股息', date:'5/28', shares:2000, price:35.1, amt:70215 },
+  ];
+  realizedData = [
+    { id:'r0', code:'2603', name:'長榮', date:'6/05', held:'92 天', pl:38200, ret:22.9 },
+    { id:'r1', code:'2317', name:'鴻海', date:'4/18', held:'45 天', pl:-4600, ret:-3.1 },
+    { id:'r2', code:'2412', name:'中華電', date:'3/02', held:'310 天', pl:6800, ret:5.8 },
+  ];
+
+  // ---------- INVOICE DATA ----------
+  invoiceData = {
+    unbooked:[
+      { id:'v0', merchant:'7-ELEVEN 信義門市', date:'6/23', amt:128, num:'AB-12345678', sellerId:'12345678', suggest:'餐飲 · 點心' },
+      { id:'v1', merchant:'全聯福利中心', date:'6/22', amt:432, num:'XY-87654321', sellerId:'22555003', suggest:'購物 · 日用品' },
+      { id:'v2', merchant:'五十嵐', date:'6/23', amt:65, num:'CD-24681357', sellerId:'53312300', suggest:'餐飲 · 飲料' },
+      { id:'v3', merchant:'中油 自助加油', date:'6/20', amt:1000, num:'EF-11223344', sellerId:'03682301', suggest:'交通 · 加油' },
+    ],
+    booked:[
+      { id:'v4', merchant:'家樂福', date:'6/18', amt:1280, num:'GH-55667788', sellerId:'97179430', suggest:'購物 · 日用品' },
+      { id:'v5', merchant:'星巴克', date:'6/16', amt:185, num:'IJ-99001122', sellerId:'27640904', suggest:'餐飲 · 飲料' },
+    ],
+  };
+
+  fmt(n){ return Number(n).toLocaleString('en-US'); }
+  nt(n){ return 'NT$ ' + this.fmt(Math.abs(n)); }
+
+  renderVals(){
+    const cb = this.props.colorblind ?? false;
+    const brand = this.props.brand ?? '#3B5BDB';
+    const RED = cb ? '#E8590C' : '#E03131';
+    const GREEN = cb ? '#1971C2' : '#2F9E44';
+    const hidden = this.state.hidden;
+    const h = (s) => hidden ? '••••' : s;
+    const tab = this.state.tab;
+    const fmt = (n)=>this.fmt(n);
+
+    // ---- top tabs ----
+    const tabDefs = [['ledger','帳本'],['stock','股票'],['invoice','發票載具']];
+    const tabs = tabDefs.map(([id,label])=>{
+      const active = id===tab;
+      return { id, label,
+        onClick:()=>this.setState({tab:id}),
+        segStyle:`flex:1; height:38px; border-radius:9px; border:none; font-size:14px; font-weight:600; cursor:pointer; background:${active?'#FFFFFF':'transparent'}; color:${active?'#1B1F24':'#6C7480'}; box-shadow:${active?'0 1px 3px rgba(27,31,36,.12)':'none'};`,
+        deskStyle:`background:none; border:none; padding:0 0 14px; font-size:15px; font-weight:600; cursor:pointer; color:${active?brand:'#9AA1AC'}; border-bottom:2px solid ${active?brand:'transparent'};`,
+      };
+    });
+
+    // ---- LEDGER ----
+    const badgeFor = (t)=>{
+      if(t.type==='split') return {show:true, label:'拆帳', style:`font-size:11px; font-weight:600; color:${brand}; background:#EEF2FF; border-radius:6px; padding:2px 7px;`};
+      if(t.type==='receivable') return {show:true, label:t.settled?'已結清':'未結清', style:`font-size:11px; font-weight:600; color:${t.settled?GREEN:'#F08C00'}; background:${t.settled?'#EBFBEE':'#FFF4E6'}; border-radius:6px; padding:2px 7px;`};
+      if(t.type==='payable') return {show:true, label:t.settled?'已結清':'未結清', style:`font-size:11px; font-weight:600; color:${t.settled?GREEN:'#F08C00'}; background:${t.settled?'#EBFBEE':'#FFF4E6'}; border-radius:6px; padding:2px 7px;`};
+      return {show:false,label:'',style:''};
+    };
+    const rowMeta = (t)=>{
+      let color='#1B1F24', amountStr='', acct=t.acct||'', title=t.title, note=t.note||'';
+      if(t.type==='expense'||t.type==='split'){ color=RED; amountStr=hidden?'••••':'−'+this.nt(t.amt); }
+      else if(t.type==='income'){ color=GREEN; amountStr=hidden?'••••':'+'+this.nt(t.amt); }
+      else if(t.type==='receivable'){ color=GREEN; amountStr=hidden?'••••':'+'+this.nt(t.amt); }
+      else if(t.type==='payable'){ color=RED; amountStr=hidden?'••••':'−'+this.nt(t.amt); }
+      else if(t.type==='transfer'){ color='#6C7480'; amountStr=hidden?'••••':this.nt(t.amt); note=t.fromTo; acct=''; }
+      const b = badgeFor(t);
+      const iconBg = t.type==='transfer'?'#F1F3F5':'#F1F3F5';
+      return { id:t.id, icon:t.icon, title, note, noteShow:!!note, acct, acctShow:!!acct,
+        badge:b.label, badgeShow:b.show, badgeStyle:b.style, amountStr, amountColor:color,
+        iconWrap:`width:40px; height:40px; flex:none; border-radius:11px; background:${iconBg}; color:#6C7480; display:flex; align-items:center; justify-content:center; font-size:16px;`,
+        onClick:()=>this.setState({selLedger:t.id}),
+      };
+    };
+    let totIn=0, totOut=0;
+    const days = this.ledger.map(d=>{
+      let din=0, dout=0;
+      const items = d.items.map((t,i)=>{
+        if(t.type==='income'||t.type==='receivable') din+=t.amt;
+        if(t.type==='expense'||t.type==='split'||t.type==='payable') dout+=t.amt;
+        const m = rowMeta(t);
+        const sel = t.id===this.state.selLedger;
+        m.divider = i>0;
+        m.rowStyle = `display:flex; align-items:center; gap:14px; padding:13px 22px; cursor:pointer; border-left:3px solid ${sel?brand:'transparent'}; background:${sel?'#F6F8FF':'transparent'};`;
+        return m;
+      });
+      totIn+=din; totOut+=dout;
+      return { md:d.date, wd:d.wd, tag:d.tag||'', tagShow:!!d.tag,
+        inStr:hidden?'••':'+'+this.nt(din), inShow:din>0, outStr:hidden?'••':'−'+this.nt(dout), outShow:dout>0,
+        items };
+    });
+
+    const filterDefs = [['帳戶','fa-wallet',true],['類別','fa-tag',false],['標籤','fa-hashtag',false],['專案','fa-folder',false],['對象','fa-user',false],['類型','fa-layer-group',false]];
+    const filters = filterDefs.map(([label,icon,active])=>({
+      label, icon, iconColor: active?brand:'#9AA1AC',
+      style:`flex:none; display:flex; align-items:center; gap:6px; height:32px; padding:0 12px; border-radius:99px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap; border:1px solid ${active?brand:'#E6E8EB'}; background:${active?'#EEF2FF':'#FFFFFF'}; color:${active?brand:'#6C7480'};`
+    }));
+
+    // calendar cells (June 2026)
+    const first = new Date(2026,5,1).getDay(); // 0 Sun
+    const dim = 30;
+    const calCells = [];
+    for(let i=0;i<first;i++) calCells.push({show:false, style:'min-height:52px;'});
+    for(let dnum=1; dnum<=dim; dnum++){
+      const data = this.calData[dnum];
+      const isToday = dnum===23;
+      calCells.push({
+        show:true, day:dnum,
+        numColor: isToday?brand:'#1B1F24',
+        outShow: !!(data&&data.out&&!hidden), out: data?('−'+fmt(data.out)):'',
+        inShow: !!(data&&data.in&&!hidden), in: data?('+'+fmt(data.in)):'',
+        style:`min-height:52px; border-radius:9px; padding:5px 3px; display:flex; flex-direction:column; align-items:center; gap:1px; background:${isToday?'#EEF2FF':(data?'#FFFFFF':'transparent')}; border:1px solid ${isToday?brand:(data?'#E6E8EB':'transparent')};`
+      });
+    }
+
+    // ---- STOCK ----
+    const stockTab = this.state.stockTab;
+    const stockTabDefs = [['holdings','持股'],['trades','交易紀錄'],['realized','已實現損益']];
+    const stockTabs = stockTabDefs.map(([id,label])=>{
+      const active=id===stockTab;
+      return { id,label, onClick:()=>this.setState({stockTab:id}),
+        style:`background:none; border:none; padding:10px 0; font-size:14px; font-weight:600; cursor:pointer; color:${active?brand:'#9AA1AC'}; border-bottom:2px solid ${active?brand:'transparent'};` };
+    });
+    const plColor = (v)=> v>0?GREEN : v<0?RED : '#6C7480';
+    const signNum = (v)=> (v>0?'+':v<0?'−':'') ;
+    const holdings = this.holdingsData.map(g=>{
+      let gv=0; g.rows.forEach(r=>gv+=r.value);
+      return { broker:g.broker, value:h(this.nt(gv)),
+        rows:g.rows.map((r,i)=>{
+          const sel = r.id===this.state.selHolding;
+          return { code:r.code, name:r.name, shares:fmt(r.shares), price:r.price.toLocaleString('en-US',{minimumFractionDigits: (r.price%1?1:0)}), cost:r.cost,
+            value:h(this.nt(r.value)), pl:hidden?'••••':(signNum(r.pl)+this.nt(r.pl)), ret:hidden?'':(signNum(r.ret)+Math.abs(r.ret).toFixed(1)+'%'),
+            plColor:plColor(r.pl), divider:i>0,
+            onClick:()=>this.setState({selHolding:r.id}),
+            rowStyle:`display:flex; align-items:center; gap:12px; padding:13px 16px; cursor:pointer; border-bottom:1px solid #F1F3F5; border-left:3px solid ${sel?brand:'transparent'}; background:${sel?'#F6F8FF':'transparent'};`,
+          };
+        })
+      };
+    });
+    const trades = this.tradesData.map((t,i)=>({
+      side:t.side, code:t.code, name:t.name, date:t.date, shares:fmt(t.shares), price:t.price.toLocaleString('en-US',{minimumFractionDigits:(t.price%1?1:0)}),
+      amount:h(this.nt(t.amt)), divider:i>0,
+      tagStyle:`width:30px; height:30px; flex:none; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; color:#FFFFFF; background:${t.side==='買'?RED:GREEN};`
+    }));
+    const realized = this.realizedData.map((t,i)=>({
+      code:t.code, name:t.name, date:t.date, held:t.held,
+      pl:hidden?'••••':(signNum(t.pl)+this.nt(t.pl)), ret:hidden?'':(signNum(t.ret)+Math.abs(t.ret).toFixed(1)+'%'),
+      plColor:plColor(t.pl), divider:i>0,
+    }));
+
+    const stk = { totalValue:h(this.nt(1306400)), totalCost:h(this.nt(1180000)),
+      unrealStr:hidden?'••••':'+'+this.nt(126400), retStr:hidden?'':'+10.7%', todayStr:hidden?'••':'+'+this.nt(12300) };
+
+    // ---- INVOICE ----
+    const invoiceTab = this.state.invoiceTab;
+    const invTabDefs = [['unbooked','未歸帳'],['booked','已歸帳']];
+    const invCounts = { unbooked:this.invoiceData.unbooked.length, booked:this.invoiceData.booked.length };
+    const invoiceTabs = invTabDefs.map(([id,label])=>{
+      const active=id===invoiceTab;
+      return { id,label, count:invCounts[id], onClick:()=>this.setState({invoiceTab:id}),
+        style:`background:none; border:none; padding:13px 0; font-size:14px; font-weight:600; cursor:pointer; color:${active?brand:'#9AA1AC'}; border-bottom:2px solid ${active?brand:'transparent'}; display:flex; align-items:center; gap:7px;`,
+        countStyle:`font-size:11px; font-weight:700; min-width:18px; height:18px; padding:0 5px; border-radius:99px; display:inline-flex; align-items:center; justify-content:center; color:${active?'#FFFFFF':'#6C7480'}; background:${active?brand:'#F1F3F5'};`
+      };
+    });
+    const invoices = this.invoiceData[invoiceTab].map(v=>{
+      const sel = v.id===this.state.selInvoice;
+      return { id:v.id, merchant:v.merchant, date:v.date, num:v.num, amount:h(this.nt(v.amt)),
+        onClick:()=>this.setState({selInvoice:v.id}),
+        frontStyle:`position:relative; display:flex; align-items:center; gap:12px; padding:14px; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:14px; cursor:pointer; transform:translateX(${v.id==='v1'&&invoiceTab==='unbooked'?'-148px':'0'}); transition:transform .2s; box-shadow:0 1px 2px rgba(27,31,36,.04);`,
+        deskRowStyle:`display:flex; align-items:center; gap:12px; padding:14px; margin-bottom:10px; background:#FFFFFF; border:1px solid ${sel?brand:'#E6E8EB'}; border-radius:14px; cursor:pointer; box-shadow:${sel?'0 2px 8px rgba(59,91,219,.14)':'0 1px 2px rgba(27,31,36,.04)'};`,
+      };
+    });
+
+    // ---- DESKTOP DETAIL ----
+    let detail;
+    const grayIcon = `width:48px; height:48px; flex:none; border-radius:13px; background:#F1F3F5; color:#6C7480; display:flex; align-items:center; justify-content:center; font-size:19px;`;
+    if(tab==='ledger'){
+      let found=null, day=null;
+      this.ledger.forEach(d=>d.items.forEach(t=>{ if(t.id===this.state.selLedger){found=t; day=d;} }));
+      const t = found || this.ledger[0].items[0];
+      day = day || this.ledger[0];
+      const b = badgeFor(t);
+      let color='#1B1F24', amt='', kind='支出';
+      if(t.type==='expense'||t.type==='split'){ color=RED; amt='−'+this.nt(t.amt); kind=t.type==='split'?'支出 · 拆帳':'支出'; }
+      else if(t.type==='income'){ color=GREEN; amt='+'+this.nt(t.amt); kind='收入'; }
+      else if(t.type==='receivable'){ color=GREEN; amt='+'+this.nt(t.amt); kind='應收'; }
+      else if(t.type==='payable'){ color=RED; amt='−'+this.nt(t.amt); kind='應付'; }
+      else if(t.type==='transfer'){ color='#6C7480'; amt=this.nt(t.amt); kind='轉帳'; }
+      const fields = [
+        {k:'類型', v:kind, color:'#1B1F24'},
+        {k:'日期', v:'2026/'+day.date+'（'+day.wd+'）', color:'#1B1F24'},
+      ];
+      if(t.type==='transfer'){ fields.push({k:'轉出 → 轉入', v:t.fromTo, color:'#1B1F24'}); fields.push({k:'手續費', v:'NT$ 0', color:'#1B1F24'}); }
+      else { fields.push({k:'帳戶', v:t.acct||'—', color:'#1B1F24'}); }
+      if(t.note) fields.push({k:'備註', v:t.note, color:'#6C7480'});
+      if(t.type==='receivable'||t.type==='payable') fields.push({k:'結清狀態', v:t.settled?'已結清':'未結清', color:t.settled?GREEN:'#F08C00'});
+      let extra=[], extraShow=false;
+      if(t.type==='split'){ extraShow=true; extra=[
+        {k:'總金額', v:this.nt(1350), color:'#1B1F24'},
+        {k:'你的份額', v:this.nt(450)+'（1/3）', color:RED},
+        {k:'阿哲 應付你', v:this.nt(450), color:'#6C7480'},
+        {k:'小宇 應付你', v:this.nt(450), color:'#6C7480'},
+      ]; }
+      detail = { iconWrap:grayIcon, icon:t.icon, title:t.title, badge:b.label, badgeShow:b.show, badgeStyle:b.style,
+        subtitle: kind+(t.acct?(' · '+t.acct):''), amount: hidden?'••••••':amt, amountColor:color, fields,
+        extra, extraShow, actions:[
+          {label:'編輯', icon:'fa-pen', style:`flex:1; display:flex; align-items:center; justify-content:center; gap:8px; height:46px; border-radius:11px; border:1px solid #E6E8EB; background:#FFFFFF; color:#1B1F24; font-size:14px; font-weight:600; cursor:pointer;`},
+          {label:'刪除', icon:'fa-trash', style:`flex:1; display:flex; align-items:center; justify-content:center; gap:8px; height:46px; border-radius:11px; border:1px solid #FFE3E3; background:#FFF5F5; color:${RED}; font-size:14px; font-weight:600; cursor:pointer;`},
+        ]};
+    } else if(tab==='stock'){
+      let r=null, br=null;
+      this.holdingsData.forEach(g=>g.rows.forEach(x=>{ if(x.id===this.state.selHolding){r=x; br=g.broker;} }));
+      r = r || this.holdingsData[0].rows[0]; br = br || this.holdingsData[0].broker;
+      detail = { iconWrap:`width:48px; height:48px; flex:none; border-radius:13px; background:#EEF2FF; color:${brand}; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:700;`, icon:'fa-chart-line',
+        title:r.code+' '+r.name, badge:br, badgeShow:true, badgeStyle:`font-size:11px; font-weight:600; color:#6C7480; background:#F1F3F5; border-radius:6px; padding:2px 8px;`,
+        subtitle:'持有 '+fmt(r.shares)+' 股', amount: hidden?'••••••':this.nt(r.value), amountColor:'#1B1F24',
+        fields:[
+          {k:'現價', v:r.price.toLocaleString('en-US',{minimumFractionDigits:(r.price%1?2:0)}), color:'#1B1F24'},
+          {k:'平均成本', v:r.cost.toLocaleString('en-US',{minimumFractionDigits:(r.cost%1?2:0)}), color:'#1B1F24'},
+          {k:'總成本', v:hidden?'••••':this.nt(r.cost*r.shares), color:'#1B1F24'},
+          {k:'未實現損益', v:hidden?'••••':(signNum(r.pl)+this.nt(r.pl)), color:plColor(r.pl)},
+          {k:'報酬率', v:hidden?'••':(signNum(r.ret)+Math.abs(r.ret).toFixed(1)+'%'), color:plColor(r.ret)},
+          {k:'佔投組比重', v:Math.round(r.value/1306400*100)+'%', color:'#6C7480'},
+        ], extra:[], extraShow:false, actions:[
+          {label:'買進', icon:'fa-plus', style:`flex:1; display:flex; align-items:center; justify-content:center; gap:8px; height:46px; border-radius:11px; border:none; background:${RED}; color:#FFFFFF; font-size:14px; font-weight:600; cursor:pointer;`},
+          {label:'賣出', icon:'fa-minus', style:`flex:1; display:flex; align-items:center; justify-content:center; gap:8px; height:46px; border-radius:11px; border:none; background:${GREEN}; color:#FFFFFF; font-size:14px; font-weight:600; cursor:pointer;`},
+        ]};
+    } else {
+      let v=null;
+      Object.values(this.invoiceData).forEach(arr=>arr.forEach(x=>{ if(x.id===this.state.selInvoice) v=x; }));
+      v = v || this.invoiceData.unbooked[0];
+      const isBooked = this.invoiceData.booked.some(x=>x.id===v.id);
+      const statusLabel = isBooked ? '已歸帳' : '未歸帳';
+      detail = { iconWrap:grayIcon, icon:'fa-receipt', title:v.merchant, badge:statusLabel, badgeShow:true,
+        badgeStyle:`font-size:11px; font-weight:600; color:${isBooked?GREEN:'#F08C00'}; background:${isBooked?'#EBFBEE':'#FFF4E6'}; border-radius:6px; padding:2px 8px;`,
+        subtitle:'電子發票 · 財政部載具', amount: hidden?'••••••':this.nt(v.amt), amountColor:'#1B1F24',
+        fields:[
+          {k:'發票號碼', v:v.num, color:'#1B1F24'},
+          {k:'開立日期', v:'2026/'+v.date, color:'#1B1F24'},
+          {k:'賣方統編', v:v.sellerId, color:'#6C7480'},
+          {k:'載具', v:'手機條碼 /ABC1234', color:'#6C7480'},
+          {k:'建議類別', v:v.suggest, color:brand},
+        ],
+        extra:[
+          {k:'商品 · 飲料 x2', v:this.nt(Math.round(v.amt*0.5)), color:'#1B1F24'},
+          {k:'商品 · 零食', v:this.nt(Math.round(v.amt*0.3)), color:'#1B1F24'},
+          {k:'商品 · 其他', v:this.nt(v.amt-Math.round(v.amt*0.5)-Math.round(v.amt*0.3)), color:'#1B1F24'},
+        ], extraShow:true,
+        actions: isBooked ? [
+          {label:'取消歸帳', icon:'fa-folder-minus', style:`flex:1; display:flex; align-items:center; justify-content:center; gap:8px; height:46px; border-radius:11px; border:1px solid #E6E8EB; background:#FFFFFF; color:#6C7480; font-size:14px; font-weight:600; cursor:pointer;`},
+          {label:'查看帳目', icon:'fa-receipt', style:`flex:1; display:flex; align-items:center; justify-content:center; gap:8px; height:46px; border-radius:11px; border:1px solid #E6E8EB; background:#FFFFFF; color:#1B1F24; font-size:14px; font-weight:600; cursor:pointer;`},
+        ] : [
+          {label:'歸帳', icon:'fa-folder-plus', style:`flex:2; display:flex; align-items:center; justify-content:center; gap:8px; height:46px; border-radius:11px; border:none; background:${brand}; color:#FFFFFF; font-size:14px; font-weight:600; cursor:pointer;`},
+          {label:'略過', icon:'fa-forward', style:`flex:1; display:flex; align-items:center; justify-content:center; gap:8px; height:46px; border-radius:11px; border:1px solid #E6E8EB; background:#FFFFFF; color:#6C7480; font-size:14px; font-weight:600; cursor:pointer;`},
+        ]};
+    }
+
+    return {
+      brandColor:brand, green:GREEN, red:RED,
+      tabs, isLedger:tab==='ledger', isStock:tab==='stock', isInvoice:tab==='invoice',
+      hidden, eyeIcon: hidden?'fa-solid fa-eye-slash':'fa-solid fa-eye',
+      toggleHide:()=>this.setState(s=>({hidden:!s.hidden})),
+      monthLabel:'2026 年 6 月',
+      income:h(this.nt(totIn)), expense:h(this.nt(totOut)), balance:h('+'+this.nt(totIn-totOut)),
+      days, filters,
+      isListView:this.state.view==='list', isCalView:this.state.view==='calendar',
+      setList:()=>this.setState({view:'list'}), setCal:()=>this.setState({view:'calendar'}),
+      listToggleStyle:`width:30px; height:28px; border-radius:7px; border:none; cursor:pointer; font-size:13px; background:${this.state.view==='list'?'#FFFFFF':'transparent'}; color:${this.state.view==='list'?brand:'#9AA1AC'}; box-shadow:${this.state.view==='list'?'0 1px 2px rgba(27,31,36,.1)':'none'};`,
+      calToggleStyle:`width:30px; height:28px; border-radius:7px; border:none; cursor:pointer; font-size:13px; background:${this.state.view==='calendar'?'#FFFFFF':'transparent'}; color:${this.state.view==='calendar'?brand:'#9AA1AC'}; box-shadow:${this.state.view==='calendar'?'0 1px 2px rgba(27,31,36,.1)':'none'};`,
+      dow:['日','一','二','三','四','五','六'], calCells,
+      stockTabs, stk, holdings, trades, realized,
+      stkHoldings:stockTab==='holdings', stkTrades:stockTab==='trades', stkRealized:stockTab==='realized',
+      invoiceTabs, invoices,
+      inv:{ unbooked: invCounts.unbooked + ' 張', booked: invCounts.booked + ' 張', total: h(this.nt(3090)) },
+      detail,
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .npc::-webkit-scrollbar { height:0; width:0; }
+</style>
+</helmet>
+
+<div style="width:max-content; min-width:100%; min-height:100vh; box-sizing:border-box; padding:48px; background:#e7e5df; font-family:'Noto Sans TC',sans-serif;">
+  <div style="display:flex; gap:64px; align-items:flex-start;">
+
+    <!-- ===================== MOBILE FRAME ===================== -->
+    <div style="flex:none; display:flex; flex-direction:column; gap:14px;">
+      <div style="font-size:12px; font-weight:600; letter-spacing:.06em; color:#6C7480; text-transform:uppercase;">畫面 4 · 報表 Reports — 手機版</div>
+
+      <div data-screen-label="畫面4 報表 · 手機" style="position:relative; width:390px; height:844px; display:flex; flex-direction:column; background:#F6F7F9; border-radius:28px; overflow:hidden; border:1px solid #E6E8EB; box-shadow:0 12px 40px rgba(27,31,36,.14); color:#1B1F24;">
+
+        <!-- header -->
+        <div style="background:#FFFFFF; flex:none; padding:16px 16px 0;">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div style="font-size:20px; font-weight:600;">報表</div>
+            <div style="display:flex; gap:8px;">
+              <button style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; border:none; color:#6C7480; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center;"><i class="fa-solid fa-arrow-up-from-bracket"></i></button>
+              <button onClick="{{ toggleHide }}" style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; border:none; color:#6C7480; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center;"><i class="{{ eyeIcon }}"></i></button>
+            </div>
+          </div>
+          <!-- month nav -->
+          <div style="display:flex; align-items:center; justify-content:center; gap:16px; padding:12px 0 12px;">
+            <button style="width:28px; height:28px; border-radius:8px; background:#F1F3F5; border:none; color:#6C7480; font-size:12px; cursor:pointer;"><i class="fa-solid fa-chevron-left"></i></button>
+            <span style="font-size:15px; font-weight:600;">{{ monthLabel }}</span>
+            <button style="width:28px; height:28px; border-radius:8px; background:#F1F3F5; border:none; color:#6C7480; font-size:12px; cursor:pointer;"><i class="fa-solid fa-chevron-right"></i></button>
+          </div>
+          <!-- tabs -->
+          <div style="display:flex; gap:6px; padding:4px; margin-bottom:12px; background:#F1F3F5; border-radius:12px;">
+            <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="2">
+              <button onClick="{{ t.onClick }}" style="{{ t.segStyle }}">{{ t.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <!-- scroll body -->
+        <div class="npc" style="flex:1; overflow-y:auto; padding:12px 16px 20px; display:flex; flex-direction:column; gap:12px;">
+
+          <!-- summary strip -->
+          <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:16px;">
+            <div style="font-size:13px; color:#6C7480;">本月{{ tabWord }}</div>
+            <div style="display:flex; align-items:flex-end; gap:10px; margin-top:3px;">
+              <div style="font-size:30px; font-weight:700; line-height:1.05; letter-spacing:-.01em; font-variant-numeric:tabular-nums; color:{{ totalColor }};">{{ totalBig }}</div>
+              <span style="{{ changeChip }}"><i class="fa-solid {{ changeIcon }}" style="font-size:10px;"></i> {{ changeStr }}</span>
+            </div>
+            <div style="display:flex; margin-top:14px; padding-top:14px; border-top:1px solid #F1F3F5;">
+              <div style="flex:1;"><div style="font-size:11px; color:#6C7480;">日均</div><div style="font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; margin-top:2px;">{{ avgStr }}</div></div>
+              <div style="flex:1;"><div style="font-size:11px; color:#6C7480;">交易筆數</div><div style="font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; margin-top:2px;">{{ cntStr }}</div></div>
+              <div style="flex:1;"><div style="font-size:11px; color:#6C7480;">分類數</div><div style="font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; margin-top:2px;">{{ catCntStr }}</div></div>
+            </div>
+          </div>
+
+          <!-- distribution card -->
+          <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:16px;">
+            <div style="font-size:15px; font-weight:600; margin-bottom:14px;">{{ distTitle }}</div>
+            <div style="display:flex; justify-content:center; margin-bottom:6px;">
+              <div style="position:relative; width:176px; height:176px; flex:none;">
+                <div style="position:absolute; inset:0; border-radius:50%; background:{{ donutBg }};"></div>
+                <div style="position:absolute; inset:26px; border-radius:50%; background:#FFFFFF; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">
+                  <div style="font-size:11px; color:#9AA1AC;">本月{{ tabWord }}</div>
+                  <div style="font-size:22px; font-weight:700; font-variant-numeric:tabular-nums;">{{ totalCenter }}</div>
+                  <div style="font-size:11px; color:#9AA1AC; font-variant-numeric:tabular-nums;">{{ cntStr }}</div>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:8px;">
+              <sc-for list="{{ rank }}" as="r" hint-placeholder-count="5">
+                <div style="display:flex; align-items:center; gap:12px; padding:11px 0; border-top:1px solid #F4F5F7;">
+                  <div style="{{ r.iconStyle }}"><i class="fa-solid {{ r.icon }}"></i></div>
+                  <div style="flex:1; min-width:0;">
+                    <div style="display:flex; align-items:baseline; justify-content:space-between;">
+                      <span style="font-size:14px; font-weight:500;">{{ r.label }}</span>
+                      <span style="font-size:14px; font-weight:600; font-variant-numeric:tabular-nums;">{{ r.amtStr }}</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:10px; margin-top:7px;">
+                      <div style="flex:1; height:6px; background:#F1F3F5; border-radius:99px; overflow:hidden;"><div style="{{ r.barStyle }}"></div></div>
+                      <span style="font-size:11px; color:#9AA1AC; font-variant-numeric:tabular-nums; width:32px; text-align:right;">{{ r.pctStr }}</span>
+                    </div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <!-- trend card -->
+          <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:16px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+              <span style="font-size:15px; font-weight:600;">近 6 個月趨勢</span>
+              <div style="display:flex; gap:12px;">
+                <span style="display:flex; align-items:center; gap:5px; font-size:11px; color:#6C7480;"><span style="width:8px; height:8px; border-radius:2px; background:{{ green }};"></span>收入</span>
+                <span style="display:flex; align-items:center; gap:5px; font-size:11px; color:#6C7480;"><span style="width:8px; height:8px; border-radius:2px; background:{{ red }};"></span>支出</span>
+              </div>
+            </div>
+            <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:4px; height:140px;">
+              <sc-for list="{{ trend }}" as="m" hint-placeholder-count="6">
+                <div style="flex:1; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:7px;">
+                  <div style="flex:1; display:flex; align-items:flex-end; justify-content:center; gap:3px; width:100%;">
+                    <div style="{{ m.incStyle }}"></div>
+                    <div style="{{ m.expStyle }}"></div>
+                  </div>
+                  <span style="font-size:11px; color:{{ m.labelColor }}; font-weight:{{ m.labelWeight }};">{{ m.m }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- bottom nav -->
+        <div style="position:relative; background:#FFFFFF; border-top:1px solid #E6E8EB; display:flex; justify-content:space-around; align-items:flex-end; padding:8px 6px 22px; flex:none;">
+          <button style="display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none; cursor:pointer; color:#9AA1AC; font-size:11px; padding:4px 10px;"><i class="fa-solid fa-house" style="font-size:18px;"></i><span>首頁</span></button>
+          <button style="display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none; cursor:pointer; color:#9AA1AC; font-size:11px; padding:4px 10px;"><i class="fa-solid fa-receipt" style="font-size:18px;"></i><span>明細</span></button>
+          <div style="display:flex; flex-direction:column; align-items:center; width:60px;">
+            <button style="width:56px; height:56px; border-radius:50%; background:{{ brandColor }}; color:#FFFFFF; border:none; font-size:22px; transform:translateY(-16px); box-shadow:0 8px 18px rgba(59,91,219,.42); cursor:pointer;"><i class="fa-solid fa-plus"></i></button>
+          </div>
+          <button style="display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none; cursor:pointer; color:{{ brandColor }}; font-size:11px; font-weight:500; padding:4px 10px;"><i class="fa-solid fa-chart-pie" style="font-size:18px;"></i><span>報表</span></button>
+          <button style="display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none; cursor:pointer; color:#9AA1AC; font-size:11px; padding:4px 10px;"><i class="fa-solid fa-gear" style="font-size:18px;"></i><span>設定</span></button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ===================== DESKTOP FRAME ===================== -->
+    <div style="flex:none; display:flex; flex-direction:column; gap:14px;">
+      <div style="font-size:12px; font-weight:600; letter-spacing:.06em; color:#6C7480; text-transform:uppercase;">畫面 4 · 報表 Reports — 桌面版</div>
+
+      <div data-screen-label="畫面4 報表 · 桌面" style="width:1280px; height:860px; display:flex; background:#F6F7F9; border:1px solid #E6E8EB; border-radius:14px; overflow:hidden; box-shadow:0 12px 40px rgba(27,31,36,.14); color:#1B1F24;">
+
+        <!-- side nav -->
+        <aside style="width:236px; flex:none; background:#FFFFFF; border-right:1px solid #E6E8EB; display:flex; flex-direction:column; padding:20px 14px;">
+          <div style="display:flex; align-items:center; gap:10px; padding:6px 8px 18px;">
+            <div style="width:34px; height:34px; border-radius:10px; background:{{ brandColor }}; color:#FFFFFF; display:flex; align-items:center; justify-content:center; font-size:16px;"><i class="fa-solid fa-coins"></i></div>
+            <div><div style="font-size:15px; font-weight:700; line-height:1.1;">原子記帳</div><div style="font-size:11px; color:#9AA1AC; letter-spacing:.04em;">AtomCoins</div></div>
+          </div>
+          <button style="display:flex; align-items:center; gap:12px; background:#EEF2FF; border:none; border-radius:10px; padding:11px 14px; color:{{ brandColor }}; font-size:15px; font-weight:600; cursor:pointer; margin-bottom:14px; width:100%;"><i class="fa-solid fa-plus" style="font-size:14px;"></i> 記帳</button>
+          <nav style="display:flex; flex-direction:column; gap:2px;">
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; color:#6C7480; font-size:15px; font-weight:500; cursor:pointer;"><i class="fa-solid fa-house" style="width:18px;"></i> 首頁</div>
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; color:#6C7480; font-size:15px; font-weight:500; cursor:pointer;"><i class="fa-solid fa-receipt" style="width:18px;"></i> 明細</div>
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; background:#EEF2FF; color:{{ brandColor }}; font-size:15px; font-weight:600; cursor:pointer;"><i class="fa-solid fa-chart-pie" style="width:18px;"></i> 報表</div>
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; color:#6C7480; font-size:15px; font-weight:500; cursor:pointer;"><i class="fa-solid fa-gear" style="width:18px;"></i> 設定</div>
+          </nav>
+          <div style="flex:1;"></div>
+          <div style="display:flex; align-items:center; gap:10px; padding:10px 8px; border-top:1px solid #E6E8EB;"><div style="width:32px; height:32px; border-radius:50%; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:13px;"><i class="fa-solid fa-user"></i></div><div style="font-size:13px; color:#6C7480;">本機帳戶</div></div>
+        </aside>
+
+        <!-- main -->
+        <main style="flex:1; min-width:0; display:flex; flex-direction:column;">
+          <header style="padding:18px 28px; border-bottom:1px solid #E6E8EB; background:#FFFFFF;">
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+              <div style="font-size:20px; font-weight:600;">報表</div>
+              <div style="display:flex; gap:10px; align-items:center;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                  <button style="width:30px; height:30px; border-radius:8px; background:#F1F3F5; border:none; color:#6C7480; font-size:12px; cursor:pointer;"><i class="fa-solid fa-chevron-left"></i></button>
+                  <span style="font-size:15px; font-weight:600;">{{ monthLabel }}</span>
+                  <button style="width:30px; height:30px; border-radius:8px; background:#F1F3F5; border:none; color:#6C7480; font-size:12px; cursor:pointer;"><i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+                <div style="width:1px; height:24px; background:#E6E8EB; margin:0 4px;"></div>
+                <div style="display:flex; gap:6px; padding:4px; background:#F1F3F5; border-radius:10px;">
+                  <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="2">
+                    <button onClick="{{ t.onClick }}" style="{{ t.deskSegStyle }}">{{ t.label }}</button>
+                  </sc-for>
+                </div>
+                <button onClick="{{ toggleHide }}" style="display:flex; align-items:center; gap:7px; height:38px; padding:0 13px; border-radius:9px; background:#FFFFFF; border:1px solid #E6E8EB; color:#6C7480; font-size:13px; cursor:pointer;"><i class="{{ eyeIcon }}"></i> 金額</button>
+                <button style="display:flex; align-items:center; gap:7px; height:38px; padding:0 13px; border-radius:9px; background:#FFFFFF; border:1px solid #E6E8EB; color:#6C7480; font-size:13px; cursor:pointer;"><i class="fa-solid fa-arrow-up-from-bracket" style="font-size:12px;"></i> 匯出</button>
+              </div>
+            </div>
+          </header>
+
+          <div class="npc" style="flex:1; overflow-y:auto; padding:24px 28px; display:flex; flex-direction:column; gap:20px;">
+
+            <!-- stat cards -->
+            <div style="display:flex; gap:20px;">
+              <div style="flex:1; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:20px;">
+                <div style="font-size:13px; color:#6C7480;">本月{{ tabWord }}</div>
+                <div style="display:flex; align-items:flex-end; gap:10px; margin-top:6px;">
+                  <div style="font-size:30px; font-weight:700; line-height:1; font-variant-numeric:tabular-nums; color:{{ totalColor }};">{{ totalBig }}</div>
+                  <span style="{{ changeChip }}"><i class="fa-solid {{ changeIcon }}" style="font-size:10px;"></i> {{ changeStr }}</span>
+                </div>
+              </div>
+              <div style="flex:1; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:20px;">
+                <div style="font-size:13px; color:#6C7480;">日均{{ tabWord }}</div>
+                <div style="font-size:30px; font-weight:700; line-height:1; font-variant-numeric:tabular-nums; margin-top:6px;">{{ avgStr }}</div>
+              </div>
+              <div style="flex:1; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:20px;">
+                <div style="font-size:13px; color:#6C7480;">交易筆數</div>
+                <div style="font-size:30px; font-weight:700; line-height:1; font-variant-numeric:tabular-nums; margin-top:6px;">{{ cntStr }}</div>
+              </div>
+            </div>
+
+            <!-- two-col: distribution + trend -->
+            <div style="display:flex; gap:20px; align-items:stretch;">
+
+              <!-- distribution -->
+              <div style="flex:1.15; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:22px;">
+                <div style="font-size:15px; font-weight:600; margin-bottom:18px;">{{ distTitle }}</div>
+                <div style="display:flex; gap:24px; align-items:center;">
+                  <div style="position:relative; width:188px; height:188px; flex:none;">
+                    <div style="position:absolute; inset:0; border-radius:50%; background:{{ donutBg }};"></div>
+                    <div style="position:absolute; inset:28px; border-radius:50%; background:#FFFFFF; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;">
+                      <div style="font-size:11px; color:#9AA1AC;">本月{{ tabWord }}</div>
+                      <div style="font-size:24px; font-weight:700; font-variant-numeric:tabular-nums;">{{ totalCenter }}</div>
+                      <div style="font-size:11px; color:#9AA1AC; font-variant-numeric:tabular-nums;">{{ cntStr }}</div>
+                    </div>
+                  </div>
+                  <div style="flex:1; min-width:0;">
+                    <sc-for list="{{ rank }}" as="r" hint-placeholder-count="5">
+                      <div style="display:flex; align-items:center; gap:12px; padding:9px 0;">
+                        <span style="width:10px; height:10px; border-radius:3px; flex:none; background:{{ r.color }};"></span>
+                        <span style="flex:1; font-size:14px; font-weight:500; min-width:0;">{{ r.label }}</span>
+                        <span style="font-size:14px; font-weight:600; font-variant-numeric:tabular-nums;">{{ r.amtStr }}</span>
+                        <span style="font-size:12px; color:#9AA1AC; font-variant-numeric:tabular-nums; width:40px; text-align:right;">{{ r.pctStr }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </div>
+
+              <!-- trend -->
+              <div style="flex:1; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:22px; display:flex; flex-direction:column;">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
+                  <span style="font-size:15px; font-weight:600;">近 6 個月趨勢</span>
+                  <div style="display:flex; gap:14px;">
+                    <span style="display:flex; align-items:center; gap:5px; font-size:12px; color:#6C7480;"><span style="width:9px; height:9px; border-radius:2px; background:{{ green }};"></span>收入</span>
+                    <span style="display:flex; align-items:center; gap:5px; font-size:12px; color:#6C7480;"><span style="width:9px; height:9px; border-radius:2px; background:{{ red }};"></span>支出</span>
+                  </div>
+                </div>
+                <div style="flex:1; display:flex; align-items:flex-end; justify-content:space-between; gap:10px; min-height:200px;">
+                  <sc-for list="{{ trend }}" as="m" hint-placeholder-count="6">
+                    <div style="flex:1; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:9px;">
+                      <div style="flex:1; display:flex; align-items:flex-end; justify-content:center; gap:4px; width:100%;">
+                        <div style="{{ m.incStyleLg }}"></div>
+                        <div style="{{ m.expStyleLg }}"></div>
+                      </div>
+                      <span style="font-size:12px; color:{{ m.labelColor }}; font-weight:{{ m.labelWeight }};">{{ m.m }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+        </main>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;auto&quot;},&quot;colorblind&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;brand&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#3B5BDB&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  state = { tab: 'expense', hidden: false };
+
+  expenseCats = [
+    { id:'home',     label:'居住', icon:'fa-house-chimney',     amt:12000, color:'#3B5BDB' },
+    { id:'food',     label:'餐飲', icon:'fa-utensils',          amt:6800,  color:'#F08C00' },
+    { id:'shopping', label:'購物', icon:'fa-bag-shopping',      amt:4200,  color:'#7048E8' },
+    { id:'transit',  label:'交通', icon:'fa-car',               amt:2100,  color:'#1098AD' },
+    { id:'fun',      label:'娛樂', icon:'fa-gamepad',           amt:1640,  color:'#E8590C' },
+    { id:'comm',     label:'通訊', icon:'fa-wifi',              amt:880,   color:'#748FFC' },
+    { id:'medical',  label:'醫療', icon:'fa-kit-medical',       amt:580,   color:'#C2255C' },
+  ];
+  incomeCats = [
+    { id:'salary', label:'薪資', icon:'fa-money-check-dollar', amt:48000, color:'#2F9E44' },
+    { id:'bonus',  label:'獎金', icon:'fa-gift',               amt:2000,  color:'#1098AD' },
+    { id:'invest', label:'投資', icon:'fa-chart-line',         amt:1840,  color:'#3B5BDB' },
+    { id:'other',  label:'其他', icon:'fa-circle-plus',        amt:160,   color:'#748FFC' },
+  ];
+  trendData = [
+    { m:'1月', inc:50000, exp:26500 },
+    { m:'2月', inc:52000, exp:31200 },
+    { m:'3月', inc:58000, exp:24800 },
+    { m:'4月', inc:50000, exp:29600 },
+    { m:'5月', inc:52000, exp:27300 },
+    { m:'6月', inc:52000, exp:28200 },
+  ];
+  counts = { expense: 42, income: 4 };
+
+  fmt(n) { return Number(n).toLocaleString('en-US'); }
+  nt(n) { return 'NT$ ' + this.fmt(Math.abs(Math.round(n))); }
+
+  renderVals() {
+    const cb = this.props.colorblind ?? false;
+    const brand = this.props.brand ?? '#3B5BDB';
+    const RED = cb ? '#E8590C' : '#E03131';
+    const GREEN = cb ? '#1971C2' : '#2F9E44';
+    const hidden = this.state.hidden;
+    const tab = this.state.tab;
+    const isExp = tab === 'expense';
+    const tabWord = isExp ? '支出' : '收入';
+
+    const tabs = [['expense','支出'],['income','收入']].map(([id,label]) => {
+      const active = id === tab;
+      return {
+        id, label, onClick: () => this.setState({ tab: id }),
+        segStyle: `flex:1; height:36px; border-radius:9px; border:none; font-size:14px; font-weight:600; cursor:pointer; background:${active?'#FFFFFF':'transparent'}; color:${active?'#1B1F24':'#6C7480'}; box-shadow:${active?'0 1px 3px rgba(27,31,36,.12)':'none'};`,
+        deskSegStyle: `height:30px; padding:0 16px; border-radius:7px; border:none; font-size:13px; font-weight:600; cursor:pointer; background:${active?'#FFFFFF':'transparent'}; color:${active?'#1B1F24':'#6C7480'}; box-shadow:${active?'0 1px 2px rgba(27,31,36,.12)':'none'};`,
+      };
+    });
+
+    const cats = [...(isExp ? this.expenseCats : this.incomeCats)].sort((a,b) => b.amt - a.amt);
+    const total = cats.reduce((s,c) => s + c.amt, 0);
+    const maxAmt = cats[0].amt;
+
+    // donut conic gradient
+    let acc = 0; const stops = [];
+    cats.forEach(c => {
+      const s = acc / total * 100; acc += c.amt; const e = acc / total * 100;
+      stops.push(`${c.color} ${s.toFixed(2)}% ${e.toFixed(2)}%`);
+    });
+    const donutBg = `conic-gradient(${stops.join(', ')})`;
+
+    const rank = cats.map(c => {
+      const pct = c.amt / total * 100;
+      return {
+        color: c.color, icon: c.icon, label: c.label,
+        amtStr: hidden ? '••••' : this.nt(c.amt),
+        pctStr: pct.toFixed(0) + '%',
+        iconStyle: `width:38px; height:38px; flex:none; border-radius:11px; display:flex; align-items:center; justify-content:center; font-size:15px; background:${c.color}1A; color:${c.color};`,
+        barStyle: `width:${(c.amt / maxAmt * 100).toFixed(1)}%; height:100%; background:${c.color}; border-radius:99px;`,
+      };
+    });
+
+    // trend
+    const maxT = Math.max(...this.trendData.flatMap(m => [m.inc, m.exp]));
+    const trend = this.trendData.map((m, i) => {
+      const isLast = i === this.trendData.length - 1;
+      const bar = (v, color, w) => `width:${w}px; border-radius:3px 3px 0 0; background:${color}; height:${Math.max(v / maxT * 100, 2).toFixed(1)}%;`;
+      return {
+        m: m.m,
+        incStyle: bar(m.inc, GREEN, 9), expStyle: bar(m.exp, RED, 9),
+        incStyleLg: bar(m.inc, GREEN, 14), expStyleLg: bar(m.exp, RED, 14),
+        labelColor: isLast ? '#1B1F24' : '#9AA1AC',
+        labelWeight: isLast ? '600' : '400',
+      };
+    });
+
+    // change vs last month
+    const cur = this.trendData[this.trendData.length - 1];
+    const prev = this.trendData[this.trendData.length - 2];
+    const curV = isExp ? cur.exp : cur.inc;
+    const prevV = isExp ? prev.exp : prev.inc;
+    const change = prevV ? (curV - prevV) / prevV * 100 : 0;
+    const isZero = Math.abs(change) < 0.05;
+    const good = isZero ? null : (isExp ? change < 0 : change > 0);
+    const changeColor = isZero ? '#6C7480' : (good ? GREEN : RED);
+    const changeBg = isZero ? '#F1F3F5' : (good ? '#EBFBEE' : '#FFF0F0');
+    const changeIcon = isZero ? 'fa-minus' : (change > 0 ? 'fa-arrow-up' : 'fa-arrow-down');
+    const changeStr = '較上月 ' + (change > 0 ? '+' : change < 0 ? '−' : '') + Math.abs(change).toFixed(1) + '%';
+
+    const dayCount = 23;
+    const avgStr = hidden ? '••••' : this.nt(total / dayCount);
+    const cnt = this.counts[tab];
+
+    return {
+      brandColor: brand, green: GREEN, red: RED,
+      hidden, eyeIcon: hidden ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye',
+      toggleHide: () => this.setState(s => ({ hidden: !s.hidden })),
+      monthLabel: '2026 年 6 月',
+      tabs, tabWord,
+      distTitle: tabWord + '分布',
+      totalBig: hidden ? '••••••' : this.nt(total),
+      totalCenter: hidden ? '••••' : this.fmt(total),
+      totalColor: isExp ? RED : GREEN,
+      avgStr, cntStr: cnt + ' 筆', catCntStr: cats.length + ' 類',
+      changeStr, changeIcon,
+      changeChip: `display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; border-radius:99px; padding:3px 10px; color:${changeColor}; background:${changeBg};`,
+      donutBg, rank, trend,
+    };
+  }
+}
+</script>
+</body>
+</html>

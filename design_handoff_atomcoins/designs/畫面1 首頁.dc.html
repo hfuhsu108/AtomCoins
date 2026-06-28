@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+</style>
+</helmet>
+
+<div style="width:max-content; min-width:100%; min-height:100vh; box-sizing:border-box; padding:48px; background:#e7e5df; font-family:'Noto Sans TC',sans-serif;">
+  <div style="display:flex; gap:64px; align-items:flex-start;">
+
+    <!-- ===================== MOBILE FRAME ===================== -->
+    <div style="flex:none; display:flex; flex-direction:column; gap:14px;">
+      <div style="font-size:12px; font-weight:600; letter-spacing:.06em; color:#6C7480; text-transform:uppercase;">畫面 1 · 首頁 Home — 手機版</div>
+
+      <div data-screen-label="畫面1 首頁 · 手機" style="width:390px; background:#F6F7F9; border-radius:28px; overflow:hidden; border:1px solid #E6E8EB; box-shadow:0 12px 40px rgba(27,31,36,.14); color:#1B1F24;">
+
+        <!-- top bar -->
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:18px 16px 10px;">
+          <div style="font-size:20px; font-weight:600;">首頁</div>
+          <div style="display:flex; gap:8px;">
+            <button style="position:relative; width:38px; height:38px; border-radius:10px; background:#FFFFFF; border:1px solid #E6E8EB; color:#6C7480; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+              <i class="fa-solid fa-bell"></i>
+              <span style="position:absolute; top:8px; right:9px; width:7px; height:7px; border-radius:50%; background:#E03131;"></span>
+            </button>
+            <button onClick="{{ toggle }}" style="width:38px; height:38px; border-radius:10px; background:#FFFFFF; border:1px solid #E6E8EB; color:#6C7480; font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center;">
+              <i class="{{ eyeIcon }}"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- content -->
+        <div style="padding:4px 16px 14px; display:flex; flex-direction:column; gap:12px;">
+
+          <!-- net worth card -->
+          <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:18px 16px;">
+            <div style="font-size:13px; color:#6C7480;">淨資產</div>
+            <div style="font-size:34px; font-weight:700; line-height:1.15; font-variant-numeric:tabular-nums; letter-spacing:-.01em; margin-top:2px;">{{ netWorth }}</div>
+            <button onClick="{{ toggleComp }}" style="display:flex; align-items:center; gap:6px; margin-top:8px; background:none; border:none; padding:0; cursor:pointer;">
+              <i class="fa-solid fa-arrow-trend-up" style="color:#2F9E44; font-size:12px;"></i>
+              <span style="font-size:13px; color:#2F9E44; font-variant-numeric:tabular-nums; font-weight:500;">較上月 {{ monthChange }}</span>
+              <i class="{{ compIcon }}" style="color:#9AA1AC; font-size:10px; margin-left:2px;"></i>
+            </button>
+            <sc-if value="{{ comp }}" hint-placeholder-val="{{ true }}">
+              <div style="margin-top:14px; border-top:1px solid #E6E8EB; padding-top:12px; display:flex; flex-direction:column; gap:9px;">
+                <div style="display:flex; justify-content:space-between; font-size:13px;"><span style="color:#6C7480;">現金</span><span style="font-variant-numeric:tabular-nums;">{{ cCash }}</span></div>
+                <div style="display:flex; justify-content:space-between; font-size:13px;"><span style="color:#6C7480;">銀行</span><span style="font-variant-numeric:tabular-nums;">{{ cBank }}</span></div>
+                <div style="display:flex; justify-content:space-between; font-size:13px;"><span style="color:#6C7480;">投資市值</span><span style="font-variant-numeric:tabular-nums;">{{ cInvest }}</span></div>
+                <div style="display:flex; justify-content:space-between; font-size:13px;"><span style="color:#6C7480;">應收</span><span style="font-variant-numeric:tabular-nums;">{{ cRecv }}</span></div>
+                <div style="display:flex; justify-content:space-between; font-size:13px;"><span style="color:#6C7480;">信用卡未繳</span><span style="color:#E03131; font-variant-numeric:tabular-nums;">{{ cCard }}</span></div>
+                <div style="display:flex; justify-content:space-between; font-size:13px;"><span style="color:#6C7480;">應付</span><span style="color:#E03131; font-variant-numeric:tabular-nums;">{{ cPay }}</span></div>
+              </div>
+            </sc-if>
+          </div>
+
+          <!-- month card -->
+          <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:16px;">
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+              <span style="font-size:15px; font-weight:600;">本月收支</span>
+              <span style="font-size:12px; color:#9AA1AC;">6 月</span>
+            </div>
+            <div style="display:flex; margin-top:14px;">
+              <div style="flex:1;">
+                <div style="font-size:12px; color:#6C7480; display:flex; align-items:center; gap:4px;"><i class="fa-solid fa-arrow-down-long" style="color:#2F9E44; font-size:10px;"></i> 收入</div>
+                <div style="font-size:18px; font-weight:600; color:#2F9E44; font-variant-numeric:tabular-nums; margin-top:3px;">{{ income }}</div>
+              </div>
+              <div style="width:1px; background:#E6E8EB; margin:0 14px;"></div>
+              <div style="flex:1;">
+                <div style="font-size:12px; color:#6C7480; display:flex; align-items:center; gap:4px;"><i class="fa-solid fa-arrow-up-long" style="color:#E03131; font-size:10px;"></i> 支出</div>
+                <div style="font-size:18px; font-weight:600; color:#E03131; font-variant-numeric:tabular-nums; margin-top:3px;">{{ expense }}</div>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-top:14px; padding-top:12px; border-top:1px solid #E6E8EB;">
+              <span style="font-size:13px; color:#6C7480;">結餘</span>
+              <span style="font-size:15px; font-weight:600; color:#2F9E44; font-variant-numeric:tabular-nums;">{{ balance }}</span>
+            </div>
+          </div>
+
+          <!-- accounts -->
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:4px 2px 0;">
+            <span style="font-size:15px; font-weight:600;">帳戶</span>
+            <button style="background:none; border:none; color:#3B5BDB; font-size:13px; font-weight:500; cursor:pointer; padding:0;">管理</button>
+          </div>
+
+          <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:6px 14px;">
+
+            <!-- 現金 -->
+            <button onClick="{{ tgCash }}" style="display:flex; align-items:center; gap:8px; width:100%; background:none; border:none; padding:12px 0 8px; cursor:pointer;">
+              <i class="{{ gCashIcon }}" style="color:#9AA1AC; font-size:11px; width:12px;"></i>
+              <span style="font-size:13px; font-weight:600; color:#6C7480;">現金</span>
+              <span style="flex:1;"></span>
+              <span style="font-size:13px; color:#6C7480; font-variant-numeric:tabular-nums; font-weight:500;">{{ cashTotal }}</span>
+            </button>
+            <sc-if value="{{ gCash }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex; align-items:center; gap:12px; padding:8px 0;">
+                <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-wallet"></i></div>
+                <div style="flex:1; min-width:0; font-size:15px; font-weight:500;">現金錢包</div>
+                <div style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">{{ cashWallet }}</div>
+              </div>
+            </sc-if>
+
+            <!-- 銀行 -->
+            <button onClick="{{ tgBank }}" style="display:flex; align-items:center; gap:8px; width:100%; background:none; border:none; padding:12px 0 8px; border-top:1px solid #F1F3F5; cursor:pointer;">
+              <i class="{{ gBankIcon }}" style="color:#9AA1AC; font-size:11px; width:12px;"></i>
+              <span style="font-size:13px; font-weight:600; color:#6C7480;">銀行</span>
+              <span style="flex:1;"></span>
+              <span style="font-size:13px; color:#6C7480; font-variant-numeric:tabular-nums; font-weight:500;">{{ bankTotal }}</span>
+            </button>
+            <sc-if value="{{ gBank }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex; align-items:center; gap:12px; padding:8px 0;">
+                <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-building-columns"></i></div>
+                <div style="flex:1; min-width:0; font-size:15px; font-weight:500;">台新 Richart</div>
+                <div style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">{{ taishin }}</div>
+              </div>
+              <div style="display:flex; align-items:center; gap:12px; padding:8px 0;">
+                <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-building-columns"></i></div>
+                <div style="flex:1; min-width:0; font-size:15px; font-weight:500;">國泰世華</div>
+                <div style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">{{ cathay }}</div>
+              </div>
+            </sc-if>
+
+            <!-- 信用卡 -->
+            <button onClick="{{ tgCard }}" style="display:flex; align-items:center; gap:8px; width:100%; background:none; border:none; padding:12px 0 8px; border-top:1px solid #F1F3F5; cursor:pointer;">
+              <i class="{{ gCardIcon }}" style="color:#9AA1AC; font-size:11px; width:12px;"></i>
+              <span style="font-size:13px; font-weight:600; color:#6C7480;">信用卡</span>
+              <span style="flex:1;"></span>
+              <span style="font-size:13px; color:#6C7480; font-variant-numeric:tabular-nums; font-weight:500;">已用 {{ cardUsed }}</span>
+            </button>
+            <sc-if value="{{ gCard }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex; align-items:flex-start; gap:12px; padding:8px 0;">
+                <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-credit-card"></i></div>
+                <div style="flex:1; min-width:0;">
+                  <div style="display:flex; align-items:baseline; justify-content:space-between;">
+                    <span style="font-size:15px; font-weight:500;">玉山 Unicard</span>
+                    <span style="font-size:13px; color:#6C7480; font-variant-numeric:tabular-nums;">已用 {{ cardUsed }}</span>
+                  </div>
+                  <div style="height:6px; background:#F1F3F5; border-radius:99px; margin:8px 0 6px; overflow:hidden;">
+                    <div style="width:15%; height:100%; background:#3B5BDB; border-radius:99px;"></div>
+                  </div>
+                  <div style="display:flex; justify-content:space-between; font-size:12px; color:#9AA1AC; font-variant-numeric:tabular-nums;">
+                    <span>可用 {{ cardAvail }}</span>
+                    <span>額度 {{ cardLimit }}</span>
+                  </div>
+                </div>
+              </div>
+            </sc-if>
+
+            <!-- 證券 -->
+            <button onClick="{{ tgStock }}" style="display:flex; align-items:center; gap:8px; width:100%; background:none; border:none; padding:12px 0 8px; border-top:1px solid #F1F3F5; cursor:pointer;">
+              <i class="{{ gStockIcon }}" style="color:#9AA1AC; font-size:11px; width:12px;"></i>
+              <span style="font-size:13px; font-weight:600; color:#6C7480;">證券</span>
+              <span style="flex:1;"></span>
+              <span style="font-size:13px; color:#6C7480; font-variant-numeric:tabular-nums; font-weight:500;">{{ stockTotal }}</span>
+            </button>
+            <sc-if value="{{ gStock }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex; align-items:center; gap:12px; padding:8px 0 10px;">
+                <div style="width:36px; height:36px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-chart-line"></i></div>
+                <div style="flex:1; min-width:0;">
+                  <div style="font-size:15px; font-weight:500;">永豐金證券</div>
+                  <div style="font-size:12px; color:#9AA1AC; font-variant-numeric:tabular-nums; margin-top:2px;">交割銀行 永豐銀行 {{ settle }}</div>
+                </div>
+                <div style="text-align:right;">
+                  <div style="font-size:11px; color:#9AA1AC;">持股市值</div>
+                  <div style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">{{ sec }}</div>
+                </div>
+              </div>
+            </sc-if>
+
+          </div>
+        </div>
+
+        <!-- bottom nav -->
+        <div style="position:relative; background:#FFFFFF; border-top:1px solid #E6E8EB; display:flex; justify-content:space-around; align-items:flex-end; padding:8px 6px 22px;">
+          <button style="display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none; cursor:pointer; color:#3B5BDB; font-size:11px; font-weight:500; padding:4px 10px;">
+            <i class="fa-solid fa-house" style="font-size:18px;"></i><span>首頁</span>
+          </button>
+          <button style="display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none; cursor:pointer; color:#9AA1AC; font-size:11px; padding:4px 10px;">
+            <i class="fa-solid fa-receipt" style="font-size:18px;"></i><span>明細</span>
+          </button>
+          <div style="display:flex; flex-direction:column; align-items:center; width:60px;">
+            <button style="width:56px; height:56px; border-radius:50%; background:#3B5BDB; color:#FFFFFF; border:none; font-size:22px; transform:translateY(-16px); box-shadow:0 8px 18px rgba(59,91,219,.42); cursor:pointer;"><i class="fa-solid fa-plus"></i></button>
+          </div>
+          <button style="display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none; cursor:pointer; color:#9AA1AC; font-size:11px; padding:4px 10px;">
+            <i class="fa-solid fa-chart-pie" style="font-size:18px;"></i><span>報表</span>
+          </button>
+          <button style="display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none; cursor:pointer; color:#9AA1AC; font-size:11px; padding:4px 10px;">
+            <i class="fa-solid fa-gear" style="font-size:18px;"></i><span>設定</span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ===================== DESKTOP FRAME ===================== -->
+    <div style="flex:none; display:flex; flex-direction:column; gap:14px;">
+      <div style="font-size:12px; font-weight:600; letter-spacing:.06em; color:#6C7480; text-transform:uppercase;">畫面 1 · 首頁 Home — 桌面版 (≥1024)</div>
+
+      <div data-screen-label="畫面1 首頁 · 桌面" style="width:1280px; height:860px; display:flex; background:#F6F7F9; border:1px solid #E6E8EB; border-radius:14px; overflow:hidden; box-shadow:0 12px 40px rgba(27,31,36,.14); color:#1B1F24;">
+
+        <!-- side nav -->
+        <aside style="width:236px; flex:none; background:#FFFFFF; border-right:1px solid #E6E8EB; display:flex; flex-direction:column; padding:20px 14px;">
+          <div style="display:flex; align-items:center; gap:10px; padding:6px 8px 18px;">
+            <div style="width:34px; height:34px; border-radius:10px; background:#3B5BDB; color:#FFFFFF; display:flex; align-items:center; justify-content:center; font-size:16px;"><i class="fa-solid fa-coins"></i></div>
+            <div>
+              <div style="font-size:15px; font-weight:700; line-height:1.1;">原子記帳</div>
+              <div style="font-size:11px; color:#9AA1AC; letter-spacing:.04em;">AtomCoins</div>
+            </div>
+          </div>
+
+          <button style="display:flex; align-items:center; gap:12px; background:#EEF2FF; border:none; border-radius:10px; padding:11px 14px; color:#3B5BDB; font-size:15px; font-weight:600; cursor:pointer; margin-bottom:14px; width:100%;">
+            <i class="fa-solid fa-plus" style="font-size:14px;"></i> 記帳
+          </button>
+
+          <nav style="display:flex; flex-direction:column; gap:2px;">
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; background:#EEF2FF; color:#3B5BDB; font-size:15px; font-weight:600; cursor:pointer;"><i class="fa-solid fa-house" style="width:18px;"></i> 首頁</div>
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; color:#6C7480; font-size:15px; font-weight:500; cursor:pointer;" style-hover="background:#F1F3F5;"><i class="fa-solid fa-receipt" style="width:18px;"></i> 明細</div>
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; color:#6C7480; font-size:15px; font-weight:500; cursor:pointer;" style-hover="background:#F1F3F5;"><i class="fa-solid fa-chart-pie" style="width:18px;"></i> 報表</div>
+            <div style="display:flex; align-items:center; gap:12px; border-radius:10px; padding:11px 14px; color:#6C7480; font-size:15px; font-weight:500; cursor:pointer;" style-hover="background:#F1F3F5;"><i class="fa-solid fa-gear" style="width:18px;"></i> 設定</div>
+          </nav>
+
+          <div style="flex:1;"></div>
+          <div style="display:flex; align-items:center; gap:10px; padding:10px 8px; border-top:1px solid #E6E8EB;">
+            <div style="width:32px; height:32px; border-radius:50%; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:13px;"><i class="fa-solid fa-user"></i></div>
+            <div style="font-size:13px; color:#6C7480;">本機帳戶</div>
+          </div>
+        </aside>
+
+        <!-- main -->
+        <main style="flex:1; min-width:0; display:flex; flex-direction:column;">
+          <header style="display:flex; align-items:center; justify-content:space-between; padding:20px 28px; border-bottom:1px solid #E6E8EB; background:#FFFFFF;">
+            <div>
+              <div style="font-size:20px; font-weight:600;">首頁</div>
+              <div style="font-size:13px; color:#9AA1AC; margin-top:2px;">2026 年 6 月 23 日 · 週二</div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center;">
+              <button onClick="{{ toggle }}" style="display:flex; align-items:center; gap:8px; height:40px; padding:0 14px; border-radius:10px; background:#FFFFFF; border:1px solid #E6E8EB; color:#6C7480; font-size:14px; cursor:pointer;"><i class="{{ eyeIcon }}"></i> 金額</button>
+              <button style="position:relative; width:40px; height:40px; border-radius:10px; background:#FFFFFF; border:1px solid #E6E8EB; color:#6C7480; font-size:15px; cursor:pointer;"><i class="fa-solid fa-bell"></i><span style="position:absolute; top:9px; right:10px; width:7px; height:7px; border-radius:50%; background:#E03131;"></span></button>
+            </div>
+          </header>
+
+          <div style="flex:1; overflow-y:auto; padding:24px 28px;">
+
+            <!-- hero row -->
+            <div style="display:flex; gap:20px; align-items:stretch;">
+              <!-- net worth -->
+              <div style="flex:1.5; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:24px;">
+                <div style="display:flex; align-items:flex-start; justify-content:space-between;">
+                  <div>
+                    <div style="font-size:14px; color:#6C7480;">淨資產</div>
+                    <div style="font-size:40px; font-weight:700; line-height:1.1; font-variant-numeric:tabular-nums; letter-spacing:-.01em; margin-top:4px;">{{ netWorth }}</div>
+                    <div style="display:flex; align-items:center; gap:6px; margin-top:8px;">
+                      <i class="fa-solid fa-arrow-trend-up" style="color:#2F9E44; font-size:13px;"></i>
+                      <span style="font-size:14px; color:#2F9E44; font-weight:500; font-variant-numeric:tabular-nums;">較上月 {{ monthChange }}</span>
+                    </div>
+                  </div>
+                  <button onClick="{{ toggleComp }}" style="display:flex; align-items:center; gap:6px; background:#F1F3F5; border:none; border-radius:8px; padding:8px 12px; color:#6C7480; font-size:13px; cursor:pointer;">資產組成 <i class="{{ compIcon }}" style="font-size:10px;"></i></button>
+                </div>
+                <sc-if value="{{ comp }}" hint-placeholder-val="{{ true }}">
+                  <div style="margin-top:20px; border-top:1px solid #E6E8EB; padding-top:16px; display:grid; grid-template-columns:1fr 1fr; gap:10px 32px;">
+                    <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:#6C7480;">現金</span><span style="font-variant-numeric:tabular-nums;">{{ cCash }}</span></div>
+                    <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:#6C7480;">信用卡未繳</span><span style="color:#E03131; font-variant-numeric:tabular-nums;">{{ cCard }}</span></div>
+                    <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:#6C7480;">銀行</span><span style="font-variant-numeric:tabular-nums;">{{ cBank }}</span></div>
+                    <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:#6C7480;">應付</span><span style="color:#E03131; font-variant-numeric:tabular-nums;">{{ cPay }}</span></div>
+                    <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:#6C7480;">投資市值</span><span style="font-variant-numeric:tabular-nums;">{{ cInvest }}</span></div>
+                    <div style="display:flex; justify-content:space-between; font-size:14px;"><span style="color:#6C7480;">應收</span><span style="font-variant-numeric:tabular-nums;">{{ cRecv }}</span></div>
+                  </div>
+                </sc-if>
+              </div>
+
+              <!-- month -->
+              <div style="flex:1; background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:24px;">
+                <div style="display:flex; align-items:center; justify-content:space-between;">
+                  <span style="font-size:15px; font-weight:600;">本月收支</span>
+                  <span style="font-size:13px; color:#9AA1AC;">2026 / 06</span>
+                </div>
+                <div style="display:flex; margin-top:18px;">
+                  <div style="flex:1;">
+                    <div style="font-size:13px; color:#6C7480;">收入</div>
+                    <div style="font-size:22px; font-weight:600; color:#2F9E44; font-variant-numeric:tabular-nums; margin-top:4px;">{{ income }}</div>
+                  </div>
+                  <div style="width:1px; background:#E6E8EB; margin:0 18px;"></div>
+                  <div style="flex:1;">
+                    <div style="font-size:13px; color:#6C7480;">支出</div>
+                    <div style="font-size:22px; font-weight:600; color:#E03131; font-variant-numeric:tabular-nums; margin-top:4px;">{{ expense }}</div>
+                  </div>
+                </div>
+                <div style="height:8px; border-radius:99px; overflow:hidden; display:flex; margin-top:18px; background:#F1F3F5;">
+                  <div style="width:65%; background:#2F9E44;"></div>
+                  <div style="flex:1; background:#E03131;"></div>
+                </div>
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-top:18px; padding-top:16px; border-top:1px solid #E6E8EB;">
+                  <span style="font-size:14px; color:#6C7480;">本月結餘</span>
+                  <span style="font-size:18px; font-weight:600; color:#2F9E44; font-variant-numeric:tabular-nums;">{{ balance }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- accounts -->
+            <div style="display:flex; align-items:center; justify-content:space-between; margin:28px 2px 14px;">
+              <span style="font-size:16px; font-weight:600;">帳戶</span>
+              <button style="background:none; border:none; color:#3B5BDB; font-size:14px; font-weight:500; cursor:pointer;">帳戶管理 <i class="fa-solid fa-arrow-right" style="font-size:11px;"></i></button>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+
+              <!-- 現金 -->
+              <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:6px 18px;">
+                <button onClick="{{ tgCash }}" style="display:flex; align-items:center; gap:8px; width:100%; background:none; border:none; padding:14px 0 8px; cursor:pointer;">
+                  <i class="{{ gCashIcon }}" style="color:#9AA1AC; font-size:11px; width:12px;"></i>
+                  <span style="font-size:13px; font-weight:600; color:#6C7480;">現金</span><span style="flex:1;"></span>
+                  <span style="font-size:13px; color:#6C7480; font-variant-numeric:tabular-nums; font-weight:500;">{{ cashTotal }}</span>
+                </button>
+                <sc-if value="{{ gCash }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:flex; align-items:center; gap:12px; padding:10px 0 14px;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-wallet"></i></div>
+                    <div style="flex:1; font-size:15px; font-weight:500;">現金錢包</div>
+                    <div style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">{{ cashWallet }}</div>
+                  </div>
+                </sc-if>
+              </div>
+
+              <!-- 信用卡 -->
+              <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:6px 18px;">
+                <button onClick="{{ tgCard }}" style="display:flex; align-items:center; gap:8px; width:100%; background:none; border:none; padding:14px 0 8px; cursor:pointer;">
+                  <i class="{{ gCardIcon }}" style="color:#9AA1AC; font-size:11px; width:12px;"></i>
+                  <span style="font-size:13px; font-weight:600; color:#6C7480;">信用卡</span><span style="flex:1;"></span>
+                  <span style="font-size:13px; color:#6C7480; font-variant-numeric:tabular-nums; font-weight:500;">已用 {{ cardUsed }}</span>
+                </button>
+                <sc-if value="{{ gCard }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:flex; align-items:flex-start; gap:12px; padding:10px 0 14px;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-credit-card"></i></div>
+                    <div style="flex:1; min-width:0;">
+                      <div style="display:flex; align-items:baseline; justify-content:space-between;">
+                        <span style="font-size:15px; font-weight:500;">玉山 Unicard</span>
+                        <span style="font-size:13px; color:#6C7480; font-variant-numeric:tabular-nums;">已用 {{ cardUsed }}</span>
+                      </div>
+                      <div style="height:6px; background:#F1F3F5; border-radius:99px; margin:9px 0 6px; overflow:hidden;"><div style="width:15%; height:100%; background:#3B5BDB; border-radius:99px;"></div></div>
+                      <div style="display:flex; justify-content:space-between; font-size:12px; color:#9AA1AC; font-variant-numeric:tabular-nums;"><span>可用 {{ cardAvail }}</span><span>額度 {{ cardLimit }}</span></div>
+                    </div>
+                  </div>
+                </sc-if>
+              </div>
+
+              <!-- 銀行 -->
+              <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:6px 18px;">
+                <button onClick="{{ tgBank }}" style="display:flex; align-items:center; gap:8px; width:100%; background:none; border:none; padding:14px 0 8px; cursor:pointer;">
+                  <i class="{{ gBankIcon }}" style="color:#9AA1AC; font-size:11px; width:12px;"></i>
+                  <span style="font-size:13px; font-weight:600; color:#6C7480;">銀行</span><span style="flex:1;"></span>
+                  <span style="font-size:13px; color:#6C7480; font-variant-numeric:tabular-nums; font-weight:500;">{{ bankTotal }}</span>
+                </button>
+                <sc-if value="{{ gBank }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid #F1F3F5;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-building-columns"></i></div>
+                    <div style="flex:1; font-size:15px; font-weight:500;">台新 Richart</div>
+                    <div style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">{{ taishin }}</div>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:12px; padding:10px 0 14px;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-building-columns"></i></div>
+                    <div style="flex:1; font-size:15px; font-weight:500;">國泰世華</div>
+                    <div style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">{{ cathay }}</div>
+                  </div>
+                </sc-if>
+              </div>
+
+              <!-- 證券 -->
+              <div style="background:#FFFFFF; border:1px solid #E6E8EB; border-radius:16px; box-shadow:0 1px 2px rgba(27,31,36,.04); padding:6px 18px;">
+                <button onClick="{{ tgStock }}" style="display:flex; align-items:center; gap:8px; width:100%; background:none; border:none; padding:14px 0 8px; cursor:pointer;">
+                  <i class="{{ gStockIcon }}" style="color:#9AA1AC; font-size:11px; width:12px;"></i>
+                  <span style="font-size:13px; font-weight:600; color:#6C7480;">證券</span><span style="flex:1;"></span>
+                  <span style="font-size:13px; color:#6C7480; font-variant-numeric:tabular-nums; font-weight:500;">{{ stockTotal }}</span>
+                </button>
+                <sc-if value="{{ gStock }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:flex; align-items:center; gap:12px; padding:10px 0 14px;">
+                    <div style="width:38px; height:38px; border-radius:10px; background:#F1F3F5; display:flex; align-items:center; justify-content:center; color:#6C7480; font-size:15px; flex:none;"><i class="fa-solid fa-chart-line"></i></div>
+                    <div style="flex:1; min-width:0;">
+                      <div style="font-size:15px; font-weight:500;">永豐金證券</div>
+                      <div style="font-size:12px; color:#9AA1AC; font-variant-numeric:tabular-nums; margin-top:2px;">交割銀行 永豐銀行 {{ settle }}</div>
+                    </div>
+                    <div style="text-align:right;">
+                      <div style="font-size:11px; color:#9AA1AC;">持股市值</div>
+                      <div style="font-size:15px; font-weight:600; font-variant-numeric:tabular-nums;">{{ sec }}</div>
+                    </div>
+                  </div>
+                </sc-if>
+              </div>
+
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    hidden: false,
+    comp: false,
+    g: { cash: true, bank: true, card: true, stock: true }
+  };
+  fmt(n) { return 'NT$ ' + Math.abs(n).toLocaleString('en-US'); }
+  signed(n) { return (n < 0 ? '−' : '+') + 'NT$ ' + Math.abs(n).toLocaleString('en-US'); }
+  neg(n) { return '−NT$ ' + Math.abs(n).toLocaleString('en-US'); }
+  renderVals() {
+    const hidden = this.state.hidden;
+    const h = (s) => hidden ? '••••••' : s;
+    const g = this.state.g;
+    const chev = (open) => open ? 'fa-solid fa-chevron-down' : 'fa-solid fa-chevron-right';
+    const tg = (k) => () => this.setState(st => ({ g: { ...st.g, [k]: !st.g[k] } }));
+    return {
+      eyeIcon: hidden ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye',
+      toggle: () => this.setState(st => ({ hidden: !st.hidden })),
+      toggleComp: () => this.setState(st => ({ comp: !st.comp })),
+      comp: this.state.comp,
+      compIcon: this.state.comp ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down',
+
+      netWorth: h(this.fmt(1041030)),
+      monthChange: h(this.signed(23800)),
+      income: h(this.fmt(52000)),
+      expense: h(this.fmt(28200)),
+      balance: h(this.signed(23800)),
+
+      cCash: h(this.fmt(3250)),
+      cBank: h(this.fmt(239300)),
+      cInvest: h(this.fmt(723500)),
+      cRecv: h(this.signed(93750)),
+      cCard: h(this.neg(18420)),
+      cPay: h(this.neg(350)),
+
+      cashWallet: h(this.fmt(3250)),
+      taishin: h(this.fmt(86400)),
+      cathay: h(this.fmt(152900)),
+      cardUsed: h(this.fmt(18420)),
+      cardLimit: h(this.fmt(120000)),
+      cardAvail: h(this.fmt(101580)),
+      sec: h(this.fmt(678500)),
+      settle: h(this.fmt(45000)),
+
+      cashTotal: h(this.fmt(3250)),
+      bankTotal: h(this.fmt(239300)),
+      cardTotal: h(this.fmt(18420)),
+      stockTotal: h(this.fmt(678500)),
+
+      gCash: g.cash, gBank: g.bank, gCard: g.card, gStock: g.stock,
+      gCashIcon: chev(g.cash), gBankIcon: chev(g.bank), gCardIcon: chev(g.card), gStockIcon: chev(g.stock),
+      tgCash: tg('cash'), tgBank: tg('bank'), tgCard: tg('card'), tgStock: tg('stock'),
+    };
+  }
+}
+</script>
+</body>
+</html>
