@@ -1,0 +1,24 @@
+import { HashRouter, Routes, Route } from 'react-router-dom'
+import './db'
+import AppLayout from './layouts/AppLayout'
+import HomePage from './pages/HomePage'
+import AddTransactionPage from './pages/AddTransactionPage'
+import TransactionsPage from './pages/TransactionsPage'
+import ReportsPage from './pages/ReportsPage'
+import SettingsPage from './pages/SettingsPage'
+
+export default function App() {
+  return (
+    <HashRouter>
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route index element={<HomePage />} />
+          <Route path="transactions" element={<TransactionsPage />} />
+          <Route path="reports" element={<ReportsPage />} />
+          <Route path="settings" element={<SettingsPage />} />
+        </Route>
+        <Route path="add" element={<AddTransactionPage />} />
+      </Routes>
+    </HashRouter>
+  )
+}
