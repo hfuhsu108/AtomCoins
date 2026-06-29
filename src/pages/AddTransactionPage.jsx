@@ -1,7 +1,7 @@
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db'
-import { deleteTransaction, deleteTransactionGroup } from '../db/repo'
+import { deleteTransaction, deleteTransactionGroup, deleteInstallmentPlan } from '../db/repo'
 import TransactionForm from '../components/transaction/TransactionForm'
 
 // 記帳頁：無 id=新增；帶 ?id= 進入編輯（畫面2）。手機全螢幕、桌面置中 modal。
@@ -19,12 +19,16 @@ export default function AddTransactionPage() {
 
   const handleDelete = async () => {
     if (!editTx) return
+    const planId = editTx.installmentPlanId
     const linked = !!editTx.linkGroupId
-    const msg = linked
-      ? '這筆與代墊／分帳的另一筆相連，將一併刪除整組。確定刪除？'
-      : '確定刪除這筆記錄？'
+    const msg = planId
+      ? '這筆屬於分期方案，將一併刪除全額消費與所有期款。確定刪除？'
+      : linked
+        ? '這筆與代墊／分帳的另一筆相連，將一併刪除整組。確定刪除？'
+        : '確定刪除這筆記錄？'
     if (!window.confirm(msg)) return
-    if (linked) await deleteTransactionGroup(editTx.linkGroupId)
+    if (planId) await deleteInstallmentPlan(planId)
+    else if (linked) await deleteTransactionGroup(editTx.linkGroupId)
     else await deleteTransaction(editTx.id)
     close()
   }

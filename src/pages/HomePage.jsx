@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
@@ -10,17 +11,21 @@ import {
   faChevronRight,
   faArrowTrendUp,
   faArrowTrendDown,
+  faCheck,
 } from '@fortawesome/free-solid-svg-icons'
 import { db } from '../db'
 import {
   accountBalances,
   netWorth,
   monthlySummary,
-  outstanding,
+  outstandingAsOf,
+  pendingByAccount,
 } from '../lib/engine'
+import { dueReminders, fireReminder } from '../lib/recurring'
 import { formatBalance, formatSigned, formatAmount } from '../lib/format'
-import { todayStr, parseDate, monthLabel } from '../lib/date'
+import { todayStr, parseDate, monthLabel, formatMd } from '../lib/date'
 import { getIcon, ACCOUNT_TYPE_ICON } from '../lib/icons'
+import Sheet from '../components/Sheet'
 
 const GROUPS = [
   { type: 'cash', label: '現金' },
@@ -38,33 +43,41 @@ function lastMonthEnd() {
 }
 
 export default function HomePage() {
+  const navigate = useNavigate()
   const accounts = useLiveQuery(() => db.accounts.toArray(), [], [])
   const txns = useLiveQuery(() => db.transactions.toArray(), [], [])
+  const rules = useLiveQuery(() => db.recurringRules.toArray(), [], [])
 
   const [hidden, setHidden] = useState(false)
   const [compOpen, setCompOpen] = useState(false)
   const [collapsed, setCollapsed] = useState({})
+  const [remindersOpen, setRemindersOpen] = useState(false)
 
-  const today = parseDate(todayStr())
+  const reminders = dueReminders(rules)
+
+  const asOf = todayStr()
+  const today = parseDate(asOf)
   const year = today.getFullYear()
   const month = today.getMonth() + 1
 
-  const balances = accountBalances(accounts, txns)
-  const nw = netWorth(accounts, txns)
+  // 現餘額／淨資產一律以「今天」為入帳截止：未來入帳日記錄（未入帳）不計入現況
+  const balances = accountBalances(accounts, txns, asOf)
+  const pending = pendingByAccount(accounts, txns, asOf)
+  const nw = netWorth(accounts, txns, { asOf })
   const nwPrev = netWorth(accounts, txns, { asOf: lastMonthEnd() })
   const change = nw - nwPrev
   const { income, expense, balance } = monthlySummary(txns, year, month)
 
-  // 淨資產組成
+  // 淨資產組成（與 nw 同口徑：asOf=今天）
   const live = accounts.filter((a) => !a.isArchived)
   const sumType = (t) => live.filter((a) => a.type === t).reduce((s, a) => s + balances[a.id], 0)
   const comp = {
     cash: sumType('cash'),
     bank: sumType('bank'),
     invest: 0, // 持股市值階段3 後接入
-    recv: txns.filter((t) => t.type === 'receivable').reduce((s, t) => s + outstanding(t), 0),
+    recv: txns.filter((t) => t.type === 'receivable').reduce((s, t) => s + outstandingAsOf(t, asOf), 0),
     card: sumType('credit_card'),
-    pay: txns.filter((t) => t.type === 'payable').reduce((s, t) => s + outstanding(t), 0),
+    pay: txns.filter((t) => t.type === 'payable').reduce((s, t) => s + outstandingAsOf(t, asOf), 0),
   }
 
   const opt = { hidden }
@@ -80,9 +93,14 @@ export default function HomePage() {
           >
             <FontAwesomeIcon icon={hidden ? faEyeSlash : faEye} />
           </button>
-          <button className="relative w-[38px] h-[38px] rounded-chip bg-surface border border-line text-text-secondary flex items-center justify-center">
+          <button
+            onClick={() => setRemindersOpen(true)}
+            className="relative w-[38px] h-[38px] rounded-chip bg-surface border border-line text-text-secondary flex items-center justify-center"
+          >
             <FontAwesomeIcon icon={faBell} />
-            <span className="absolute top-2 right-2 w-[7px] h-[7px] bg-error rounded-full" />
+            {reminders.length > 0 && (
+              <span className="absolute top-2 right-2 w-[7px] h-[7px] bg-error rounded-full" />
+            )}
           </button>
         </div>
       </header>
@@ -183,14 +201,57 @@ export default function HomePage() {
                 </button>
                 {open &&
                   list.map((a) => (
-                    <AccountRow key={a.id} account={a} balance={balances[a.id]} opt={opt} />
+                    <AccountRow
+                      key={a.id}
+                      account={a}
+                      balance={balances[a.id]}
+                      pending={pending[a.id]}
+                      opt={opt}
+                      onClick={a.type === 'credit_card' ? () => navigate(`/card/${a.id}`) : undefined}
+                    />
                   ))}
               </div>
             )
           })}
         </div>
       </div>
+
+      <RemindersSheet
+        open={remindersOpen}
+        reminders={reminders}
+        onClose={() => setRemindersOpen(false)}
+      />
     </div>
+  )
+}
+
+function RemindersSheet({ open, reminders, onClose }) {
+  return (
+    <Sheet open={open} onClose={onClose} title="週期性提醒" bodyClassName="overflow-y-auto p-3">
+      {reminders.length === 0 ? (
+        <div className="py-10 text-center text-text-tertiary text-sm">目前沒有待確認的提醒</div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {reminders.map((r) => (
+            <div
+              key={r.id}
+              className="flex items-center gap-3 p-3 bg-surface border border-line rounded-modal"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="text-[15px] font-medium truncate">{r.name ?? '週期項目'}</div>
+                <div className="text-xs text-text-tertiary tabular-nums">到期 {formatMd(r.nextDate)}</div>
+              </div>
+              <button
+                onClick={() => fireReminder(r)}
+                className="flex items-center gap-1.5 h-[34px] px-3 rounded-btn bg-brand text-white text-[13px] font-semibold"
+              >
+                <FontAwesomeIcon icon={faCheck} className="text-xs" /> 記一筆
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Sheet>
   )
 }
 
@@ -203,13 +264,16 @@ function CompRow({ label, value, danger }) {
   )
 }
 
-function AccountRow({ account, balance, opt }) {
+function AccountRow({ account, balance, pending = 0, opt, onClick }) {
   const isCard = account.type === 'credit_card'
   const used = -balance
   const limit = account.creditLimit ?? 0
   const pct = limit > 0 ? Math.min(100, Math.max(0, (used / limit) * 100)) : 0
   return (
-    <div className="flex items-start gap-3 py-2">
+    <div
+      onClick={onClick}
+      className={`flex items-start gap-3 py-2 ${onClick ? 'cursor-pointer' : ''}`}
+    >
       <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center text-[15px]">
         <FontAwesomeIcon icon={getIcon(account.icon ?? ACCOUNT_TYPE_ICON[account.type])} />
       </span>
@@ -220,6 +284,11 @@ function AccountRow({ account, balance, opt }) {
             {isCard ? `已用 ${formatAmount(used, opt)}` : formatBalance(balance, opt)}
           </span>
         </div>
+        {pending !== 0 && (
+          <div className="text-xs text-text-tertiary tabular-nums mt-0.5">
+            未入帳 {formatSigned(pending, opt)}
+          </div>
+        )}
         {isCard && limit > 0 && (
           <>
             <div className="h-1.5 bg-surface-alt rounded-pill my-2 overflow-hidden">

@@ -4,12 +4,16 @@ import './lib/fontawesome'
 import './index.css'
 import App from './App.jsx'
 import { ensureSeeded } from './db/seed'
+import { processRecurringRules } from './lib/recurring'
 
-// 先種子再掛載，確保首屏就有主帳戶與分類樹可用
-ensureSeeded().finally(() => {
-  createRoot(document.getElementById('root')).render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
-  )
-})
+// 先種子、再跑週期性收支（補齊到期/預生未入帳），最後掛載，確保首屏資料齊全
+ensureSeeded()
+  .then(() => processRecurringRules())
+  .catch((e) => console.error('啟動初始化失敗', e))
+  .finally(() => {
+    createRoot(document.getElementById('root')).render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    )
+  })

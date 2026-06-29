@@ -1,0 +1,248 @@
+import { useState } from 'react'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faCheck, faXmark, faChevronDown, faBoxArchive, faBoxOpen } from '@fortawesome/free-solid-svg-icons'
+import { createAccount, updateAccount } from '../../db/repo'
+import { todayStr } from '../../lib/date'
+import Sheet from '../Sheet'
+import AccountPicker from '../transaction/AccountPicker'
+
+const TYPES = [
+  { id: 'cash', label: '現金' },
+  { id: 'bank', label: '銀行' },
+  { id: 'credit_card', label: '信用卡' },
+  { id: 'securities', label: '證券' },
+]
+
+// 把輸入字串轉整數（元）；允許負號（信用卡期初可為負債）
+function toInt(s) {
+  const n = parseInt(String(s).replace(/[^0-9-]/g, ''), 10)
+  return Number.isFinite(n) ? n : 0
+}
+
+// 由既有帳戶回填表單；新增時給空白預設
+function initState(account) {
+  return {
+    name: account?.name ?? '',
+    type: account?.type ?? 'bank',
+    openingBalance: account ? String(account.openingBalance ?? 0) : '0',
+    openingDate: account?.openingDate ?? todayStr(),
+    creditLimit: account?.creditLimit != null ? String(account.creditLimit) : '',
+    statementDay: account?.statementDay != null ? String(account.statementDay) : '',
+    paymentDueDay: account?.paymentDueDay != null ? String(account.paymentDueDay) : '',
+    linkedDebitAccountId: account?.linkedDebitAccountId ?? null,
+  }
+}
+
+// 帳戶新增/編輯。account=null 為新增、傳入帳戶為編輯。accounts 供自動扣繳帳戶選擇與排序。
+export default function AccountEditSheet({ open, account, accounts, onClose }) {
+  const [s, setS] = useState(() => initState(account))
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const set = (patch) => setS((prev) => ({ ...prev, ...patch }))
+
+  // account 變更（切換編輯對象）時重置表單
+  const key = account?.id ?? 'new'
+  const [lastKey, setLastKey] = useState(key)
+  if (lastKey !== key) {
+    setLastKey(key)
+    setS(initState(account))
+  }
+
+  const isCard = s.type === 'credit_card'
+  const canSave = s.name.trim().length > 0
+  const debitAccount = accounts.find((a) => a.id === s.linkedDebitAccountId)
+
+  const save = async () => {
+    if (!canSave) return
+    const nextSort = accounts.length ? Math.max(...accounts.map((a) => a.sortOrder ?? 0)) + 1 : 0
+    const data = {
+      name: s.name.trim(),
+      type: s.type,
+      icon: account?.icon ?? null,
+      color: account?.color ?? null,
+      openingBalance: toInt(s.openingBalance),
+      openingDate: s.openingDate,
+      isArchived: account?.isArchived ?? false,
+      sortOrder: account?.sortOrder ?? nextSort,
+      note: account?.note ?? null,
+      // 非信用卡一律清空專屬欄位，避免改型別後殘留
+      creditLimit: isCard ? toInt(s.creditLimit) : null,
+      statementDay: isCard && s.statementDay ? toInt(s.statementDay) : null,
+      paymentDueDay: isCard && s.paymentDueDay ? toInt(s.paymentDueDay) : null,
+      linkedDebitAccountId: isCard ? s.linkedDebitAccountId : null,
+    }
+    if (account) await updateAccount(account.id, data)
+    else await createAccount(data)
+    onClose()
+  }
+
+  const toggleArchive = async () => {
+    if (!account) return
+    await updateAccount(account.id, { isArchived: !account.isArchived })
+    onClose()
+  }
+
+  // 自動扣繳來源只取現金/銀行帳戶
+  const debitCandidates = accounts.filter((a) => a.type === 'cash' || a.type === 'bank')
+
+  return (
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title={account ? '編輯帳戶' : '新增帳戶'}
+      bodyClassName="overflow-y-auto"
+    >
+      <div className="p-[18px] flex flex-col gap-3.5">
+        {/* 名稱 */}
+        <Field label="名稱">
+          <input
+            value={s.name}
+            onChange={(e) => set({ name: e.target.value })}
+            placeholder="例如：玉山信用卡"
+            className="w-full text-[15px] outline-none bg-transparent placeholder:text-text-tertiary"
+          />
+        </Field>
+
+        {/* 類型 */}
+        <div>
+          <div className="text-[13px] text-text-secondary mb-2">類型</div>
+          <div className="flex gap-1.5 p-1 bg-surface-alt rounded-modal">
+            {TYPES.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => set({ type: t.id })}
+                className={`flex-1 py-2 rounded-btn text-[13px] font-semibold ${
+                  s.type === t.id ? 'bg-surface text-text-primary shadow-segment' : 'text-text-secondary'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 期初餘額 + 起始日 */}
+        <div className="flex gap-3">
+          <Field label={isCard ? '期初未繳（負數）' : '期初餘額'} className="flex-1">
+            <div className="flex items-center gap-1 text-[15px] tabular-nums">
+              <span className="text-text-tertiary text-sm">NT$</span>
+              <input
+                inputMode="numeric"
+                value={s.openingBalance}
+                onChange={(e) => set({ openingBalance: e.target.value.replace(/[^0-9-]/g, '') })}
+                className="w-full outline-none bg-transparent"
+              />
+            </div>
+          </Field>
+          <Field label="起始日" className="flex-1">
+            <input
+              type="date"
+              value={s.openingDate}
+              onChange={(e) => e.target.value && set({ openingDate: e.target.value })}
+              className="w-full text-[15px] outline-none bg-transparent"
+            />
+          </Field>
+        </div>
+
+        {/* 信用卡專屬 */}
+        {isCard && (
+          <>
+            <Field label="信用額度">
+              <div className="flex items-center gap-1 text-[15px] tabular-nums">
+                <span className="text-text-tertiary text-sm">NT$</span>
+                <input
+                  inputMode="numeric"
+                  value={s.creditLimit}
+                  onChange={(e) => set({ creditLimit: e.target.value.replace(/[^0-9]/g, '') })}
+                  placeholder="0"
+                  className="w-full outline-none bg-transparent placeholder:text-text-tertiary"
+                />
+              </div>
+            </Field>
+            <div className="flex gap-3">
+              <Field label="出帳日（每月）" className="flex-1">
+                <input
+                  inputMode="numeric"
+                  value={s.statementDay}
+                  onChange={(e) => set({ statementDay: e.target.value.replace(/[^0-9]/g, '').slice(0, 2) })}
+                  placeholder="例如 5"
+                  className="w-full text-[15px] outline-none bg-transparent placeholder:text-text-tertiary"
+                />
+              </Field>
+              <Field label="繳費日（每月）" className="flex-1">
+                <input
+                  inputMode="numeric"
+                  value={s.paymentDueDay}
+                  onChange={(e) => set({ paymentDueDay: e.target.value.replace(/[^0-9]/g, '').slice(0, 2) })}
+                  placeholder="例如 23"
+                  className="w-full text-[15px] outline-none bg-transparent placeholder:text-text-tertiary"
+                />
+              </Field>
+            </div>
+            <Field label="自動扣繳帳戶（選填）">
+              <button
+                onClick={() => setPickerOpen(true)}
+                className="w-full flex items-center justify-between text-[15px]"
+              >
+                <span className={debitAccount ? '' : 'text-text-tertiary'}>
+                  {debitAccount?.name ?? '未設定'}
+                </span>
+                <span className="flex items-center gap-2">
+                  {s.linkedDebitAccountId && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        set({ linkedDebitAccountId: null })
+                      }}
+                      className="text-text-tertiary"
+                    >
+                      <FontAwesomeIcon icon={faXmark} className="text-xs" />
+                    </button>
+                  )}
+                  <FontAwesomeIcon icon={faChevronDown} className="text-text-tertiary text-[11px]" />
+                </span>
+              </button>
+            </Field>
+          </>
+        )}
+
+        {/* 動作 */}
+        <div className="flex items-center gap-2 mt-1">
+          {account && (
+            <button
+              onClick={toggleArchive}
+              className="flex items-center gap-1.5 h-[42px] px-3.5 rounded-btn bg-surface border border-line text-[13px] font-medium text-text-secondary"
+            >
+              <FontAwesomeIcon icon={account.isArchived ? faBoxOpen : faBoxArchive} className="text-xs" />
+              {account.isArchived ? '取消封存' : '封存'}
+            </button>
+          )}
+          <button
+            onClick={save}
+            disabled={!canSave}
+            className="flex-1 flex items-center justify-center gap-1.5 h-[42px] rounded-btn bg-brand text-white text-[13px] font-semibold disabled:opacity-40"
+          >
+            <FontAwesomeIcon icon={faCheck} className="text-xs" /> 儲存
+          </button>
+        </div>
+      </div>
+
+      <AccountPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        accounts={debitCandidates}
+        value={s.linkedDebitAccountId}
+        title="自動扣繳帳戶"
+        onSelect={(id) => set({ linkedDebitAccountId: id })}
+      />
+    </Sheet>
+  )
+}
+
+function Field({ label, children, className = '' }) {
+  return (
+    <div className={className}>
+      <div className="text-[13px] text-text-secondary mb-1.5">{label}</div>
+      <div className="px-3.5 py-2.5 bg-surface border border-line rounded-modal">{children}</div>
+    </div>
+  )
+}

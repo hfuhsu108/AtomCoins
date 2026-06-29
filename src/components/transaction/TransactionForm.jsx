@@ -21,6 +21,8 @@ import {
   createLinkedTransactions,
   updateTransaction,
   deleteTransaction,
+  createInstallmentPlan,
+  createRecurringRule,
 } from '../../db/repo'
 import {
   FEE_CATEGORY_ID,
@@ -28,7 +30,7 @@ import {
   UNCATEGORIZED_INCOME_ID,
 } from '../../db/seed'
 import { newId } from '../../lib/id'
-import { todayStr, formatMd } from '../../lib/date'
+import { todayStr, formatMd, advanceDate } from '../../lib/date'
 import { formatNumber } from '../../lib/format'
 import { getIcon, ACCOUNT_TYPE_ICON } from '../../lib/icons'
 import { toAmount, hasOperator, prettyExpr, applyKey } from '../../lib/calc'
@@ -52,6 +54,8 @@ function stateFromTx(tx) {
   const base = {
     type: tx.type,
     tradeDate: tx.tradeDate,
+    // null = 入帳日跟隨記錄日；僅在實際延後（postingDate≠tradeDate）時保留明確值
+    postingDate: tx.postingDate && tx.postingDate !== tx.tradeDate ? tx.postingDate : null,
     note: tx.note ?? '',
     splits: [emptySplit()],
     activeSplit: 0,
@@ -61,6 +65,9 @@ function stateFromTx(tx) {
     toAccountId: tx.toAccountId ?? null,
     feeExpr: tx.fee ? String(tx.fee) : '',
     counterpartyId: tx.counterpartyId ?? null,
+    reconciled: tx.isReconciled ?? false,
+    installment: null, // 編輯既有交易不重新設定分期/週期
+    recurring: null,
   }
   if (tx.type === 'expense' || tx.type === 'income') {
     base.splits = (tx.splits ?? []).map((s) => ({
@@ -88,6 +95,7 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
       : {
           type: 'expense',
           tradeDate: todayStr(),
+          postingDate: null, // null = 跟隨記錄日
           note: '',
           splits: [emptySplit()],
           activeSplit: 0,
@@ -97,6 +105,9 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
           toAccountId: null,
           feeExpr: '',
           counterpartyId: null,
+          reconciled: false,
+          installment: null, // { periods, startDate, fundingAccountId }
+          recurring: null, // { unit, interval, mode }
         },
   )
   // 開啟中的選擇器：{ kind:'category'|'account'|'counterparty', target }
@@ -178,6 +189,34 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
     })
   }
 
+  // ── 分期 / 週期 切換 ───────────────────────────────────────
+  const toggleInstallment = () => {
+    setState((s) => {
+      if (s.installment) return { ...s, installment: null }
+      const card = lookups.acc[s.accountId ?? defaultAccountId]
+      return {
+        ...s,
+        recurring: null, // 分期與週期互斥
+        installment: {
+          periods: 3,
+          startDate: advanceDate(s.tradeDate, { unit: 'month', interval: 1 }),
+          fundingAccountId: card?.linkedDebitAccountId ?? defaultAccountId,
+        },
+      }
+    })
+  }
+  const setInstallment = (patch) =>
+    setState((s) => ({ ...s, installment: { ...s.installment, ...patch } }))
+
+  const toggleRecurring = () => {
+    setState((s) => ({
+      ...s,
+      recurring: s.recurring ? null : { unit: 'month', interval: 1, mode: 'immediate' },
+    }))
+  }
+  const setRecurring = (patch) =>
+    setState((s) => ({ ...s, recurring: { ...s.recurring, ...patch } }))
+
   // ── 選擇器回填 ─────────────────────────────────────────────
   const handlePick = (id) => {
     const p = picker
@@ -192,6 +231,8 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
       if (p.target === 'main') set({ accountId: id })
       else if (p.target === 'from') set({ fromAccountId: id })
       else if (p.target === 'to') set({ toAccountId: id })
+      else if (p.target === 'funding')
+        setState((s) => ({ ...s, installment: { ...s.installment, fundingAccountId: id } }))
     } else if (p.kind === 'counterparty') {
       if (p.target === 'main') {
         set({ counterpartyId: id })
@@ -207,10 +248,15 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
   }
 
   // ── 儲存 ───────────────────────────────────────────────────
+  const isCardAccount = lookups.acc[accountId]?.type === 'credit_card'
+
   const canSave = (() => {
     if (total <= 0) return false
     // 代墊列在選定對象當下才會被標記，故無「已標記但缺對象」的中間狀態
-    if (isExpenseLike) return true
+    if (isExpenseLike) {
+      if (state.installment) return !!state.installment.fundingAccountId && state.installment.periods >= 2
+      return true
+    }
     if (isTransfer) return fromAccountId && state.toAccountId && fromAccountId !== state.toAccountId
     if (isLoanLike) return !!state.counterpartyId
     return false
@@ -218,7 +264,7 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
 
   const buildList = () => {
     const tradeDate = state.tradeDate
-    const postingDate = tradeDate // 入帳日引擎為階段2，Stage 1 入帳日=記錄日
+    const postingDate = state.postingDate || tradeDate // 未指定延後則入帳日=記錄日
     const note = state.note.trim() || null
 
     if (isExpenseLike) {
@@ -244,7 +290,7 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
           note,
           tagIds: [],
           projectId: null,
-          isReconciled: false,
+          isReconciled: state.reconciled,
           splits: normal.map((s) => ({
             categoryId: s.categoryId || fallback,
             amount: s.amount,
@@ -283,7 +329,7 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
           postingDate,
           note,
           tagIds: [],
-          isReconciled: false,
+          isReconciled: state.reconciled,
         },
       ]
     }
@@ -301,13 +347,42 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
         tagIds: [],
         projectId: null,
         repayments: [],
-        isReconciled: false,
+        isReconciled: state.reconciled,
       },
     ]
   }
 
   const save = async () => {
     if (!canSave) return
+
+    // 分期付款（Model B）：刷卡全額 expense 記在卡 ＋ N 筆銀行→卡還款轉帳。
+    // 僅新增、僅支出＋信用卡帳戶；忽略拆帳/代墊，以總額單一分類建立。
+    if (!initialTx && isExpenseLike && type === 'expense' && state.installment) {
+      const fallback = UNCATEGORIZED_EXPENSE_ID
+      const categoryId = state.splits.find((s) => s.categoryId)?.categoryId || fallback
+      const tradeDate = state.tradeDate
+      const expense = {
+        type: 'expense',
+        accountId,
+        amount: total,
+        tradeDate,
+        postingDate: tradeDate,
+        note: state.note.trim() || null,
+        tagIds: [],
+        projectId: null,
+        isReconciled: state.reconciled,
+        splits: [{ categoryId, amount: total, note: null }],
+      }
+      await createInstallmentPlan({
+        expense,
+        periods: state.installment.periods,
+        startDate: state.installment.startDate,
+        fundingAccountId: state.installment.fundingAccountId,
+      })
+      onSaved?.()
+      return
+    }
+
     const list = buildList()
     if (list.length === 0) return
     if (initialTx) {
@@ -322,6 +397,20 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
     } else {
       await createLinkedTransactions(list)
     }
+
+    // 週期性：記下本筆後另建規則，nextDate=本筆記錄日後推一個週期（payload 用主筆範本，
+    // 不含 id/時間戳，tradeDate/postingDate 於觸發時以當期日期覆寫）
+    if (!initialTx && state.recurring) {
+      const freq = { unit: state.recurring.unit, interval: state.recurring.interval ?? 1 }
+      await createRecurringRule({
+        name: list[0].note ?? typeMeta?.label ?? '週期',
+        payload: { ...list[0] },
+        frequency: freq,
+        postingMode: state.recurring.mode,
+        nextDate: advanceDate(state.tradeDate, freq),
+      })
+    }
+
     onSaved?.()
   }
 
@@ -466,13 +555,45 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
             </div>
 
             {advOpen && (
-              <div className="mt-2.5 bg-surface border border-line rounded-modal p-3">
-                <input
-                  value={state.note}
-                  onChange={(e) => set({ note: e.target.value })}
-                  placeholder="新增備註…"
-                  className="w-full text-sm outline-none bg-transparent placeholder:text-text-tertiary"
+              <div className="mt-2.5 flex flex-col gap-2.5">
+                <div className="bg-surface border border-line rounded-modal p-3">
+                  <input
+                    value={state.note}
+                    onChange={(e) => set({ note: e.target.value })}
+                    placeholder="新增備註…"
+                    className="w-full text-sm outline-none bg-transparent placeholder:text-text-tertiary"
+                  />
+                </div>
+                {!state.installment && (
+                  <PostingDateRow
+                    tradeDate={state.tradeDate}
+                    postingDate={state.postingDate}
+                    onChange={(v) => set({ postingDate: v })}
+                  />
+                )}
+                <ToggleRow
+                  label="已對帳"
+                  on={state.reconciled}
+                  onToggle={() => set({ reconciled: !state.reconciled })}
                 />
+
+                {/* 分期付款（僅支出＋信用卡帳戶；新增時可設定）*/}
+                {type === 'expense' && !initialTx && (
+                  <InstallmentBox
+                    enabled={isCardAccount}
+                    installment={state.installment}
+                    total={total}
+                    fundingObj={lookups.acc[state.installment?.fundingAccountId]}
+                    onToggle={toggleInstallment}
+                    onSet={setInstallment}
+                    onPickFunding={() => setPicker({ kind: 'account', target: 'funding' })}
+                  />
+                )}
+
+                {/* 週期性收支（新增、非分期時可設定）*/}
+                {!initialTx && !state.installment && (
+                  <RecurringBox recurring={state.recurring} onToggle={toggleRecurring} onSet={setRecurring} />
+                )}
               </div>
             )}
           </div>
@@ -492,6 +613,16 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
             {fromAccountId && state.toAccountId && fromAccountId === state.toAccountId && (
               <p className="text-xs text-warning-text px-1">轉出與轉入帳戶不可相同</p>
             )}
+            <PostingDateRow
+              tradeDate={state.tradeDate}
+              postingDate={state.postingDate}
+              onChange={(v) => set({ postingDate: v })}
+            />
+            <ToggleRow
+              label="已對帳"
+              on={state.reconciled}
+              onToggle={() => set({ reconciled: !state.reconciled })}
+            />
             <NoteRow note={state.note} onChange={(v) => set({ note: v })} />
           </div>
         )}
@@ -509,6 +640,16 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
                 未結清
               </span>
             </div>
+            <PostingDateRow
+              tradeDate={state.tradeDate}
+              postingDate={state.postingDate}
+              onChange={(v) => set({ postingDate: v })}
+            />
+            <ToggleRow
+              label="已對帳"
+              on={state.reconciled}
+              onToggle={() => set({ reconciled: !state.reconciled })}
+            />
             <NoteRow note={state.note} onChange={(v) => set({ note: v })} />
           </div>
         )}
@@ -528,13 +669,19 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
       <AccountPicker
         open={picker?.kind === 'account'}
         onClose={() => setPicker(null)}
-        accounts={accounts}
+        accounts={
+          picker?.target === 'funding'
+            ? accounts.filter((a) => a.type === 'cash' || a.type === 'bank')
+            : accounts
+        }
         value={
           picker?.target === 'from'
             ? fromAccountId
             : picker?.target === 'to'
               ? state.toAccountId
-              : accountId
+              : picker?.target === 'funding'
+                ? state.installment?.fundingAccountId
+                : accountId
         }
         disabledId={
           picker?.target === 'from'
@@ -543,7 +690,15 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
               ? fromAccountId
               : null
         }
-        title={picker?.target === 'from' ? '轉出帳戶' : picker?.target === 'to' ? '轉入帳戶' : '選擇帳戶'}
+        title={
+          picker?.target === 'from'
+            ? '轉出帳戶'
+            : picker?.target === 'to'
+              ? '轉入帳戶'
+              : picker?.target === 'funding'
+                ? '扣款銀行'
+                : '選擇帳戶'
+        }
         onSelect={handlePick}
       />
       <CounterpartyPicker
@@ -751,6 +906,185 @@ function NoteRow({ note, onChange }) {
         placeholder="新增備註…"
         className="flex-1 text-sm outline-none bg-transparent placeholder:text-text-tertiary"
       />
+    </div>
+  )
+}
+
+// 入帳日（postingDate）：null=跟隨記錄日；設成晚於記錄日即為「延後入帳」。
+// 選回記錄日當天則清回 null，避免存下無意義的明確值。
+function PostingDateRow({ tradeDate, postingDate, onChange }) {
+  const effective = postingDate || tradeDate
+  const deferred = effective > tradeDate
+  return (
+    <div className="flex items-center justify-between px-4 py-3 bg-surface border border-line rounded-modal">
+      <span className="text-sm text-text-secondary">入帳日</span>
+      <div className="flex items-center gap-2">
+        {deferred && (
+          <span className="text-[11px] font-semibold text-warning-text bg-warning-bg rounded-pill px-2 py-0.5">
+            未入帳
+          </span>
+        )}
+        <label className="relative flex items-center gap-1.5 text-[15px] font-semibold cursor-pointer">
+          <FontAwesomeIcon icon={faCalendarDays} className="text-text-secondary text-xs" />
+          {postingDate ? formatMd(effective) : '與記錄日相同'}
+          <input
+            type="date"
+            value={effective}
+            min={tradeDate}
+            onChange={(e) =>
+              e.target.value && onChange(e.target.value === tradeDate ? null : e.target.value)
+            }
+            className="absolute inset-0 opacity-0 cursor-pointer"
+          />
+        </label>
+        {postingDate && (
+          <button onClick={() => onChange(null)} className="text-[11px] text-text-tertiary">
+            清除
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Switch({ on, disabled, onToggle }) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onToggle}
+      className={`w-11 h-6 rounded-pill flex items-center px-0.5 flex-none transition-colors ${
+        on ? 'bg-brand justify-end' : 'bg-surface-alt justify-start'
+      } ${disabled ? 'opacity-40' : ''}`}
+    >
+      <span className="w-5 h-5 rounded-full bg-white shadow-sm" />
+    </button>
+  )
+}
+
+function Chip({ active, onClick, children }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 py-1.5 rounded-btn text-[13px] font-semibold border ${
+        active ? 'bg-brand text-white border-brand' : 'bg-surface text-text-secondary border-line'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function ToggleRow({ label, on, onToggle }) {
+  return (
+    <div className="flex items-center justify-between px-4 py-3 bg-surface border border-line rounded-modal">
+      <span className="text-sm text-text-secondary">{label}</span>
+      <Switch on={on} onToggle={onToggle} />
+    </div>
+  )
+}
+
+function InstallmentBox({ enabled, installment, total, fundingObj, onToggle, onSet, onPickFunding }) {
+  const on = !!installment
+  const periods = installment?.periods ?? 0
+  const per = on && periods ? Math.floor(total / periods) : 0
+  const last = on && periods ? total - per * (periods - 1) : 0
+  return (
+    <div className="bg-surface border border-line rounded-modal p-3 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <span className="text-sm text-text-secondary">分期付款</span>
+          {!enabled && <span className="block text-[11px] text-text-tertiary mt-0.5">僅信用卡帳戶可分期</span>}
+        </div>
+        <Switch on={on} disabled={!enabled} onToggle={enabled ? onToggle : undefined} />
+      </div>
+      {on && (
+        <>
+          <div className="flex gap-1.5">
+            {[3, 6, 12, 24].map((n) => (
+              <Chip key={n} active={periods === n} onClick={() => onSet({ periods: n })}>
+                {n} 期
+              </Chip>
+            ))}
+          </div>
+          <div className="flex items-center justify-between text-[13px]">
+            <span className="text-text-secondary">首期扣款日</span>
+            <label className="relative font-semibold cursor-pointer flex items-center gap-1.5">
+              <FontAwesomeIcon icon={faCalendarDays} className="text-text-secondary text-xs" />
+              {formatMd(installment.startDate)}
+              <input
+                type="date"
+                value={installment.startDate}
+                onChange={(e) => e.target.value && onSet({ startDate: e.target.value })}
+                className="absolute inset-0 opacity-0 cursor-pointer"
+              />
+            </label>
+          </div>
+          <div className="flex items-center justify-between text-[13px]">
+            <span className="text-text-secondary">扣款銀行</span>
+            <button onClick={onPickFunding} className="font-semibold flex items-center gap-1.5">
+              {fundingObj?.name ?? '選擇'}
+              <FontAwesomeIcon icon={faChevronDown} className="text-text-tertiary text-[10px]" />
+            </button>
+          </div>
+          <div className="text-[11px] text-text-tertiary tabular-nums border-t border-line-light pt-2">
+            每期約 NT$ {formatNumber(per)}
+            {last !== per ? `（末期 NT$ ${formatNumber(last)}）` : ''} · 全額 NT$ {formatNumber(total)} 記入卡帳
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+const MODE_HINT = {
+  immediate: '到期自動記一筆',
+  deferred: '提前產生未入帳交易，到日自動入帳',
+  reminder: '到期在通知區提醒，手動確認才記',
+}
+
+function RecurringBox({ recurring, onToggle, onSet }) {
+  const on = !!recurring
+  const UNITS = [
+    ['week', '每週'],
+    ['month', '每月'],
+    ['year', '每年'],
+  ]
+  const MODES = [
+    ['immediate', '自動入帳'],
+    ['deferred', '提前產生'],
+    ['reminder', '僅提醒'],
+  ]
+  return (
+    <div className="bg-surface border border-line rounded-modal p-3 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-text-secondary">設為週期性</span>
+        <Switch on={on} onToggle={onToggle} />
+      </div>
+      {on && (
+        <>
+          <div>
+            <div className="text-[11px] text-text-tertiary mb-1.5">頻率</div>
+            <div className="flex gap-1.5">
+              {UNITS.map(([u, l]) => (
+                <Chip key={u} active={recurring.unit === u} onClick={() => onSet({ unit: u })}>
+                  {l}
+                </Chip>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] text-text-tertiary mb-1.5">入帳方式</div>
+            <div className="flex gap-1.5">
+              {MODES.map(([m, l]) => (
+                <Chip key={m} active={recurring.mode === m} onClick={() => onSet({ mode: m })}>
+                  {l}
+                </Chip>
+              ))}
+            </div>
+          </div>
+          <p className="text-[11px] text-text-tertiary">{MODE_HINT[recurring.mode]}</p>
+        </>
+      )}
     </div>
   )
 }

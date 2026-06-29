@@ -1,6 +1,7 @@
 // Dexie CRUD 層：集中產生 id 與 createdAt/updatedAt 戳記，元件不直接碰 db.add/update。
 import { db } from './index'
 import { newId } from '../lib/id'
+import { advanceDate } from '../lib/date'
 import { SETTINGS_ID } from './seed'
 
 const now = () => new Date().toISOString()
@@ -79,6 +80,143 @@ export async function createTag(data) {
   const record = { ...data, id: data.id ?? newId(), createdAt: now() }
   await db.tags.add(record)
   return record
+}
+
+// ── 信用卡繳費（docs/03 §B：繳款是 transfer，不是支出）────────────
+// 一次寫入「銀行→卡」轉帳 ＋ 帳單繳款快照（記 isPaid/paymentTransactionId），
+// 兩者原子綁定，避免轉帳成功但快照漏記。回傳建立的轉帳記錄。
+export async function payCreditCardStatement({ card, fundingAccountId, amount, postingDate, period }) {
+  const ts = now()
+  const payment = {
+    id: newId(),
+    type: 'transfer',
+    currency: 'TWD',
+    fromAccountId: fundingAccountId,
+    toAccountId: card.id,
+    amount,
+    fee: 0,
+    tradeDate: postingDate,
+    postingDate,
+    note: '信用卡繳費',
+    tagIds: [],
+    isReconciled: false,
+    createdAt: ts,
+    updatedAt: ts,
+  }
+  const statement = {
+    id: newId(),
+    accountId: card.id,
+    periodStart: period.periodStart,
+    periodEnd: period.periodEnd,
+    statementDate: period.statementDate,
+    dueDate: period.dueDate,
+    totalAmount: period.total,
+    isPaid: true,
+    paymentTransactionId: payment.id,
+    paidAmount: amount,
+    createdAt: ts,
+    updatedAt: ts,
+  }
+  await db.transaction('rw', db.transactions, db.creditCardStatements, async () => {
+    await db.transactions.add(payment)
+    await db.creditCardStatements.put(statement) // put：同期重繳覆蓋舊快照
+  })
+  return payment
+}
+
+// ── 分期付款（docs/03 §B Model B）──────────────────────────────
+// 刷卡當下記一筆全額 expense（記在卡），再產生 N 筆「扣款銀行→卡」還款轉帳，
+// postingDate 自首期日起逐月（未到期者為未入帳）。全部綁同一 installmentPlanId。
+export async function createInstallmentPlan({ expense, periods, startDate, fundingAccountId }) {
+  const planId = newId()
+  const ts = now()
+  const total = expense.amount
+  const per = Math.floor(total / periods)
+  const purchaseDate = expense.tradeDate
+
+  const mainExpense = {
+    ...expense,
+    id: newId(),
+    currency: 'TWD',
+    postingDate: purchaseDate, // 全額於刷卡日入卡帳
+    installmentPlanId: planId,
+    note: expense.note ?? `分期 ${periods} 期`,
+    isReconciled: false,
+    createdAt: ts,
+    updatedAt: ts,
+  }
+
+  const repayments = []
+  for (let k = 0; k < periods; k++) {
+    const date = advanceDate(startDate, { unit: 'month', interval: k })
+    const amount = k < periods - 1 ? per : total - per * (periods - 1) // 末期吸收餘數
+    repayments.push({
+      id: newId(),
+      type: 'transfer',
+      currency: 'TWD',
+      fromAccountId: fundingAccountId,
+      toAccountId: expense.accountId,
+      amount,
+      fee: 0,
+      tradeDate: date,
+      postingDate: date,
+      note: `分期 ${k + 1}/${periods}`,
+      tagIds: [],
+      isReconciled: false,
+      installmentPlanId: planId,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  }
+
+  const plan = {
+    id: planId,
+    accountId: expense.accountId,
+    totalAmount: total,
+    periods,
+    startDate,
+    perPeriodAmount: per,
+    fundingAccountId,
+    createdAt: ts,
+    updatedAt: ts,
+  }
+
+  await db.transaction('rw', db.transactions, db.installmentPlans, async () => {
+    await db.transactions.bulkAdd([mainExpense, ...repayments])
+    await db.installmentPlans.add(plan)
+  })
+  return plan
+}
+
+// 刪除整個分期方案（主支出＋所有還款）
+export async function deleteInstallmentPlan(planId) {
+  await db.transaction('rw', db.transactions, db.installmentPlans, async () => {
+    await db.transactions.where('installmentPlanId').equals(planId).delete()
+    await db.installmentPlans.delete(planId)
+  })
+}
+
+// ── 週期性收支（RecurringRule）─────────────────────────────────
+export async function createRecurringRule(data) {
+  const ts = now()
+  const record = {
+    isActive: true,
+    lastRunAt: null,
+    ...data,
+    id: data.id ?? newId(),
+    createdAt: ts,
+    updatedAt: ts,
+  }
+  await db.recurringRules.add(record)
+  return record
+}
+
+export async function updateRecurringRule(id, patch) {
+  await db.recurringRules.update(id, { ...patch, updatedAt: now() })
+}
+
+export async function deleteRecurringRule(id) {
+  await db.recurringRules.delete(id)
 }
 
 // ── Settings（單例）──────────────────────────────────────────

@@ -54,3 +54,8 @@ export const ACCOUNT_TYPE_ICON = {
   credit_card: 'credit-card',
   securities: 'chart-line',
 }
+
+// 帳戶圖示：自訂 icon 優先，否則退回類型預設
+export function accountIcon(account) {
+  return getIcon(account.icon ?? ACCOUNT_TYPE_ICON[account.type])
+}

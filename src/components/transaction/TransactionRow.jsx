@@ -3,10 +3,12 @@ import {
   faRightLeft,
   faHandHoldingDollar,
   faArrowsSplitUpAndLeft,
+  faCircleCheck,
 } from '@fortawesome/free-solid-svg-icons'
 import { getIcon } from '../../lib/icons'
 import { formatNumber } from '../../lib/format'
-import { settlementStatus, outstanding } from '../../lib/engine'
+import { formatMd } from '../../lib/date'
+import { settlementStatus, outstanding, isPending } from '../../lib/engine'
 
 const STATUS = {
   unpaid: { label: '未結清', cls: 'text-warning-text bg-warning-bg' },
@@ -62,6 +64,8 @@ function describe(tx, lookups) {
 
 export default function TransactionRow({ tx, lookups, onClick }) {
   const d = describe(tx, lookups)
+  const pending = isPending(tx)
+  const installment = !!tx.installmentPlanId
   return (
     <button onClick={onClick} className="flex items-center gap-3 w-full py-3 text-left">
       <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
@@ -80,6 +84,19 @@ export default function TransactionRow({ tx, lookups, onClick }) {
             <span className={`flex-none text-[11px] font-medium rounded-pill px-2 py-0.5 ${d.statusBadge.cls}`}>
               {d.statusBadge.label}
             </span>
+          )}
+          {installment && (
+            <span className="flex-none text-[11px] font-medium text-brand bg-brand-light rounded-chip px-1.5 py-0.5">
+              分期
+            </span>
+          )}
+          {pending && (
+            <span className="flex-none text-[11px] font-medium text-warning-text bg-warning-bg rounded-pill px-2 py-0.5">
+              未入帳 {formatMd(tx.postingDate)}
+            </span>
+          )}
+          {tx.isReconciled && (
+            <FontAwesomeIcon icon={faCircleCheck} className="flex-none text-success text-[12px]" title="已對帳" />
           )}
         </div>
         <div className="flex items-center gap-2 mt-0.5 min-w-0">
