@@ -30,7 +30,8 @@
   --color-success-bg: #EBFBEE;
   --color-error: #E03131;
   --color-error-bg: #FFF0F0;
-  --color-warning: #F08C00;
+  /* warning 用深橘，與 expense(#F08C00) 區隔，避免撞色 (design-brief 定案) */
+  --color-warning: #E8590C;
   --color-warning-text: #8A5800;
   --color-warning-bg: #FFF4E6;
   --color-warning-border: #FFE3BF;
