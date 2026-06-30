@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
@@ -21,6 +21,7 @@ import {
   outstandingAsOf,
   pendingByAccount,
 } from '../lib/engine'
+import { computeHoldings, holdingsMarketValue } from '../lib/stock'
 import { dueReminders, fireReminder } from '../lib/recurring'
 import { formatBalance, formatSigned, formatAmount } from '../lib/format'
 import { todayStr, parseDate, monthLabel, formatMd } from '../lib/date'
@@ -47,6 +48,8 @@ export default function HomePage() {
   const accounts = useLiveQuery(() => db.accounts.toArray(), [], [])
   const txns = useLiveQuery(() => db.transactions.toArray(), [], [])
   const rules = useLiveQuery(() => db.recurringRules.toArray(), [], [])
+  const stockTxns = useLiveQuery(() => db.stockTransactions.toArray(), [], [])
+  const stockPrices = useLiveQuery(() => db.stockPrices.toArray(), [], [])
 
   const [hidden, setHidden] = useState(false)
   const [compOpen, setCompOpen] = useState(false)
@@ -60,11 +63,27 @@ export default function HomePage() {
   const year = today.getFullYear()
   const month = today.getMonth() + 1
 
+  // 持股計算
+  const { holdings } = useMemo(
+    () => computeHoldings(stockTxns, stockPrices, { asOf }),
+    [stockTxns, stockPrices, asOf],
+  )
+  const holdingsValue = holdingsMarketValue(holdings)
+
+  // 各證券帳戶的持股市值
+  const holdingsByAcct = useMemo(() => {
+    const m = {}
+    for (const h of holdings) {
+      m[h.securitiesAccountId] = (m[h.securitiesAccountId] ?? 0) + h.marketValue
+    }
+    return m
+  }, [holdings])
+
   // 現餘額／淨資產一律以「今天」為入帳截止：未來入帳日記錄（未入帳）不計入現況
-  const balances = accountBalances(accounts, txns, asOf)
-  const pending = pendingByAccount(accounts, txns, asOf)
-  const nw = netWorth(accounts, txns, { asOf })
-  const nwPrev = netWorth(accounts, txns, { asOf: lastMonthEnd() })
+  const balances = accountBalances(accounts, txns, asOf, stockTxns)
+  const pending = pendingByAccount(accounts, txns, asOf, stockTxns)
+  const nw = netWorth(accounts, txns, { holdingsValue, asOf, stockTxns })
+  const nwPrev = netWorth(accounts, txns, { holdingsValue, asOf: lastMonthEnd(), stockTxns })
   const change = nw - nwPrev
   const { income, expense, balance } = monthlySummary(txns, year, month)
 
@@ -74,7 +93,7 @@ export default function HomePage() {
   const comp = {
     cash: sumType('cash'),
     bank: sumType('bank'),
-    invest: 0, // 持股市值階段3 後接入
+    invest: holdingsValue,
     recv: txns.filter((t) => t.type === 'receivable').reduce((s, t) => s + outstandingAsOf(t, asOf), 0),
     card: sumType('credit_card'),
     pay: txns.filter((t) => t.type === 'payable').reduce((s, t) => s + outstandingAsOf(t, asOf), 0),
@@ -179,7 +198,9 @@ export default function HomePage() {
               .filter((a) => a.type === g.type)
               .sort((a, b) => a.sortOrder - b.sortOrder)
             if (list.length === 0) return null
-            const groupTotal = list.reduce((s, a) => s + balances[a.id], 0)
+            const groupTotal = g.type === 'securities'
+              ? list.reduce((s, a) => s + (holdingsByAcct[a.id] ?? 0), 0)
+              : list.reduce((s, a) => s + balances[a.id], 0)
             const open = !collapsed[g.type]
             return (
               <div key={g.type} className={gi > 0 ? 'border-t border-line-light' : ''}>
@@ -196,7 +217,9 @@ export default function HomePage() {
                   <span className="text-[13px] text-text-secondary tabular-nums font-medium">
                     {g.type === 'credit_card'
                       ? `已用 ${formatAmount(-groupTotal, opt)}`
-                      : formatBalance(groupTotal, opt)}
+                      : g.type === 'securities'
+                        ? `市值 ${formatBalance(groupTotal, opt)}`
+                        : formatBalance(groupTotal, opt)}
                   </span>
                 </button>
                 {open &&
@@ -204,10 +227,26 @@ export default function HomePage() {
                     <AccountRow
                       key={a.id}
                       account={a}
-                      balance={balances[a.id]}
+                      balance={a.type === 'securities' ? (holdingsByAcct[a.id] ?? 0) : balances[a.id]}
                       pending={pending[a.id]}
                       opt={opt}
-                      onClick={a.type === 'credit_card' ? () => navigate(`/card/${a.id}`) : undefined}
+                      settlementBankName={
+                        a.type === 'securities' && a.defaultSettlementBankId
+                          ? accounts.find((b) => b.id === a.defaultSettlementBankId)?.name
+                          : undefined
+                      }
+                      settlementBankBalance={
+                        a.type === 'securities' && a.defaultSettlementBankId
+                          ? balances[a.defaultSettlementBankId]
+                          : undefined
+                      }
+                      onClick={
+                        a.type === 'credit_card'
+                          ? () => navigate(`/card/${a.id}`)
+                          : a.type === 'securities'
+                            ? () => navigate('/transactions?tab=stock')
+                            : undefined
+                      }
                     />
                   ))}
               </div>
@@ -264,8 +303,9 @@ function CompRow({ label, value, danger }) {
   )
 }
 
-function AccountRow({ account, balance, pending = 0, opt, onClick }) {
+function AccountRow({ account, balance, pending = 0, opt, onClick, settlementBankName, settlementBankBalance }) {
   const isCard = account.type === 'credit_card'
+  const isSecurities = account.type === 'securities'
   const used = -balance
   const limit = account.creditLimit ?? 0
   const pct = limit > 0 ? Math.min(100, Math.max(0, (used / limit) * 100)) : 0
@@ -284,9 +324,14 @@ function AccountRow({ account, balance, pending = 0, opt, onClick }) {
             {isCard ? `已用 ${formatAmount(used, opt)}` : formatBalance(balance, opt)}
           </span>
         </div>
+        {isSecurities && settlementBankName && (
+          <div className="text-xs text-text-tertiary tabular-nums mt-0.5">
+            交割銀行 {settlementBankName} {settlementBankBalance != null ? formatBalance(settlementBankBalance, opt) : ''}
+          </div>
+        )}
         {pending !== 0 && (
           <div className="text-xs text-text-tertiary tabular-nums mt-0.5">
-            未入帳 {formatSigned(pending, opt)}
+            {isSecurities ? '未交割' : '未入帳'} {formatSigned(pending, opt)}
           </div>
         )}
         {isCard && limit > 0 && (

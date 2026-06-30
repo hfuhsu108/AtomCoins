@@ -1,23 +1,30 @@
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db'
-import { deleteTransaction, deleteTransactionGroup, deleteInstallmentPlan } from '../db/repo'
+import { deleteTransaction, deleteTransactionGroup, deleteInstallmentPlan, deleteStockTransaction } from '../db/repo'
 import TransactionForm from '../components/transaction/TransactionForm'
 
-// 記帳頁：無 id=新增；帶 ?id= 進入編輯（畫面2）。手機全螢幕、桌面置中 modal。
+// 記帳頁：無 id=新增；帶 ?id= 進入編輯（畫面2）；帶 ?stxId= 編輯股票交易。
 export default function AddTransactionPage() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const id = params.get('id')
+  const stxId = params.get('stxId')
   const close = () => navigate(-1)
 
-  // 編輯模式才查；id 為 null 時回傳 null（非 undefined）
   const editTx = useLiveQuery(() => (id ? db.transactions.get(id) : null), [id])
+  const editStock = useLiveQuery(() => (stxId ? db.stockTransactions.get(stxId) : null), [stxId])
 
-  // 載入中（查詢未回）先不渲染，避免用初值建表單後又被覆蓋
   if (id && editTx === undefined) return null
+  if (stxId && editStock === undefined) return null
 
   const handleDelete = async () => {
+    if (editStock) {
+      if (!window.confirm('確定刪除這筆股票交易？')) return
+      await deleteStockTransaction(editStock.id)
+      close()
+      return
+    }
     if (!editTx) return
     const planId = editTx.installmentPlanId
     const linked = !!editTx.linkGroupId
@@ -38,9 +45,10 @@ export default function AddTransactionPage() {
       <div className="w-full h-full lg:w-[760px] lg:h-auto lg:max-h-[860px] lg:rounded-modal lg:overflow-hidden lg:shadow-modal bg-app-bg">
         <TransactionForm
           initialTx={editTx ?? null}
+          initialStock={editStock ?? null}
           onClose={close}
           onSaved={close}
-          onDelete={id ? handleDelete : undefined}
+          onDelete={id || stxId ? handleDelete : undefined}
         />
       </div>
     </div>

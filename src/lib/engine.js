@@ -41,8 +41,20 @@ export function transactionPostings(tx) {
   return postings
 }
 
+// 把單筆股票交易攤成 postings：交割金額於 settlementDate 影響「交割銀行」（docs/02 §4.1）。
+// 買進 −(round(gross)+fee)、賣出 +(round(gross)−fee−tax)。本金不進收支統計。
+export function stockPostings(stx) {
+  const gross = Math.round(stx.shares * stx.price)
+  const amount =
+    stx.side === 'buy'
+      ? -(gross + (stx.fee ?? 0))
+      : gross - (stx.fee ?? 0) - (stx.tax ?? 0)
+  return [{ accountId: stx.settlementBankId, amount, date: stx.settlementDate }]
+}
+
 // 一次算出多帳戶餘額，回傳 { accountId: balance }。asOf 為 'YYYY-MM-DD'，null=全部。
-export function accountBalances(accounts, txns, asOf = null) {
+// stockTxns 為股票交易（交割金額於 settlementDate 計入交割銀行）；未傳則行為與階段2 相同。
+export function accountBalances(accounts, txns, asOf = null, stockTxns = []) {
   const map = {}
   for (const a of accounts) map[a.id] = a.openingBalance ?? 0
   for (const tx of txns) {
@@ -52,12 +64,25 @@ export function accountBalances(accounts, txns, asOf = null) {
       map[p.accountId] += p.amount
     }
   }
+  for (const stx of stockTxns) {
+    for (const p of stockPostings(stx)) {
+      if (!(p.accountId in map)) continue
+      if (asOf && p.date > asOf) continue
+      map[p.accountId] += p.amount
+    }
+  }
   return map
 }
 
 // 單一帳戶餘額
-export function accountBalance(account, txns, asOf = null) {
-  return accountBalances([account], txns, asOf)[account.id]
+export function accountBalance(account, txns, asOf = null, stockTxns = []) {
+  return accountBalances([account], txns, asOf, stockTxns)[account.id]
+}
+
+// 交割銀行於 settleDate 的可用餘額（docs/02 §4.2）。已含所有「未交割」買賣的影響，
+// 供買單前檢查：新買單需求金額 > 可用 → 跳警告但仍允許。
+export function availableForSettlement(bankId, accounts, txns, stockTxns, settleDate) {
+  return accountBalances(accounts, txns, settleDate, stockTxns)[bankId] ?? 0
 }
 
 // 一筆交易是否「未入帳」：主入帳日尚未到（postingDate > asOf）。
@@ -66,13 +91,20 @@ export function isPending(tx, asOf = todayStr()) {
   return !!tx.postingDate && tx.postingDate > asOf
 }
 
-// 各帳戶「未入帳」金額：postingDate 在 asOf 之後的 postings 加總（帶正負）。
-// 用於帳戶列在現餘額外另顯示「未入帳 ±X」。回傳 { accountId: pendingAmount }。
-export function pendingByAccount(accounts, txns, asOf = todayStr()) {
+// 各帳戶「未入帳／未交割」金額：postingDate（股票為 settlementDate）在 asOf 之後的
+// postings 加總（帶正負）。用於帳戶列在現餘額外另顯示「未入帳 ±X」。
+// 回傳 { accountId: pendingAmount }。
+export function pendingByAccount(accounts, txns, asOf = todayStr(), stockTxns = []) {
   const map = {}
   for (const a of accounts) map[a.id] = 0
   for (const tx of txns) {
     for (const p of transactionPostings(tx)) {
+      if (!(p.accountId in map)) continue
+      if (p.date > asOf) map[p.accountId] += p.amount
+    }
+  }
+  for (const stx of stockTxns) {
+    for (const p of stockPostings(stx)) {
       if (!(p.accountId in map)) continue
       if (p.date > asOf) map[p.accountId] += p.amount
     }
@@ -156,9 +188,11 @@ export function settlementStatus(tx) {
   return 'partial'
 }
 
-// 淨資產（docs/02 §4.3）。holdingsValue=持股市值（階段3 後接入，Stage 1 給 0）。
-export function netWorth(accounts, txns, { holdingsValue = 0, asOf = null } = {}) {
-  const balances = accountBalances(accounts, txns, asOf)
+// 淨資產（docs/02 §4.3）。holdingsValue=持股市值（成交日基準，由 computeHoldings 算）。
+// stockTxns 讓銀行餘額反映「已交割」買賣；pendingStockNet 補上「未交割」買賣的未來現金影響，
+// 抵銷成交日基準持股造成的雙算（T+2 期間：現金未動 + 持股已計 → 加未交割淨額還原）。
+export function netWorth(accounts, txns, { holdingsValue = 0, asOf = null, stockTxns = [] } = {}) {
+  const balances = accountBalances(accounts, txns, asOf, stockTxns)
   let sum = 0
   for (const a of accounts) {
     if (a.isArchived) continue
@@ -171,7 +205,15 @@ export function netWorth(accounts, txns, { holdingsValue = 0, asOf = null } = {}
     if (tx.type === 'receivable') sum += outstandingAsOf(tx, asOf)
     else if (tx.type === 'payable') sum -= outstandingAsOf(tx, asOf)
   }
-  return sum + holdingsValue
+  // 未交割調整：settlementDate > asOf 的股票 postings（買 −、賣 +）尚未進銀行餘額，
+  // 但持股已以成交日計入 holdingsValue，補上其未來現金影響才不雙算。
+  let pendingStockNet = 0
+  for (const stx of stockTxns) {
+    for (const p of stockPostings(stx)) {
+      if (asOf && p.date > asOf) pendingStockNet += p.amount
+    }
+  }
+  return sum + holdingsValue + pendingStockNet
 }
 
 // 本月收支（docs/02 §4.4）。依 tradeDate 歸月（見 docs/03 §J：刷卡日決定計入哪個月），

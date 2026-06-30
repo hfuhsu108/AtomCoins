@@ -23,6 +23,8 @@ import {
   deleteTransaction,
   createInstallmentPlan,
   createRecurringRule,
+  createStockTransaction,
+  updateStockTransaction,
 } from '../../db/repo'
 import {
   FEE_CATEGORY_ID,
@@ -38,6 +40,7 @@ import NumberPad from './NumberPad'
 import CategoryPicker from './CategoryPicker'
 import AccountPicker from './AccountPicker'
 import CounterpartyPicker from './CounterpartyPicker'
+import StockFields, { initStockState, stockCanSave, buildStockRecord } from './StockFields'
 
 const TYPES = [
   { id: 'expense', label: '支出', sign: '−', color: 'text-expense' },
@@ -45,6 +48,7 @@ const TYPES = [
   { id: 'transfer', label: '轉帳', sign: '', color: 'text-text-primary' },
   { id: 'receivable', label: '應收', sign: '+', color: 'text-income' },
   { id: 'payable', label: '應付', sign: '−', color: 'text-expense' },
+  { id: 'stock', label: '股票', sign: '', color: 'text-text-primary' },
 ]
 
 const emptySplit = () => ({ key: newId(), categoryId: null, expr: '', advanceCounterpartyId: null })
@@ -83,17 +87,20 @@ function stateFromTx(tx) {
   return base
 }
 
-export default function TransactionForm({ initialTx = null, onClose, onSaved, onDelete }) {
+export default function TransactionForm({ initialTx = null, initialStock = null, onClose, onSaved, onDelete }) {
   const settings = useLiveQuery(() => db.settings.get('singleton'))
   const accounts = useLiveQuery(() => db.accounts.toArray(), [], [])
   const categories = useLiveQuery(() => db.categories.toArray(), [], [])
   const counterparties = useLiveQuery(() => db.counterparties.toArray(), [], [])
+  const brokers = useLiveQuery(() => db.brokers.toArray(), [], [])
+
+  const [stockState, setStockState] = useState(() => initStockState(initialStock, accounts))
 
   const [state, setState] = useState(() =>
     initialTx
       ? stateFromTx(initialTx)
       : {
-          type: 'expense',
+          type: initialStock ? 'stock' : 'expense',
           tradeDate: todayStr(),
           postingDate: null, // null = 跟隨記錄日
           note: '',
@@ -126,6 +133,7 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
   const isExpenseLike = type === 'expense' || type === 'income'
   const isTransfer = type === 'transfer'
   const isLoanLike = type === 'receivable' || type === 'payable'
+  const isStock = type === 'stock'
 
   // 是否以多列拆帳呈現：有多列或任一列標記代墊
   const hasAdvance = state.splits.some((s) => s.advanceCounterpartyId)
@@ -251,8 +259,8 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
   const isCardAccount = lookups.acc[accountId]?.type === 'credit_card'
 
   const canSave = (() => {
+    if (isStock) return stockCanSave(stockState)
     if (total <= 0) return false
-    // 代墊列在選定對象當下才會被標記，故無「已標記但缺對象」的中間狀態
     if (isExpenseLike) {
       if (state.installment) return !!state.installment.fundingAccountId && state.installment.periods >= 2
       return true
@@ -355,6 +363,14 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
   const save = async () => {
     if (!canSave) return
 
+    if (isStock) {
+      const record = buildStockRecord(stockState, brokers)
+      if (initialStock) await updateStockTransaction(initialStock.id, record)
+      else await createStockTransaction(record)
+      onSaved?.()
+      return
+    }
+
     // 分期付款（Model B）：刷卡全額 expense 記在卡 ＋ N 筆銀行→卡還款轉帳。
     // 僅新增、僅支出＋信用卡帳戶；忽略拆帳/代墊，以總額單一分類建立。
     if (!initialTx && isExpenseLike && type === 'expense' && state.installment) {
@@ -456,26 +472,35 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
 
       {/* type pills */}
       <div className="flex gap-2 px-3.5 py-3 bg-surface border-b border-line overflow-x-auto flex-none">
-        {TYPES.map((t) => {
-          const active = t.id === type
-          return (
-            <button
-              key={t.id}
-              onClick={() => set({ type: t.id })}
-              className={`flex-none px-[18px] py-2 rounded-pill text-sm font-semibold whitespace-nowrap border ${
-                active
-                  ? 'bg-brand text-white border-brand'
-                  : 'bg-surface text-text-secondary border-line'
-              }`}
-            >
-              {t.label}
-            </button>
-          )
-        })}
+        {TYPES
+          .filter((t) => t.id !== 'stock' || isStock || !initialTx)
+          .map((t) => {
+            const active = t.id === type
+            return (
+              <button
+                key={t.id}
+                onClick={() => set({ type: t.id })}
+                className={`flex-none px-[18px] py-2 rounded-pill text-sm font-semibold whitespace-nowrap border ${
+                  active
+                    ? t.id === 'stock'
+                      ? 'bg-[var(--color-stock-buy)] text-white border-[var(--color-stock-buy)]'
+                      : 'bg-brand text-white border-brand'
+                    : 'bg-surface text-text-secondary border-line'
+                }`}
+              >
+                {t.label}
+              </button>
+            )
+          })}
       </div>
 
       {/* scroll body */}
       <div className="flex-1 overflow-y-auto flex flex-col">
+        {/* stock type: dedicated body, no amount header or NumberPad */}
+        {isStock ? (
+          <StockFields state={stockState} setState={setStockState} accounts={accounts} />
+        ) : (
+        <>
         {/* amount */}
         <div className="px-[18px] pt-5 pb-4 bg-surface border-b border-line">
           <div className="text-[13px] text-text-secondary">{typeMeta.label} 金額</div>
@@ -653,10 +678,12 @@ export default function TransactionForm({ initialTx = null, onClose, onSaved, on
             <NoteRow note={state.note} onChange={(v) => set({ note: v })} />
           </div>
         )}
+        </>
+        )}
       </div>
 
-      {/* number pad */}
-      <NumberPad onPress={onPress} />
+      {/* number pad — stock mode 不需要 */}
+      {!isStock && <NumberPad onPress={onPress} />}
 
       {/* pickers */}
       <CategoryPicker

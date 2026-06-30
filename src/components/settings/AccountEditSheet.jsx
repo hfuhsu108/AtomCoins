@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faCheck, faXmark, faChevronDown, faBoxArchive, faBoxOpen } from '@fortawesome/free-solid-svg-icons'
+import { faCheck, faXmark, faChevronDown, faBoxArchive, faBoxOpen, faPercent } from '@fortawesome/free-solid-svg-icons'
 import { createAccount, updateAccount } from '../../db/repo'
 import { todayStr } from '../../lib/date'
 import Sheet from '../Sheet'
@@ -30,13 +30,16 @@ function initState(account) {
     statementDay: account?.statementDay != null ? String(account.statementDay) : '',
     paymentDueDay: account?.paymentDueDay != null ? String(account.paymentDueDay) : '',
     linkedDebitAccountId: account?.linkedDebitAccountId ?? null,
+    defaultSettlementBankId: account?.defaultSettlementBankId ?? null,
+    defaultBrokerId: account?.defaultBrokerId ?? null,
   }
 }
 
 // 帳戶新增/編輯。account=null 為新增、傳入帳戶為編輯。accounts 供自動扣繳帳戶選擇與排序。
-export default function AccountEditSheet({ open, account, accounts, onClose }) {
+export default function AccountEditSheet({ open, account, accounts, brokers = [], onClose }) {
   const [s, setS] = useState(() => initState(account))
-  const [pickerOpen, setPickerOpen] = useState(false)
+  // 'debit' | 'settlementBank' | 'broker' | null
+  const [pickerTarget, setPickerTarget] = useState(null)
   const set = (patch) => setS((prev) => ({ ...prev, ...patch }))
 
   // account 變更（切換編輯對象）時重置表單
@@ -48,8 +51,11 @@ export default function AccountEditSheet({ open, account, accounts, onClose }) {
   }
 
   const isCard = s.type === 'credit_card'
+  const isSecurities = s.type === 'securities'
   const canSave = s.name.trim().length > 0
   const debitAccount = accounts.find((a) => a.id === s.linkedDebitAccountId)
+  const settleBankObj = accounts.find((a) => a.id === s.defaultSettlementBankId)
+  const brokerObj = brokers.find((b) => b.id === s.defaultBrokerId)
 
   const save = async () => {
     if (!canSave) return
@@ -69,6 +75,9 @@ export default function AccountEditSheet({ open, account, accounts, onClose }) {
       statementDay: isCard && s.statementDay ? toInt(s.statementDay) : null,
       paymentDueDay: isCard && s.paymentDueDay ? toInt(s.paymentDueDay) : null,
       linkedDebitAccountId: isCard ? s.linkedDebitAccountId : null,
+      // 非證券一律清空
+      defaultSettlementBankId: isSecurities ? s.defaultSettlementBankId : null,
+      defaultBrokerId: isSecurities ? s.defaultBrokerId : null,
     }
     if (account) await updateAccount(account.id, data)
     else await createAccount(data)
@@ -180,7 +189,7 @@ export default function AccountEditSheet({ open, account, accounts, onClose }) {
             </div>
             <Field label="自動扣繳帳戶（選填）">
               <button
-                onClick={() => setPickerOpen(true)}
+                onClick={() => setPickerTarget('debit')}
                 className="w-full flex items-center justify-between text-[15px]"
               >
                 <span className={debitAccount ? '' : 'text-text-tertiary'}>
@@ -192,6 +201,60 @@ export default function AccountEditSheet({ open, account, accounts, onClose }) {
                       onClick={(e) => {
                         e.stopPropagation()
                         set({ linkedDebitAccountId: null })
+                      }}
+                      className="text-text-tertiary"
+                    >
+                      <FontAwesomeIcon icon={faXmark} className="text-xs" />
+                    </button>
+                  )}
+                  <FontAwesomeIcon icon={faChevronDown} className="text-text-tertiary text-[11px]" />
+                </span>
+              </button>
+            </Field>
+          </>
+        )}
+
+        {/* 證券帳戶專屬 */}
+        {isSecurities && (
+          <>
+            <Field label="交割銀行">
+              <button
+                onClick={() => setPickerTarget('settlementBank')}
+                className="w-full flex items-center justify-between text-[15px]"
+              >
+                <span className={settleBankObj ? '' : 'text-text-tertiary'}>
+                  {settleBankObj?.name ?? '選擇銀行帳戶'}
+                </span>
+                <span className="flex items-center gap-2">
+                  {s.defaultSettlementBankId && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        set({ defaultSettlementBankId: null })
+                      }}
+                      className="text-text-tertiary"
+                    >
+                      <FontAwesomeIcon icon={faXmark} className="text-xs" />
+                    </button>
+                  )}
+                  <FontAwesomeIcon icon={faChevronDown} className="text-text-tertiary text-[11px]" />
+                </span>
+              </button>
+            </Field>
+            <Field label="預設券商">
+              <button
+                onClick={() => setPickerTarget('broker')}
+                className="w-full flex items-center justify-between text-[15px]"
+              >
+                <span className={brokerObj ? '' : 'text-text-tertiary'}>
+                  {brokerObj?.name ?? '選擇券商'}
+                </span>
+                <span className="flex items-center gap-2">
+                  {s.defaultBrokerId && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        set({ defaultBrokerId: null })
                       }}
                       className="text-text-tertiary"
                     >
@@ -227,13 +290,25 @@ export default function AccountEditSheet({ open, account, accounts, onClose }) {
       </div>
 
       <AccountPicker
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
+        open={pickerTarget === 'debit' || pickerTarget === 'settlementBank'}
+        onClose={() => setPickerTarget(null)}
         accounts={debitCandidates}
-        value={s.linkedDebitAccountId}
-        title="自動扣繳帳戶"
-        onSelect={(id) => set({ linkedDebitAccountId: id })}
+        value={pickerTarget === 'settlementBank' ? s.defaultSettlementBankId : s.linkedDebitAccountId}
+        title={pickerTarget === 'settlementBank' ? '交割銀行' : '自動扣繳帳戶'}
+        onSelect={(id) => {
+          if (pickerTarget === 'settlementBank') set({ defaultSettlementBankId: id })
+          else set({ linkedDebitAccountId: id })
+        }}
       />
+
+      {pickerTarget === 'broker' && (
+        <BrokerPicker
+          brokers={brokers}
+          value={s.defaultBrokerId}
+          onSelect={(id) => set({ defaultBrokerId: id })}
+          onClose={() => setPickerTarget(null)}
+        />
+      )}
     </Sheet>
   )
 }
@@ -244,5 +319,35 @@ function Field({ label, children, className = '' }) {
       <div className="text-[13px] text-text-secondary mb-1.5">{label}</div>
       <div className="px-3.5 py-2.5 bg-surface border border-line rounded-modal">{children}</div>
     </div>
+  )
+}
+
+function BrokerPicker({ brokers, value, onSelect, onClose }) {
+  return (
+    <Sheet open onClose={onClose} title="選擇券商" bodyClassName="overflow-y-auto p-2">
+      {brokers.map((b) => {
+        const active = b.id === value
+        return (
+          <button
+            key={b.id}
+            onClick={() => { onSelect(b.id); onClose() }}
+            className={`flex items-center gap-3 w-full p-3 rounded-chip text-left ${active ? 'bg-brand-light' : ''}`}
+          >
+            <span className="w-9 h-9 flex-none rounded-chip bg-surface-alt text-text-secondary flex items-center justify-center text-[15px]">
+              <FontAwesomeIcon icon={faPercent} />
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className={`block text-[15px] ${active ? 'font-semibold text-brand' : 'font-medium'}`}>
+                {b.name}
+              </span>
+              <span className="block text-xs text-text-tertiary">
+                {b.feeDiscount < 1 ? `${+(b.feeDiscount * 10).toFixed(2)} 折` : '不折'} · 最低 {b.minFee ?? 20}
+              </span>
+            </span>
+            {active && <FontAwesomeIcon icon={faCheck} className="text-brand text-[13px]" />}
+          </button>
+        )
+      })}
+    </Sheet>
   )
 }

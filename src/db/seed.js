@@ -5,6 +5,7 @@ import { todayStr } from '../lib/date'
 
 export const SETTINGS_ID = 'singleton'
 export const DEFAULT_CASH_ACCOUNT_ID = 'acc-cash-default'
+export const DEFAULT_BROKER_ID = 'broker-default'
 
 // 轉帳手續費預設分類（docs/01 §3.6：feeCategoryId 預設指向內建「金融手續費」）
 export const FEE_CATEGORY_ID = 'sys-exp-finance-fee'
@@ -139,5 +140,23 @@ export async function ensureSeeded() {
     await db.categories.bulkPut(categories)
     await db.accounts.put(cashAccount)
     await db.settings.put(settings)
+  })
+}
+
+// 券商種子（階段3）。獨立於 ensureSeeded：既有使用者（settings 已存在）也需要一個預設券商。
+// 僅在 brokers 表為空時塞入，冪等且不蓋使用者已建/已改的券商。
+export async function ensureBrokerSeed() {
+  const count = await db.brokers.count()
+  if (count > 0) return
+  const ts = new Date().toISOString()
+  await db.brokers.put({
+    id: DEFAULT_BROKER_ID,
+    name: '預設券商',
+    feeDiscount: 1, // 不折，0.1425%
+    minFee: 20,
+    rounding: 'floor',
+    note: null,
+    createdAt: ts,
+    updatedAt: ts,
   })
 }

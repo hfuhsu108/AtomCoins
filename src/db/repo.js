@@ -219,6 +219,44 @@ export async function deleteRecurringRule(id) {
   await db.recurringRules.delete(id)
 }
 
+// ── Broker 券商（docs/01 §3.8）──────────────────────────────────
+export async function createBroker(data) {
+  const ts = now()
+  const record = { rounding: 'floor', minFee: 20, ...data, id: data.id ?? newId(), createdAt: ts, updatedAt: ts }
+  await db.brokers.add(record)
+  return record
+}
+
+export async function updateBroker(id, patch) {
+  await db.brokers.update(id, { ...patch, updatedAt: now() })
+}
+
+export async function deleteBroker(id) {
+  await db.brokers.delete(id)
+}
+
+// ── StockTransaction 股票交易（docs/01 §3.9）────────────────────
+// fee/tax/settlementDate 由表單以 lib/stock 算好傳入（可覆寫）；本層只補 id/戳記。
+export async function createStockTransaction(data) {
+  const record = buildRecord(data)
+  await db.stockTransactions.add(record)
+  return record
+}
+
+export async function updateStockTransaction(id, patch) {
+  await db.stockTransactions.update(id, { ...patch, updatedAt: now() })
+}
+
+export async function deleteStockTransaction(id) {
+  await db.stockTransactions.delete(id)
+}
+
+// ── StockPrice 股價快取（docs/01 §3.11）──────────────────────────
+// 本階段手動輸入現價；階段4 GAS 抓 TWSE 收盤覆寫同一張表。symbol 為主鍵。
+export async function upsertStockPrice({ symbol, closePrice, priceDate }) {
+  await db.stockPrices.put({ symbol, closePrice, priceDate, updatedAt: now() })
+}
+
 // ── Settings（單例）──────────────────────────────────────────
 export function getSettings() {
   return db.settings.get(SETTINGS_ID)

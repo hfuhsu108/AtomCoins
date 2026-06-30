@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faChevronLeft, faChevronRight, faEye, faEyeSlash } from '@fortawesome/free-solid-svg-icons'
@@ -8,6 +8,7 @@ import { monthlySummary } from '../lib/engine'
 import { formatAmount, formatSigned } from '../lib/format'
 import { todayStr, parseDate, monthLabel, monthPrefix, addMonth, formatMd, weekday } from '../lib/date'
 import TransactionRow from '../components/transaction/TransactionRow'
+import StockPanel from '../components/stock/StockPanel'
 
 const TABS = [
   { id: 'ledger', label: '帳本' },
@@ -22,8 +23,10 @@ export default function TransactionsPage() {
   const categories = useLiveQuery(() => db.categories.toArray(), [], [])
   const counterparties = useLiveQuery(() => db.counterparties.toArray(), [], [])
 
+  const [searchParams] = useSearchParams()
+
   const now = parseDate(todayStr())
-  const [tab, setTab] = useState('ledger')
+  const [tab, setTab] = useState(searchParams.get('tab') || 'ledger')
   const [ym, setYm] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 })
   const [hidden, setHidden] = useState(false)
 
@@ -88,9 +91,11 @@ export default function TransactionsPage() {
         ))}
       </div>
 
-      {tab !== 'ledger' ? (
+      {tab === 'stock' ? (
+        <StockPanel hidden={hidden} />
+      ) : tab !== 'ledger' ? (
         <div className="py-16 text-center text-text-tertiary text-sm">
-          {tab === 'stock' ? '股票模組於階段 3 開放' : '發票載具於階段 6 開放'}
+          發票載具於階段 6 開放
         </div>
       ) : (
         <>
