@@ -40,4 +40,5 @@
 
 ## 環境／機密值
 
-- **GAS proxy URL、Google OAuth client id** 等機密／環境值由開發者部署後填入（Settings 或環境變數），**勿寫死於 repo**。
+- **Google OAuth client id** 等機密／環境值由開發者部署後填入（Settings 或環境變數），**勿寫死於 repo**。
+- **例外**：GAS 股價 proxy 網址已刻意寫死於 `src/lib/priceSync.js`（`GAS_STOCK_PROXY_URL`）。個人自用單裝置為主，換取免填 Settings 的便利；該端點 `Access:Anyone`、僅回傳公開股價，非機密，唯一風險是額度可能被外部濫用（可重新部署換網址因應）。

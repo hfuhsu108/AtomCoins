@@ -92,7 +92,7 @@
 - **CreditCardStatement 信用卡帳單**(階段2)：`id` / `accountId` / `periodStart` / `periodEnd` / `statementDate` / `dueDate` / `totalAmount` / `isPaid` / `paymentTransactionId?`。可由區間交易動態算或存結算快照。
 - **Template 範本**(階段6)：`id` / `name` / `payload`(預填交易) / `shortcut?` / `sortOrder`。
 - **Budget 預算**(暫不實作)：`id` / `scope`(overall/category/project) / `period` / `amount`。
-- **Settings 偏好**(單一文件)：`theme` / `defaultAccountId`(主帳戶) / `hideAmountsDefault` / `autoBackup` bool / `lastBackupAt` / `driveFileId` / `gasStockProxyUrl` / 通知設定…
+- **Settings 偏好**(單一文件)：`theme` / `defaultAccountId`(主帳戶) / `hideAmountsDefault` / `autoBackup` bool / `lastBackupAt` / `driveFileId` / `lastPriceSyncAt`(上次股價同步時間) / 通知設定…（GAS proxy 網址不在此存放，見 `00-overview.md`「環境／機密值」）
 
 ## 列舉值總表
 

@@ -132,7 +132,7 @@ export async function ensureSeeded() {
     autoBackup: false,
     lastBackupAt: null,
     driveFileId: null,
-    gasStockProxyUrl: null,
+    lastPriceSyncAt: null, // 上次股價同步時間（ISO）；既有使用者為 undefined＝從未同步，免遷移
     seededAt: ts,
   }
 

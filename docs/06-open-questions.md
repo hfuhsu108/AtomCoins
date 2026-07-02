@@ -5,4 +5,4 @@
 3. **預算** 功能保留，暫不實作（欄位已預留）。
 4. **發票 lineItems** 是否真的填入，視階段6 接的資料來源（財政部載具 API）而定；不影響主結構。
 5. **iOS PWA 限制**：原生桌面 widget 無法用純 PWA 達成，改用 manifest `shortcuts`＋秒開記帳頁；推播在 iOS 有限制，通知功能於階段7 評估。
-6. **GAS proxy URL、Google OAuth client id** 等機密/環境值由開發者部署後填入（Settings 或環境變數），勿寫死於 repo。
+6. **Google OAuth client id** 等機密/環境值由開發者部署後填入（Settings 或環境變數），勿寫死於 repo。**例外**：GAS 股價 proxy 網址已刻意寫死於 `src/lib/priceSync.js`（2026-07-02 決策，見 `00-overview.md`「環境／機密值」——該端點僅回傳公開股價、非機密）。

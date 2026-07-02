@@ -21,6 +21,16 @@ export function formatMd(str) {
   return `${m}/${d}`
 }
 
+// ISO 時間戳 → '6/23 14:05'（上次同步時間顯示用）；空值/非法回 null
+export function formatDateTime(iso) {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm}`
+}
+
 // '週二'
 export function weekday(str) {
   return '週' + WEEKDAYS[parseDate(str).getDay()]

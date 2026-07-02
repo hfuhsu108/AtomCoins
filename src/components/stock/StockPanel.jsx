@@ -2,12 +2,13 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faChevronRight, faPen } from '@fortawesome/free-solid-svg-icons'
+import { faChevronRight, faPen, faArrowsRotate, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons'
 import { db } from '../../db'
 import { computeHoldings, holdingsMarketValue } from '../../lib/stock'
 import { upsertStockPrice } from '../../db/repo'
+import useSyncPrices from '../../hooks/useSyncPrices'
 import { formatNumber, formatBalance, formatSigned } from '../../lib/format'
-import { todayStr, formatMd } from '../../lib/date'
+import { todayStr, formatMd, formatDateTime } from '../../lib/date'
 import Sheet from '../Sheet'
 
 const SUB_TABS = [
@@ -15,6 +16,11 @@ const SUB_TABS = [
   { id: 'history', label: '交易紀錄' },
   { id: 'realized', label: '已實現損益' },
 ]
+
+// 損益上色：台股慣例，正=紅(買)、負=綠(賣)
+function pnlClass(n) {
+  return n >= 0 ? 'text-[var(--color-stock-buy)]' : 'text-[var(--color-stock-sell)]'
+}
 
 export default function StockPanel({ hidden = false }) {
   const navigate = useNavigate()
@@ -25,6 +31,9 @@ export default function StockPanel({ hidden = false }) {
 
   const [subTab, setSubTab] = useState('holdings')
   const [editingPrice, setEditingPrice] = useState(null)
+
+  const { sync, syncing, result, lastSyncAt } = useSyncPrices()
+  const lastSync = formatDateTime(lastSyncAt)
 
   const asOf = todayStr()
   const opt = { hidden }
@@ -82,19 +91,39 @@ export default function StockPanel({ hidden = false }) {
     <div>
       {/* 投資總覽 */}
       <div className="bg-surface border border-line rounded-card shadow-card p-4 mb-3">
-        <div className="text-[13px] text-text-secondary">投資總覽</div>
+        <div className="flex items-center justify-between">
+          <div className="text-[13px] text-text-secondary">投資總覽</div>
+          <button
+            onClick={sync}
+            disabled={syncing}
+            className="flex items-center gap-1.5 h-[28px] px-2.5 rounded-chip bg-surface-alt text-text-secondary text-[11px] font-semibold disabled:opacity-40"
+          >
+            <FontAwesomeIcon icon={faArrowsRotate} className="text-[10px]" spin={syncing} />
+            {syncing ? '同步中' : '同步股價'}
+          </button>
+        </div>
         <div className="text-[28px] font-bold leading-tight tabular-nums mt-0.5">
           {formatBalance(totalMarketValue, opt)}
         </div>
         <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2 text-[13px] tabular-nums">
-          <span className={totalUnrealized >= 0 ? 'text-[var(--color-stock-buy)]' : 'text-[var(--color-stock-sell)]'}>
+          <span className={pnlClass(totalUnrealized)}>
             未實現 {formatSigned(totalUnrealized, opt)}
             {totalCost > 0 && ` (${totalReturnPct >= 0 ? '+' : ''}${totalReturnPct.toFixed(2)}%)`}
           </span>
-          <span className={totalRealized >= 0 ? 'text-[var(--color-stock-buy)]' : 'text-[var(--color-stock-sell)]'}>
+          <span className={pnlClass(totalRealized)}>
             已實現 {formatSigned(totalRealized, opt)}
           </span>
         </div>
+        {(lastSync || (result && !result.ok)) && (
+          <div className="text-[11px] text-text-tertiary tabular-nums mt-1.5">
+            {lastSync && `現價更新於 ${lastSync}`}
+            {result && !result.ok && (
+              <span className="text-error ml-1.5">
+                <FontAwesomeIcon icon={faTriangleExclamation} className="text-[10px]" /> 同步失敗：{result.error}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 次分頁 */}
@@ -136,7 +165,9 @@ export default function StockPanel({ hidden = false }) {
                       </div>
                       <div className="text-xs text-text-tertiary tabular-nums mt-0.5">
                         {formatNumber(h.shares)} 股 · 均價 {formatNumber(h.avgCost, 2)}
-                        {h.hasPrice ? ` · 現價 ${formatNumber(h.price, 2)}` : ' · 未設定現價'}
+                        {h.hasPrice
+                          ? ` · 現價 ${formatNumber(h.price, 2)}${h.priceDate ? `（${formatMd(h.priceDate)}）` : ''}`
+                          : ' · 未設定現價'}
                       </div>
                     </div>
                     <div className="text-right flex-none">

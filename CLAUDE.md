@@ -39,7 +39,8 @@
 - 僅 TWD；`currency` 欄位保留但不做匯率。
 - GitHub Pages 子路徑：`vite.config.js` 設 `base: '/<repo-name>/'`；路由用 HashRouter（或 `404.html` redirect）。
 - PWA 用 `vite-plugin-pwa`；`manifest.scope` 與 `start_url` 對齊子路徑。
-- 機密／環境值（GAS proxy URL、Google OAuth client id）由開發者部署後填入 Settings 或環境變數，**勿寫死於 repo**。
+- Google OAuth client id 等機密／環境值由開發者部署後填入 Settings 或環境變數，**勿寫死於 repo**。
+- **例外**：GAS 股價 proxy 網址（`src/lib/priceSync.js` 的 `GAS_STOCK_PROXY_URL`）已刻意寫死於原始碼（2026-07-02 決策）。原因：個人自用單裝置為主，換取免填 Settings 的便利；該端點 `Access:Anyone`、僅回傳公開股價，非機密，寫死的唯一風險是額度可能被外部濫用（可重新部署換網址因應）。
 
 ## 開發節奏（專案特定，與全域 CLAUDE.md 規則並行）
 
