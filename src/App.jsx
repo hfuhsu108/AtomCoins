@@ -1,5 +1,4 @@
 import { HashRouter, Routes, Route } from 'react-router-dom'
-import './db'
 import { DataProvider } from './db/DataProvider'
 import AppLayout from './layouts/AppLayout'
 import HomePage from './pages/HomePage'

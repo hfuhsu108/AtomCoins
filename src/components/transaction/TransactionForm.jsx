@@ -497,7 +497,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
       <div className="flex-1 overflow-y-auto flex flex-col">
         {/* stock type: dedicated body, no amount header or NumberPad */}
         {isStock ? (
-          <StockFields state={stockState} setState={setStockState} accounts={accounts} />
+          <StockFields state={stockState} setState={setStockState} />
         ) : (
         <>
         {/* amount */}

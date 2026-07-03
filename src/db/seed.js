@@ -1,6 +1,8 @@
-// 內建種子：MOZE 風格分類樹、預設現金帳戶、Settings 單例。
-// 系統資料用固定 id（'sys-…'），bulkPut 冪等、可重跑不重複；使用者自建才用 nanoid。
-import { db } from './index'
+// 內建種子（M3 起為 Firestore 版）：MOZE 風格分類樹、預設現金帳戶、Settings 單例。
+// 於「登入後」由 DataProvider 觸發（新帳號／新裝置首次登入時初始化）；
+// 系統資料用固定 id（'sys-…'），setDoc 冪等、可重跑不重複；使用者自建才用 nanoid。
+import { doc, getDoc, getDocs, collection, writeBatch } from 'firebase/firestore'
+import { firestore } from '../lib/firebase'
 import { todayStr } from '../lib/date'
 
 export const SETTINGS_ID = 'singleton'
@@ -95,10 +97,12 @@ function flattenTree(tree, kind, ts) {
   return rows
 }
 
-// 啟動時呼叫一次。已種過（settings 存在）就跳過，避免覆蓋使用者改過的系統分類。
-export async function ensureSeeded() {
-  const existing = await db.settings.get(SETTINGS_ID)
-  if (existing) return
+const userDoc = (uid, col, id) => doc(firestore, 'users', uid, col, id)
+
+// 登入後呼叫一次。已種過（settings doc 存在）就跳過，避免覆蓋使用者改過的系統分類。
+export async function ensureSeeded(uid) {
+  const existing = await getDoc(userDoc(uid, 'settings', SETTINGS_ID))
+  if (existing.exists()) return
 
   const ts = new Date().toISOString()
   const today = todayStr()
@@ -124,32 +128,31 @@ export async function ensureSeeded() {
     updatedAt: ts,
   }
 
+  // 原 Dexie 版的 autoBackup/lastBackupAt/driveFileId 屬 Drive 備份方案（已作廢），新種子不再帶
   const settings = {
     id: SETTINGS_ID,
     theme: 'light',
     defaultAccountId: DEFAULT_CASH_ACCOUNT_ID, // 主帳戶（全域唯一，docs/01 §3.1）
     hideAmountsDefault: false,
-    autoBackup: false,
-    lastBackupAt: null,
-    driveFileId: null,
-    lastPriceSyncAt: null, // 上次股價同步時間（ISO）；既有使用者為 undefined＝從未同步，免遷移
+    lastPriceSyncAt: null,
     seededAt: ts,
   }
 
-  await db.transaction('rw', db.categories, db.accounts, db.settings, async () => {
-    await db.categories.bulkPut(categories)
-    await db.accounts.put(cashAccount)
-    await db.settings.put(settings)
-  })
+  // 分類 40 筆＋帳戶＋settings 遠低於 writeBatch 500 上限，一批原子寫入
+  const batch = writeBatch(firestore)
+  categories.forEach((c) => batch.set(userDoc(uid, 'categories', c.id), c))
+  batch.set(userDoc(uid, 'accounts', cashAccount.id), cashAccount)
+  batch.set(userDoc(uid, 'settings', SETTINGS_ID), settings)
+  await batch.commit()
 }
 
-// 券商種子（階段3）。獨立於 ensureSeeded：既有使用者（settings 已存在）也需要一個預設券商。
-// 僅在 brokers 表為空時塞入，冪等且不蓋使用者已建/已改的券商。
-export async function ensureBrokerSeed() {
-  const count = await db.brokers.count()
-  if (count > 0) return
+// 券商種子。獨立於 ensureSeeded：既有使用者（settings 已存在）也需要一個預設券商。
+// 僅在 brokers 為空時塞入，冪等且不蓋使用者已建/已改的券商。
+export async function ensureBrokerSeed(uid) {
+  const snap = await getDocs(collection(firestore, 'users', uid, 'brokers'))
+  if (!snap.empty) return
   const ts = new Date().toISOString()
-  await db.brokers.put({
+  const broker = {
     id: DEFAULT_BROKER_ID,
     name: '預設券商',
     feeDiscount: 1, // 不折，0.1425%
@@ -158,5 +161,6 @@ export async function ensureBrokerSeed() {
     note: null,
     createdAt: ts,
     updatedAt: ts,
-  })
+  }
+  await writeBatch(firestore).set(userDoc(uid, 'brokers', broker.id), broker).commit()
 }

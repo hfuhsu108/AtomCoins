@@ -66,4 +66,4 @@
 
 階段 5（基礎報表）完成（2026-07-03）。累計：階段 0 骨架 → 階段 1 核心記帳 MVP → 階段 2 入帳日引擎＋信用卡 → 階段 3 台股現股模組 → 階段 4 GAS 股價同步 → 階段 5 收支報表（月份導航、分類 Donut＋排名、近 6 個月趨勢；`monthlySummary` 同步納入轉帳手續費以維持與首頁口徑一致）。
 
-**2026-07-03 重大轉向**：因發票自動抓取需求（財政部 API 個人無法申請），技術棧解鎖改用 **Firebase**（Auth＋Firestore 取代 Dexie 與未實作的 Drive 同步），完整決策與階段計畫見 `docs/07-firebase-migration.md`。下一步＝**階段 6A-M0：Firebase 建置＋登入**（遷移完成後接 6B 爬蟲、6C 載具匣 UI）。
+**2026-07-03 重大轉向＋完成**：因發票自動抓取需求（財政部 API 個人無法申請），技術棧解鎖改用 **Firebase**（Auth＋Firestore 取代 Dexie 與未實作的 Drive 同步），完整決策與階段計畫見 `docs/07-firebase-migration.md`。**階段 6A（M0–M3）已於同日完成並驗證**：登入＋rules、資料遷移、全站讀寫切換、Dexie 移除、離線與雙裝置同步皆通過。注意：GitHub Pages 線上版仍為舊 Dexie build，尚未部署新版。下一步＝**階段 6B：發票爬蟲**（第一步為財政部平台登入流程探勘，開場 prompt 見 `docs/07 §6B`），之後接 6C 載具匣 UI。

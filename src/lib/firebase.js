@@ -22,7 +22,6 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 
-// 命名 firestore（不叫 db）：遷移期間與 src/db 的 Dexie `db` 並存，避免 import 混淆
 // persistentLocalCache：離線可讀寫、復網自動同步；multipleTab 讓多分頁共用快取（docs/07 §2-4）
 export const firestore = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),

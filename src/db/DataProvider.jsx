@@ -6,7 +6,7 @@ import { collection, onSnapshot } from 'firebase/firestore'
 import { firestore } from '../lib/firebase'
 import { useAuth } from '../hooks/useAuth'
 import { processRecurringRules } from '../lib/recurring'
-import { SETTINGS_ID } from './seed'
+import { ensureSeeded, ensureBrokerSeed, SETTINGS_ID } from './seed'
 
 export const COLLECTIONS = [
   'accounts', 'categories', 'tags', 'projects', 'counterparties',
@@ -29,7 +29,11 @@ export function DataProvider({ children }) {
   useEffect(() => {
     if (!user || startupRanFor === user.uid) return
     startupRanFor = user.uid
-    processRecurringRules().catch((e) => console.error('週期性收支處理失敗', e))
+    // 先種子（新帳號初始化，已種過即跳過）、再補週期性收支，順序同原 main.jsx 啟動鏈
+    ensureSeeded(user.uid)
+      .then(() => ensureBrokerSeed(user.uid))
+      .then(() => processRecurringRules())
+      .catch((e) => console.error('登入後初始化失敗', e))
   }, [user])
 
   useEffect(() => {
