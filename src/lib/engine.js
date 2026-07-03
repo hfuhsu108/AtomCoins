@@ -216,18 +216,74 @@ export function netWorth(accounts, txns, { holdingsValue = 0, asOf = null, stock
   return sum + holdingsValue + pendingStockNet
 }
 
+// 拆帳列金額加總（收入/支出的交易金額 = Σ split.amount）
+function splitsTotal(tx) {
+  return (tx.splits ?? []).reduce((s, sp) => s + sp.amount, 0)
+}
+
 // 本月收支（docs/02 §4.4）。依 tradeDate 歸月（見 docs/03 §J：刷卡日決定計入哪個月），
-// 只取 expense/income，金額對「拆帳列」聚合。
+// 收入/支出金額對「拆帳列」聚合；另把轉帳手續費計入支出（本金為資產轉移，不計）。
 export function monthlySummary(txns, year, month) {
   const prefix = `${year}-${String(month).padStart(2, '0')}`
   let income = 0
   let expense = 0
   for (const tx of txns) {
-    if (tx.type !== 'expense' && tx.type !== 'income') continue
     if (!tx.tradeDate?.startsWith(prefix)) continue
-    const total = (tx.splits ?? []).reduce((s, sp) => s + sp.amount, 0)
-    if (tx.type === 'income') income += total
-    else expense += total
+    if (tx.type === 'income') income += splitsTotal(tx)
+    else if (tx.type === 'expense') expense += splitsTotal(tx)
+    else if (tx.type === 'transfer' && tx.fee) expense += tx.fee
   }
   return { income, expense, balance: income - expense }
+}
+
+// 某月某類（expense/income）的分類彙總，拆帳列 rollup 到母分類（docs/02 §4.4）。
+// expense 另納入轉帳手續費（歸該轉帳 feeCategoryId 之母分類，通常為「金融」）。
+// 回傳 { total, count, rows }：rows 依金額由大到小，total 與 monthlySummary 對應值一致。
+export function monthlyCategoryStats(txns, categories, kind, year, month) {
+  const prefix = `${year}-${String(month).padStart(2, '0')}`
+  const byId = new Map(categories.map((c) => [c.id, c]))
+  // categoryId → 母分類（取 id/name/icon）；查無退回「未分類」防呆（seed 保證存在）
+  const rollup = (categoryId) => {
+    const cat = byId.get(categoryId)
+    if (!cat) return { id: categoryId ?? '__uncat', name: '未分類', icon: 'circle-question' }
+    const parent = (cat.parentId ? byId.get(cat.parentId) : cat) ?? cat
+    return { id: parent.id, name: parent.name, icon: parent.icon }
+  }
+
+  const buckets = new Map() // 母分類id → { id, name, icon, amount }
+  const add = (categoryId, amount) => {
+    const g = rollup(categoryId)
+    const cur = buckets.get(g.id)
+    if (cur) cur.amount += amount
+    else buckets.set(g.id, { ...g, amount })
+  }
+
+  let total = 0
+  let count = 0
+  for (const tx of txns) {
+    if (!tx.tradeDate?.startsWith(prefix)) continue
+    if (tx.type === kind) {
+      for (const sp of tx.splits ?? []) add(sp.categoryId, sp.amount)
+      total += splitsTotal(tx)
+      count += 1 // 筆數 = 該 kind 的交易數（transfer 不計入）
+    } else if (kind === 'expense' && tx.type === 'transfer' && tx.fee) {
+      add(tx.feeCategoryId, tx.fee)
+      total += tx.fee
+    }
+  }
+
+  const rows = [...buckets.values()].sort((a, b) => b.amount - a.amount)
+  return { total, count, rows }
+}
+
+// 近 months 個月收支趨勢（預設 6），以 endYear/endMonth 為最新一月往回推。
+// 回傳 oldest→newest：[{ year, month, label, income, expense }]（含手續費，與 monthlySummary 同口徑）。
+export function monthlyTrend(txns, endYear, endMonth, months = 6) {
+  const out = []
+  for (let i = months - 1; i >= 0; i--) {
+    const { year, month } = addMonth({ year: endYear, month: endMonth }, -i)
+    const { income, expense } = monthlySummary(txns, year, month)
+    out.push({ year, month, label: `${month}月`, income, expense })
+  }
+  return out
 }

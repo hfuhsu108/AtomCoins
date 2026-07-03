@@ -7,10 +7,11 @@ import { computeHoldings, holdingsMarketValue } from '../lib/stock'
 import useSyncPrices from '../hooks/useSyncPrices'
 import { formatBalance, formatSigned, formatNumber } from '../lib/format'
 import { todayStr, formatMd, formatDateTime } from '../lib/date'
+import FlowReport from '../components/report/FlowReport'
 
 const TABS = [
-  { id: 'invest', label: '投資' },
   { id: 'flow', label: '收支' },
+  { id: 'invest', label: '投資' },
 ]
 
 // 損益／報酬率上色：台股慣例，正=紅(買)、負=綠(賣)
@@ -27,7 +28,7 @@ export default function ReportsPage() {
   const stockTxns = useLiveQuery(() => db.stockTransactions.toArray(), [], [])
   const prices = useLiveQuery(() => db.stockPrices.toArray(), [], [])
 
-  const [tab, setTab] = useState('invest')
+  const [tab, setTab] = useState('flow')
   const [hidden, setHidden] = useState(false)
   const opt = { hidden }
   const asOf = todayStr()
@@ -110,7 +111,7 @@ export default function ReportsPage() {
       </div>
 
       {tab === 'flow' ? (
-        <div className="py-16 text-center text-text-tertiary text-sm">收支報表將於 Stage 5 實作</div>
+        <FlowReport hidden={hidden} />
       ) : !hasAny ? (
         <div className="py-16 text-center text-text-tertiary text-sm">尚無投資資料</div>
       ) : (

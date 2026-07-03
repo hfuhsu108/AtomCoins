@@ -63,4 +63,4 @@
 
 ## 現況
 
-階段 0 完成（2026-06-28，commit `9bdd78d`）。技術決策：JavaScript + Tailwind v4。骨架含 5 頁路由、RWD 導覽、Dexie 11 table、PWA。下一步＝**Stage 1：核心記帳 MVP**。設計稿 HTML 原型需從 Claude Design 重新匯出（README.md 已恢復）。
+階段 5（基礎報表）完成（2026-07-03）。累計：階段 0 骨架 → 階段 1 核心記帳 MVP → 階段 2 入帳日引擎＋信用卡 → 階段 3 台股現股模組 → 階段 4 GAS 股價同步 → 階段 5 收支報表（月份導航、分類 Donut＋排名、近 6 個月趨勢；`monthlySummary` 同步納入轉帳手續費以維持與首頁口徑一致）。下一步＝**Stage 6：電子發票載具匣**。
