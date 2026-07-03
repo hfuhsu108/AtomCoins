@@ -1,9 +1,8 @@
 import { useState, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faChevronLeft, faChevronRight, faEye, faEyeSlash } from '@fortawesome/free-solid-svg-icons'
-import { db } from '../db'
+import { useCollection } from '../db/DataProvider'
 import { monthlySummary } from '../lib/engine'
 import { formatAmount, formatSigned } from '../lib/format'
 import { todayStr, parseDate, monthLabel, monthPrefix, addMonth, formatMd, weekday } from '../lib/date'
@@ -18,10 +17,10 @@ const TABS = [
 
 export default function TransactionsPage() {
   const navigate = useNavigate()
-  const accounts = useLiveQuery(() => db.accounts.toArray(), [], [])
-  const txns = useLiveQuery(() => db.transactions.toArray(), [], [])
-  const categories = useLiveQuery(() => db.categories.toArray(), [], [])
-  const counterparties = useLiveQuery(() => db.counterparties.toArray(), [], [])
+  const accounts = useCollection('accounts')
+  const txns = useCollection('transactions')
+  const categories = useCollection('categories')
+  const counterparties = useCollection('counterparties')
 
   const [searchParams] = useSearchParams()
 

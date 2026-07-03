@@ -3,7 +3,8 @@
 //   immediate — nextDate ≤ 今天即自動入帳（落後多期會逐期補齊）
 //   deferred  — 提前產生未來占位交易（postingDate 未到 → 未入帳），到日自動入帳
 //   reminder  — 不自動建立，列入通知待確認，使用者點「記一筆」才入帳
-import { db } from '../db'
+import { collection, getDocs } from 'firebase/firestore'
+import { firestore, auth } from './firebase'
 import { createTransaction, updateRecurringRule } from '../db/repo'
 import { todayStr, advanceDate, addDays } from './date'
 
@@ -20,9 +21,13 @@ function occurrenceFromRule(rule, date) {
   return { ...payload, tradeDate: date, postingDate: date, recurringRuleId: rule.id }
 }
 
-// 啟動時呼叫一次。處理 immediate / deferred；reminder 交給通知區。回傳本次建立筆數。
+// M2 起改於「登入後」呼叫一次（DataProvider 觸發），未登入直接跳過——
+// Firestore 讀寫都需要 auth，且規則資料本來就存在 users/{uid} 底下。
 export async function processRecurringRules(asOf = todayStr()) {
-  const rules = await db.recurringRules.toArray()
+  const user = auth.currentUser
+  if (!user) return 0
+  const snap = await getDocs(collection(firestore, 'users', user.uid, 'recurringRules'))
+  const rules = snap.docs.map((d) => d.data())
   let created = 0
   for (const rule of rules) {
     if (!rule.isActive) continue

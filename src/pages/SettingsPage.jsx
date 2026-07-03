@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPlus, faChevronRight, faTrashCan, faRepeat, faPercent, faCopy } from '@fortawesome/free-solid-svg-icons'
 import { faGoogle } from '@fortawesome/free-brands-svg-icons'
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
-import { db } from '../db'
+import { useCollection } from '../db/DataProvider'
 import { firestore, signInWithGoogle, signOutUser } from '../lib/firebase'
 import { useAuth } from '../hooks/useAuth'
+import { migrateDexieToFirestore } from '../db/migrate'
 import { accountBalances } from '../lib/engine'
 import { updateRecurringRule, deleteRecurringRule } from '../db/repo'
 import { formatBalance, formatAmount } from '../lib/format'
@@ -26,11 +26,11 @@ const GROUPS = [
 ]
 
 export default function SettingsPage() {
-  const accounts = useLiveQuery(() => db.accounts.toArray(), [], [])
-  const txns = useLiveQuery(() => db.transactions.toArray(), [], [])
-  const rules = useLiveQuery(() => db.recurringRules.toArray(), [], [])
-  const brokers = useLiveQuery(() => db.brokers.toArray(), [], [])
-  const stockTxns = useLiveQuery(() => db.stockTransactions.toArray(), [], [])
+  const accounts = useCollection('accounts')
+  const txns = useCollection('transactions')
+  const rules = useCollection('recurringRules')
+  const brokers = useCollection('brokers')
+  const stockTxns = useCollection('stockTransactions')
 
   // editing: undefined=關閉、null=新增、帳戶物件=編輯
   const [editing, setEditing] = useState(undefined)
@@ -56,6 +56,23 @@ export default function SettingsPage() {
     await navigator.clipboard.writeText(user.uid)
     setUidCopied(true)
     setTimeout(() => setUidCopied(false), 2000)
+  }
+
+  // M1 遷移工具：Dexie 全量搬上 Firestore（setDoc 冪等可重跑）；M3 去 Dexie 時移除
+  const [migrating, setMigrating] = useState(false)
+  const [migrateResult, setMigrateResult] = useState(null)
+
+  async function runMigration() {
+    setMigrating(true)
+    setMigrateResult(null)
+    try {
+      const results = await migrateDexieToFirestore(user.uid)
+      setMigrateResult({ ok: true, results })
+    } catch (e) {
+      setMigrateResult({ ok: false, msg: e.code ?? e.message })
+    } finally {
+      setMigrating(false)
+    }
   }
 
   // M0 驗證用：確認 security rules 對本人放行（寫 users/{uid}/meta/connTest）
@@ -262,6 +279,34 @@ export default function SettingsPage() {
                 <span className={`text-xs ${connResult.ok ? 'text-success' : 'text-error'}`}>
                   {connResult.ok ? '✓' : '✗'} {connResult.msg}
                 </span>
+              )}
+            </div>
+            <div className="mt-2 pt-2 border-t border-line-light">
+              <button
+                onClick={runMigration}
+                disabled={migrating}
+                className="h-[30px] px-3 rounded-chip border border-line text-[13px] text-text-secondary disabled:opacity-50"
+              >
+                {migrating ? '遷移中…' : '遷移到 Firestore（M1 開發用）'}
+              </button>
+              {migrateResult && (
+                migrateResult.ok ? (
+                  <div className="text-xs mt-1.5 space-y-0.5">
+                    {migrateResult.results.filter((r) => r.dexie > 0 || r.cloud > 0).length === 0 ? (
+                      <span className="text-text-tertiary">（Dexie 無資料）</span>
+                    ) : (
+                      migrateResult.results
+                        .filter((r) => r.dexie > 0 || r.cloud > 0)
+                        .map((r) => (
+                          <div key={r.name} className={r.dexie === r.cloud ? 'text-success' : 'text-error'}>
+                            {r.dexie === r.cloud ? '✓' : '✗'} {r.name}：本機 {r.dexie} → 雲端 {r.cloud}
+                          </div>
+                        ))
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-xs text-error mt-1.5">✗ {migrateResult.msg}</div>
+                )
               )}
             </div>
           </div>

@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faBell,
@@ -13,7 +12,7 @@ import {
   faArrowTrendDown,
   faCheck,
 } from '@fortawesome/free-solid-svg-icons'
-import { db } from '../db'
+import { useCollection } from '../db/DataProvider'
 import {
   accountBalances,
   netWorth,
@@ -45,11 +44,11 @@ function lastMonthEnd() {
 
 export default function HomePage() {
   const navigate = useNavigate()
-  const accounts = useLiveQuery(() => db.accounts.toArray(), [], [])
-  const txns = useLiveQuery(() => db.transactions.toArray(), [], [])
-  const rules = useLiveQuery(() => db.recurringRules.toArray(), [], [])
-  const stockTxns = useLiveQuery(() => db.stockTransactions.toArray(), [], [])
-  const stockPrices = useLiveQuery(() => db.stockPrices.toArray(), [], [])
+  const accounts = useCollection('accounts')
+  const txns = useCollection('transactions')
+  const rules = useCollection('recurringRules')
+  const stockTxns = useCollection('stockTransactions')
+  const stockPrices = useCollection('stockPrices')
 
   const [hidden, setHidden] = useState(false)
   const [compOpen, setCompOpen] = useState(false)

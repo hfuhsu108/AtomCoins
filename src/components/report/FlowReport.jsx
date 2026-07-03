@@ -1,8 +1,7 @@
 import { useState, useMemo } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faChevronLeft, faChevronRight, faArrowUp, faArrowDown, faMinus } from '@fortawesome/free-solid-svg-icons'
-import { db } from '../../db'
+import { useCollection } from '../../db/DataProvider'
 import { monthlyCategoryStats, monthlyTrend } from '../../lib/engine'
 import { formatAmount, formatNumber } from '../../lib/format'
 import { monthLabel, addMonth, daysInMonth, todayStr, parseDate } from '../../lib/date'
@@ -23,8 +22,8 @@ const KIND_TABS = [
 ]
 
 export default function FlowReport({ hidden }) {
-  const txns = useLiveQuery(() => db.transactions.toArray(), [], [])
-  const categories = useLiveQuery(() => db.categories.toArray(), [], [])
+  const txns = useCollection('transactions')
+  const categories = useCollection('categories')
 
   const now = parseDate(todayStr())
   const [viewMonth, setViewMonth] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 })

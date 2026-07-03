@@ -1,8 +1,7 @@
 import { useState, useMemo } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faEye, faEyeSlash, faArrowsRotate, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons'
-import { db } from '../db'
+import { useCollection } from '../db/DataProvider'
 import { computeHoldings, holdingsMarketValue } from '../lib/stock'
 import useSyncPrices from '../hooks/useSyncPrices'
 import { formatBalance, formatSigned, formatNumber } from '../lib/format'
@@ -25,8 +24,8 @@ function pctLabel(pct) {
 }
 
 export default function ReportsPage() {
-  const stockTxns = useLiveQuery(() => db.stockTransactions.toArray(), [], [])
-  const prices = useLiveQuery(() => db.stockPrices.toArray(), [], [])
+  const stockTxns = useCollection('stockTransactions')
+  const prices = useCollection('stockPrices')
 
   const [tab, setTab] = useState('flow')
   const [hidden, setHidden] = useState(false)

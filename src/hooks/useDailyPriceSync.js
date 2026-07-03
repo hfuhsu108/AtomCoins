@@ -1,7 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '../db'
-import { SETTINGS_ID } from '../db/seed'
+import { useCollection, useSettings } from '../db/DataProvider'
 import { computeHoldings } from '../lib/stock'
 import { syncStockPrices, GAS_STOCK_PROXY_URL } from '../lib/priceSync'
 import { todayStr } from '../lib/date'
@@ -9,9 +7,9 @@ import { todayStr } from '../lib/date'
 // 每日開啟自動同步一次（docs/05 階段4）：當日尚未同步 + 有持股 → 抓一次。
 // 失敗靜默（錯誤留給手動同步顯示），非阻塞；用 ref 防重入（含 StrictMode 二次掛載）。
 export default function useDailyPriceSync() {
-  const settings = useLiveQuery(() => db.settings.get(SETTINGS_ID), [])
-  const stockTxns = useLiveQuery(() => db.stockTransactions.toArray(), [], [])
-  const prices = useLiveQuery(() => db.stockPrices.toArray(), [], [])
+  const settings = useSettings()
+  const stockTxns = useCollection('stockTransactions')
+  const prices = useCollection('stockPrices')
   const ran = useRef(false)
 
   useEffect(() => {

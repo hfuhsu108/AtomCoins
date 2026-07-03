@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faChevronDown,
@@ -8,7 +7,7 @@ import {
   faPercent,
   faCheck,
 } from '@fortawesome/free-solid-svg-icons'
-import { db } from '../../db'
+import { useCollection } from '../../db/DataProvider'
 import { calcFee, calcTax, buyCashAmount, sellCashAmount, settlementDate as calcSettlementDate } from '../../lib/stock'
 import { availableForSettlement } from '../../lib/engine'
 import { formatNumber } from '../../lib/format'
@@ -54,11 +53,12 @@ export function initStockState(stx, accounts) {
   }
 }
 
-export default function StockFields({ state, setState, accounts: parentAccounts }) {
-  const accounts = useLiveQuery(() => db.accounts.toArray(), [], parentAccounts ?? [])
-  const brokers = useLiveQuery(() => db.brokers.toArray(), [], [])
-  const allTxns = useLiveQuery(() => db.transactions.toArray(), [], [])
-  const stockTxns = useLiveQuery(() => db.stockTransactions.toArray(), [], [])
+// 呼叫端仍傳 accounts prop，但已與 store 同源、此處不再解構使用；M3 收尾時連呼叫端一併清
+export default function StockFields({ state, setState }) {
+  const accounts = useCollection('accounts')
+  const brokers = useCollection('brokers')
+  const allTxns = useCollection('transactions')
+  const stockTxns = useCollection('stockTransactions')
 
   const [picker, setPicker] = useState(null) // 'securities' | 'bank' | 'broker'
 

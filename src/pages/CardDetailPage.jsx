@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faChevronLeft, faChevronDown, faCheck } from '@fortawesome/free-solid-svg-icons'
-import { db } from '../db'
+import { useCollection, useSettings } from '../db/DataProvider'
 import { accountBalances, statementPeriods } from '../lib/engine'
 import { payCreditCardStatement } from '../db/repo'
 import { formatAmount, formatBalance, formatNumber } from '../lib/format'
@@ -16,16 +15,13 @@ import Sheet from '../components/Sheet'
 export default function CardDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const accounts = useLiveQuery(() => db.accounts.toArray(), [], [])
-  const txns = useLiveQuery(() => db.transactions.toArray(), [], [])
-  const categories = useLiveQuery(() => db.categories.toArray(), [], [])
-  const counterparties = useLiveQuery(() => db.counterparties.toArray(), [], [])
-  const settings = useLiveQuery(() => db.settings.get('singleton'))
-  const statements = useLiveQuery(
-    () => (id ? db.creditCardStatements.where('accountId').equals(id).toArray() : []),
-    [id],
-    [],
-  )
+  const accounts = useCollection('accounts')
+  const txns = useCollection('transactions')
+  const categories = useCollection('categories')
+  const counterparties = useCollection('counterparties')
+  const settings = useSettings()
+  const allStatements = useCollection('creditCardStatements')
+  const statements = id ? allStatements.filter((s) => s.accountId === id) : []
 
   const [paying, setPaying] = useState(null) // 繳費中的 period 物件
 

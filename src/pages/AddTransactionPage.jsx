@@ -1,6 +1,5 @@
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '../db'
+import { useCollection } from '../db/DataProvider'
 import { deleteTransaction, deleteTransactionGroup, deleteInstallmentPlan, deleteStockTransaction } from '../db/repo'
 import TransactionForm from '../components/transaction/TransactionForm'
 
@@ -12,8 +11,11 @@ export default function AddTransactionPage() {
   const stxId = params.get('stxId')
   const close = () => navigate(-1)
 
-  const editTx = useLiveQuery(() => (id ? db.transactions.get(id) : null), [id])
-  const editStock = useLiveQuery(() => (stxId ? db.stockTransactions.get(stxId) : null), [stxId])
+  const txns = useCollection('transactions')
+  const stockTxns = useCollection('stockTransactions')
+  // find 未命中回 undefined＝資料尚未到（或 id 無效），語義同原 useLiveQuery 載入中
+  const editTx = id ? txns.find((t) => t.id === id) : null
+  const editStock = stxId ? stockTxns.find((t) => t.id === stxId) : null
 
   if (id && editTx === undefined) return null
   if (stxId && editStock === undefined) return null

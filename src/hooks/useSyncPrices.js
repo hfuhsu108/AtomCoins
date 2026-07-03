@@ -1,7 +1,5 @@
 import { useState, useCallback } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '../db'
-import { SETTINGS_ID } from '../db/seed'
+import { useCollection, useSettings } from '../db/DataProvider'
 import { computeHoldings } from '../lib/stock'
 import { syncStockPrices, GAS_STOCK_PROXY_URL } from '../lib/priceSync'
 
@@ -9,9 +7,9 @@ import { syncStockPrices, GAS_STOCK_PROXY_URL } from '../lib/priceSync'
 // 標的取自「目前持股」的相異 symbol；proxyUrl 為寫死常數（見 lib/priceSync）。
 // 回傳 { sync, syncing, result, lastSyncAt }；sync 期間以 syncing 防重入。
 export default function useSyncPrices() {
-  const settings = useLiveQuery(() => db.settings.get(SETTINGS_ID), [])
-  const stockTxns = useLiveQuery(() => db.stockTransactions.toArray(), [], [])
-  const prices = useLiveQuery(() => db.stockPrices.toArray(), [], [])
+  const settings = useSettings()
+  const stockTxns = useCollection('stockTransactions')
+  const prices = useCollection('stockPrices')
   const [syncing, setSyncing] = useState(false)
   const [result, setResult] = useState(null)
 

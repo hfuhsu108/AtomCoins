@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faXmark,
@@ -15,7 +14,7 @@ import {
   faPlus,
   faTrash,
 } from '@fortawesome/free-solid-svg-icons'
-import { db } from '../../db'
+import { useCollection, useSettings } from '../../db/DataProvider'
 import {
   createTransaction,
   createLinkedTransactions,
@@ -88,11 +87,11 @@ function stateFromTx(tx) {
 }
 
 export default function TransactionForm({ initialTx = null, initialStock = null, onClose, onSaved, onDelete }) {
-  const settings = useLiveQuery(() => db.settings.get('singleton'))
-  const accounts = useLiveQuery(() => db.accounts.toArray(), [], [])
-  const categories = useLiveQuery(() => db.categories.toArray(), [], [])
-  const counterparties = useLiveQuery(() => db.counterparties.toArray(), [], [])
-  const brokers = useLiveQuery(() => db.brokers.toArray(), [], [])
+  const settings = useSettings()
+  const accounts = useCollection('accounts')
+  const categories = useCollection('categories')
+  const counterparties = useCollection('counterparties')
+  const brokers = useCollection('brokers')
 
   const [stockState, setStockState] = useState(() => initStockState(initialStock, accounts))
 

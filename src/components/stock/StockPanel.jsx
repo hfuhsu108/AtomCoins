@@ -1,9 +1,8 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faChevronRight, faPen, faArrowsRotate, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons'
-import { db } from '../../db'
+import { useCollection } from '../../db/DataProvider'
 import { computeHoldings, holdingsMarketValue } from '../../lib/stock'
 import { upsertStockPrice } from '../../db/repo'
 import useSyncPrices from '../../hooks/useSyncPrices'
@@ -24,10 +23,10 @@ function pnlClass(n) {
 
 export default function StockPanel({ hidden = false }) {
   const navigate = useNavigate()
-  const stockTxns = useLiveQuery(() => db.stockTransactions.toArray(), [], [])
-  const prices = useLiveQuery(() => db.stockPrices.toArray(), [], [])
-  const accounts = useLiveQuery(() => db.accounts.toArray(), [], [])
-  const brokers = useLiveQuery(() => db.brokers.toArray(), [], [])
+  const stockTxns = useCollection('stockTransactions')
+  const prices = useCollection('stockPrices')
+  const accounts = useCollection('accounts')
+  const brokers = useCollection('brokers')
 
   const [subTab, setSubTab] = useState('holdings')
   const [editingPrice, setEditingPrice] = useState(null)

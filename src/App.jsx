@@ -1,5 +1,6 @@
 import { HashRouter, Routes, Route } from 'react-router-dom'
 import './db'
+import { DataProvider } from './db/DataProvider'
 import AppLayout from './layouts/AppLayout'
 import HomePage from './pages/HomePage'
 import AddTransactionPage from './pages/AddTransactionPage'
@@ -11,6 +12,7 @@ import CardDetailPage from './pages/CardDetailPage'
 export default function App() {
   return (
     <HashRouter>
+      <DataProvider>
       <Routes>
         <Route element={<AppLayout />}>
           <Route index element={<HomePage />} />
@@ -21,6 +23,7 @@ export default function App() {
         <Route path="add" element={<AddTransactionPage />} />
         <Route path="card/:id" element={<CardDetailPage />} />
       </Routes>
+      </DataProvider>
     </HashRouter>
   )
 }
