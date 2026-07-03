@@ -1,8 +1,12 @@
 import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faChevronRight, faTrashCan, faRepeat, faPercent } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faChevronRight, faTrashCan, faRepeat, faPercent, faCopy } from '@fortawesome/free-solid-svg-icons'
+import { faGoogle } from '@fortawesome/free-brands-svg-icons'
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../db'
+import { firestore, signInWithGoogle, signOutUser } from '../lib/firebase'
+import { useAuth } from '../hooks/useAuth'
 import { accountBalances } from '../lib/engine'
 import { updateRecurringRule, deleteRecurringRule } from '../db/repo'
 import { formatBalance, formatAmount } from '../lib/format'
@@ -31,6 +35,42 @@ export default function SettingsPage() {
   // editing: undefined=關閉、null=新增、帳戶物件=編輯
   const [editing, setEditing] = useState(undefined)
   const [editingBroker, setEditingBroker] = useState(undefined)
+
+  const user = useAuth()
+  const [authError, setAuthError] = useState(null)
+  const [uidCopied, setUidCopied] = useState(false)
+  const [connResult, setConnResult] = useState(null)
+
+  async function handleSignIn() {
+    setAuthError(null)
+    try {
+      await signInWithGoogle()
+    } catch (e) {
+      // 使用者自行關閉 popup 不算錯誤，不顯示訊息
+      if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request')
+        setAuthError(e.code ?? e.message)
+    }
+  }
+
+  async function copyUid() {
+    await navigator.clipboard.writeText(user.uid)
+    setUidCopied(true)
+    setTimeout(() => setUidCopied(false), 2000)
+  }
+
+  // M0 驗證用：確認 security rules 對本人放行（寫 users/{uid}/meta/connTest）
+  async function testFirestoreWrite() {
+    setConnResult(null)
+    try {
+      await setDoc(doc(firestore, 'users', user.uid, 'meta', 'connTest'), {
+        at: serverTimestamp(),
+        from: 'settings',
+      })
+      setConnResult({ ok: true, msg: '寫入成功，rules 驗證通過' })
+    } catch (e) {
+      setConnResult({ ok: false, msg: e.code ?? e.message })
+    }
+  }
 
   const balances = accountBalances(accounts, txns, todayStr())
   const sorted = [...accounts].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
@@ -174,8 +214,63 @@ export default function SettingsPage() {
         </>
       )}
 
+      {/* 帳號與雲端同步（docs/07 M0：登入＋rules 連線驗證；資料遷移為 M1–M3） */}
+      <div className="px-0.5 mt-6 mb-2 text-[15px] font-semibold">帳號與雲端同步</div>
+      <div className="bg-surface border border-line rounded-card shadow-card px-3.5 py-3">
+        {user === undefined ? (
+          <div className="text-sm text-text-tertiary py-1">確認登入狀態中…</div>
+        ) : user === null ? (
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-text-secondary">登入後啟用多裝置同步與發票匣</span>
+            <button
+              onClick={handleSignIn}
+              className="flex items-center gap-1.5 h-[34px] px-3 rounded-chip bg-brand text-white text-[13px] font-semibold flex-none"
+            >
+              <FontAwesomeIcon icon={faGoogle} className="text-xs" /> Google 登入
+            </button>
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[15px] font-medium truncate">{user.displayName}</div>
+                <div className="text-xs text-text-tertiary truncate">{user.email}</div>
+              </div>
+              <button
+                onClick={() => signOutUser()}
+                className="text-[13px] font-medium text-text-secondary px-2 flex-none"
+              >
+                登出
+              </button>
+            </div>
+            <div className="flex items-center gap-2 mt-2 text-xs text-text-tertiary">
+              <span className="flex-none">uid</span>
+              <code className="truncate">{user.uid}</code>
+              <button onClick={copyUid} className="w-7 h-7 flex-none flex items-center justify-center">
+                <FontAwesomeIcon icon={faCopy} />
+              </button>
+              {uidCopied && <span className="text-success flex-none">已複製</span>}
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <button
+                onClick={testFirestoreWrite}
+                className="h-[30px] px-3 rounded-chip border border-line text-[13px] text-text-secondary"
+              >
+                Firestore 連線測試
+              </button>
+              {connResult && (
+                <span className={`text-xs ${connResult.ok ? 'text-success' : 'text-error'}`}>
+                  {connResult.ok ? '✓' : '✗'} {connResult.msg}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+        {authError && <div className="text-xs text-error mt-2">登入失敗：{authError}</div>}
+      </div>
+
       <p className="text-text-tertiary text-xs mt-6 px-0.5">
-        分類、標籤、備份同步、偏好等其餘設定將於後續階段實作。
+        分類、標籤、偏好等其餘設定將於後續階段實作。
       </p>
 
       <AccountEditSheet

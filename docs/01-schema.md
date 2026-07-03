@@ -1,6 +1,6 @@
 # 01 — 資料模型 (Schema)
 
-技術背景：IndexedDB（Dexie.js），文件導向。每個 entity 對應一個 Dexie table；巢狀結構（拆帳列、還款記錄、發票品項）直接存母物件內。
+技術背景：Firestore（`users/{uid}/<entity>/{docId}`，2026-07-03 起取代 Dexie，見 `07-firebase-migration.md`），文件導向。每個 entity 對應一個 collection；巢狀結構（拆帳列、還款記錄、發票品項）直接存母 doc 內。
 
 慣例：`id` 用字串（ULID/nanoid，離線可產生、不撞號）；金額整數（元），唯股票 `price` 小數、`shares` 整數；`date` 用 `YYYY-MM-DD`；型別記法 `?`=可空、`ref→X`=外鍵、`enum(...)`=列舉、`array<...>`=陣列。
 
