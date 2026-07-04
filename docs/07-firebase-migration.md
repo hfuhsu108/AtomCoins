@@ -46,7 +46,7 @@ service cloud.firestore {
 |---|---|---|
 | Firebase web config（apiKey 等） | **公開值**，防線在 rules | 寫死於 `src/lib/firebase.js`（沿用 GAS URL 寫死先例，2026-07-03 決策） |
 | Firestore security rules | 唯一存取防線 | Firebase console 部署，副本存 repo（`firestore.rules`） |
-| Service account 金鑰 JSON | **最高機密**（可繞過 rules） | 只存本機爬蟲資料夾，**repo 外** |
+| Firestore Admin 認證 | **實際採 gcloud ADC（keyless）**；service account JSON（若可用）為備援、最高機密可繞過 rules | ADC 存本機 gcloud 設定；金鑰 JSON（若有）只存爬蟲資料夾，**repo 外**。組織政策 `iam.disableServiceAccountKeyCreation` 禁下載金鑰，故走 ADC（見 §6B 實作結果） |
 | 財政部手機條碼＋驗證碼 | 機密 | 爬蟲資料夾 `.env`，repo 外 |
 | OpenAI API key（驗證碼辨識） | 機密 | 爬蟲資料夾 `.env`，repo 外 |
 
@@ -210,6 +210,28 @@ App 讀寫已全部走 Firestore，Dexie 只剩依賴與遷移工具殘留。
 
 **驗證**：手動跑 script → Firestore 出現當週發票、PWA（6C 前先用 console）看得到；重跑不重複；改系統時間或關機隔日開機，排程補跑成功；log 與 scraperStatus 正確。
 
+### 6B 探勘結果（2026-07-04，Claude in Chrome 實測）
+
+平台為 SPA（Vue），登入採 **Ory Hydra OAuth2**（登入頁帶 `login_challenge`）；API 主機為 `service-mc.einvoice.nat.gov.tw`。認證**不是 cookie session**：登入後 access token（JWT，約 1185 字元）存於 `sessionStorage`，每個 API 請求帶兩個 header——`Authorization: Bearer <JWT>` 與自訂的 `x-cds-btc`（另一個 JWT，含登入狀態旗標）。`localStorage` 有 `last-login-time`／`last-refresh-time`／`group-type`（OAuth token refresh 機制）。
+
+**架構決策：爬蟲用 Playwright 跑完整登入，登入後在頁面 context 內用 `page.evaluate` 直接呼叫 API。** 原因：token 機制複雜（Bearer＋x-cds-btc＋refresh），純 `requests` 重放要自己維護三種憑證與刷新；改在已登入的瀏覽器分頁內呼叫 API，axios interceptor 會自動帶好所有 header，最穩健、最不易壞。登入表單自動化即可，毋須逆向登入 POST endpoint。
+
+**圖形驗證碼**：`GET service-mc…/act/login/api/act002i/captcha` → 回 JSON `{token, image}`，`image` 為 **base64 PNG**（免截圖，直接解碼丟 OpenAI Vision 辨識）；`token` 於登入提交時帶回綁定該張驗證碼。
+
+**發票查詢＝兩段式 JWT**（都是 POST `…/btc/cloud/api/btc502w/`）：
+1. `getSearchCarrierInvoiceListJWT`，body `{cardCode:"", carrierId2:"", searchStartDate, searchEndDate, invoiceStatus:"all", isSearchAll:"true"}`（日期為 **ISO 8601 UTC**，如 `2026-07-01T03:09:37.161Z`；空 `cardCode`＋`isSearchAll:"true"` ＝ 查全部歸戶載具）→ 回一個 JWT 字串。
+2. `searchCarrierInvoice`，body `{token:<步驟1的JWT>}` → 回**分頁**結果 `{totalElements, totalPages, size:10, content:[…]}`。`content[]` 每筆（發票 header）：`invoiceNumber`、`invoiceDate`（ISO）、`sellerName`（商家）、`totalAmount`（數字）、`carrierName`、`donateMark`、`extStatus`，外加該筆自己的 `token`（查單張明細用）。**分頁 size=10，超過要翻頁**（page 參數待實作時確認；個人單週發票量通常 <10）。
+
+**單張發票明細**（都是 POST `…/btc/cloud/api/common/`，body ＝該筆發票的 `token` 字串本身）：
+- `getCarrierInvoiceData` → 發票 header 詳情：`sellerName`、`sellerId`（統編）、`sellerAddress`、`invoiceDate`（`YYYYMMDD`）、`invoiceTime`、`totalAmount`、`randomNumber`（隨機碼）、`buyerId`。
+- `getCarrierInvoiceDetail` → **品項明細（lineItems）** `{content:[{sequenceNumber, item, quantity, unitPrice, amount}]}`。對應 `docs/01 §3.7`：`item→name`、`quantity→qty`、`unitPrice→unitPrice`、`amount→amount`。
+
+**抓取流程**：登入 → `getSearchCarrierInvoiceListJWT` + `searchCarrierInvoice` 拿近 7 天發票 header（一次涵蓋全部載具）→ 對每筆用其 `token` 呼叫 `getCarrierInvoiceDetail` 補 lineItems（選配，可延後）→ `stripUndefined` 後 `firebase-admin` upsert（docId=`invoiceNumber`）。
+
+**輔助 API**（記錄備查，爬蟲不必用）：`btc502w/getCarrierList`（回歸戶載具清單，非發票）、`btcCloudPublicCarrierCheck/checkBlack`（黑名單檢查）。
+
+**驗證**：手動跑 script → Firestore 出現當週發票、PWA（6C 前先用 console）看得到；重跑不重複；改系統時間或關機隔日開機，排程補跑成功；log 與 scraperStatus 正確。
+
 **開場 prompt**
 
 ```
@@ -229,6 +251,22 @@ upsert 不得覆寫已歸帳發票的 status；頻率溫和（每日一次、區
 
 先列子步驟給我確認再動手。
 ```
+
+### 6B 實作結果（2026-07-04 完成）
+
+**已打通並實際寫入**：Playwright 登入 → 抓近 7 天發票（55 張）含品項明細 → firebase-admin upsert 到 `users/{uid}/invoices`。scraper 在 repo 外 `C:\Users\Hope\Desktop\CLAUDE工作區\atomcoins-scraper\`（`config/captcha/scraper/firestore_upload/main.py`，`main.py --dry-run` 免金鑰測前半段）。
+
+實測校正掉的合約（修正上方探勘記錄的猜測項）：
+
+- **登入憑證**：登入頁 `https://www.einvoice.nat.gov.tw/portal/btc/mobile`；「手機條碼」分頁實際填的是**手機號碼**（`#mobile_phone`）＋密碼（`#password`）＋圖形驗證碼（`#captcha`，無 name）＋登入鈕 `#submitBtn`，**非** `/` 開頭條碼。驗證碼欄要逐字鍵入（`press_sequentially`）。
+- **驗證碼辨識**：OpenAI gpt-4o-mini 對驗證碼會**拒答**（回 `1234567890` 佔位）→ 改用 **ddddocr**（離線、免金鑰）；透明背景 PNG 必須 `classification(img, png_fix=True)`。
+- **查詢區間不可跨月**（跨月回 400「query interval abnormal」）；平台預設「當月 1 號→今天」。scraper 按台灣時區把查詢窗切成不跨月區間、各段從 1 號起、沿用 now 時刻（避免 UTC 表示回退上月）。
+- **分頁走 query string** `searchCarrierInvoice?page=N&size=10`，body 只有 `{token: listJWT}`（非 body 帶 page）。
+- **明細** `getCarrierInvoiceDetail` body ＝該筆 `token` 的 **JSON 字串**（`JSON.stringify(token)`，帶引號），非原始 token 字串。列表已含商家/金額，故 `getCarrierInvoiceData` 不需呼叫。
+- **`invoiceDate` 是 UTC**（`…T16:00:00Z` ＝台灣隔日），要 **+8 轉台灣**再取日期，否則差一天。
+- **Firestore 認證改 gcloud ADC（keyless）**：組織政策 `iam.disableServiceAccountKeyCreation` 禁止下載 service account 金鑰 → `gcloud auth application-default login` ＋ `gcloud auth application-default set-quota-project <projectId>`；`init_admin` 用 `initialize_app(options={"projectId": …})`。§3 表格「service account JSON」一列因此改為「ADC 或金鑰擇一」。
+
+剩餘驗證（使用者待補）：冪等重跑（created=0）、歸帳保護（status≠inbox 不覆寫）、Windows 工作排程器補跑。踩坑細節見專案 memory `stage6b-pitfalls`。
 
 ## 6C — 載具匣 UI（原 Stage 6 主體）
 
