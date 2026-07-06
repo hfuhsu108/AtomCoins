@@ -61,6 +61,7 @@
 | [docs/06-open-questions.md](docs/06-open-questions.md) | 待決事項／注意（linkGroupId、配息、預算等） |
 | [docs/07-firebase-migration.md](docs/07-firebase-migration.md) | **Firebase 遷移計畫（Dexie→Firestore）＋發票爬蟲**：架構決策、金鑰邊界、階段 M0–M3／6B／6C 與各階段開場 prompt |
 | [docs/design-brief.md](docs/design-brief.md) | **給 Claude Design 的介面設計 brief**（design tokens、元件、狀態、寫實範例資料；自我包含可整份貼上） |
+| [docs/08-fix-plan.md](docs/08-fix-plan.md) | **2026-07-06 健檢修復計畫**：7 個批次（資料一致性／錯誤處理／拆帳顯示展開／防呆／UX／確認框／打磨）＋進度追蹤表＋各批次自包含開場 prompt |
 
 ## 現況
 
