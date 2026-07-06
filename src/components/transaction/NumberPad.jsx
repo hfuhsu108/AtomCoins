@@ -33,7 +33,7 @@ const KIND_CLASS = {
 
 export default function NumberPad({ onPress }) {
   return (
-    <div className="bg-surface border-t border-line px-3 pt-2.5 pb-[max(env(safe-area-inset-bottom),18px)]">
+    <div className="flex-none bg-surface border-t border-line px-3 pt-2.5 pb-[max(env(safe-area-inset-bottom),18px)]">
       <div className="grid grid-cols-4 gap-2">
         {KEYS.map((key) => (
           <button

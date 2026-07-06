@@ -81,6 +81,67 @@ export async function createLinkedTransactions(list) {
   return records
 }
 
+// ── Invoice 發票載具（docs/01 §3.7、docs/07 §6C）─────────────────
+// 爬蟲（6B）以 firebase-admin 直寫 status='inbox'；以下是 App 端手動補登與歸帳。
+export async function createInvoice(data) {
+  return createDoc('invoices', buildRecord({ status: 'inbox', source: 'manual', ...data }))
+}
+
+export async function updateInvoice(id, patch) {
+  await patchDoc('invoices', id, patch)
+}
+
+export async function deleteInvoice(id) {
+  await deleteDoc(ref('invoices', id))
+}
+
+// 歸帳：一張發票 → 一筆（或拆帳/代墊多筆）交易，並回寫雙向 ref，全程 writeBatch 原子。
+// txList 來自 TransactionForm.buildList()（尚未帶 id/戳記）；主筆＝list[0] 掛 invoiceId，
+// 多筆時整組綁同一 linkGroupId（沿用代墊/AA 語義）。invoice.transactionId 一律指主筆。
+export async function recordInvoice(invoiceId, txList) {
+  if (!txList?.length) throw new Error('歸帳需要至少一筆交易')
+  const groupId = txList.length > 1 ? newId() : null
+  const records = txList.map((d, i) =>
+    buildRecord({
+      ...d,
+      ...(groupId ? { linkGroupId: groupId } : {}),
+      ...(i === 0 ? { invoiceId } : {}),
+    }),
+  )
+  const batch = writeBatch(firestore)
+  records.forEach((r) => batch.set(ref('transactions', r.id), stripUndefined(r)))
+  batch.update(ref('invoices', invoiceId), stripUndefined({
+    status: 'recorded',
+    transactionId: records[0].id,
+    updatedAt: now(),
+  }))
+  await batch.commit()
+  return records[0]
+}
+
+// 取消歸帳：對稱刪除歸帳產生的交易並還原發票，避免 recorded 發票指向已刪交易的孤兒 ref。
+// 主筆有 linkGroupId（歸帳時拆了代墊）則整組刪，否則刪單筆；同 batch 還原 invoice。
+export async function unrecordInvoice(invoice) {
+  const batch = writeBatch(firestore)
+  const txId = invoice.transactionId
+  if (txId) {
+    const snap = await getDoc(ref('transactions', txId))
+    const groupId = snap.exists() ? snap.data().linkGroupId : null
+    if (groupId) {
+      const group = await getDocs(query(col('transactions'), where('linkGroupId', '==', groupId)))
+      group.docs.forEach((d) => batch.delete(d.ref))
+    } else if (snap.exists()) {
+      batch.delete(ref('transactions', txId))
+    }
+  }
+  batch.update(ref('invoices', invoice.id), stripUndefined({
+    status: 'inbox',
+    transactionId: null,
+    updatedAt: now(),
+  }))
+  await batch.commit()
+}
+
 // ── Account ──────────────────────────────────────────────────
 export async function createAccount(data) {
   return createDoc('accounts', buildRecord(data))

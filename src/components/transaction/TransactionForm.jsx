@@ -24,6 +24,7 @@ import {
   createRecurringRule,
   createStockTransaction,
   updateStockTransaction,
+  recordInvoice,
 } from '../../db/repo'
 import {
   FEE_CATEGORY_ID,
@@ -86,7 +87,28 @@ function stateFromTx(tx) {
   return base
 }
 
-export default function TransactionForm({ initialTx = null, initialStock = null, onClose, onSaved, onDelete }) {
+// 從發票歸帳預填：一律支出、記錄日=發票日、備註=商家、單列拆帳帶入總額（分類待選）。
+function stateFromInvoice(invoice) {
+  return {
+    type: 'expense',
+    tradeDate: invoice.invoiceDate,
+    postingDate: null,
+    note: invoice.merchant ?? '',
+    splits: [{ key: newId(), categoryId: null, expr: String(invoice.totalAmount ?? ''), advanceCounterpartyId: null }],
+    activeSplit: 0,
+    amountExpr: '',
+    accountId: null,
+    fromAccountId: null,
+    toAccountId: null,
+    feeExpr: '',
+    counterpartyId: null,
+    reconciled: false,
+    installment: null,
+    recurring: null,
+  }
+}
+
+export default function TransactionForm({ initialTx = null, initialStock = null, initialInvoice = null, onClose, onSaved, onDelete }) {
   const settings = useSettings()
   const accounts = useCollection('accounts')
   const categories = useCollection('categories')
@@ -98,7 +120,9 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
   const [state, setState] = useState(() =>
     initialTx
       ? stateFromTx(initialTx)
-      : {
+      : initialInvoice
+        ? stateFromInvoice(initialInvoice)
+        : {
           type: initialStock ? 'stock' : 'expense',
           tradeDate: todayStr(),
           postingDate: null, // null = 跟隨記錄日
@@ -171,11 +195,18 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
 
   // ── 拆帳 / 代墊 操作 ───────────────────────────────────────
   const addSplit = () => {
-    setState((s) => ({
-      ...s,
-      splits: [...s.splits, emptySplit()],
-      activeSplit: s.splits.length,
-    }))
+    setState((s) => {
+      // 歸帳時新列自動帶入剩餘未分配金額，讓拆帳合計自動湊回發票原金額（一般記帳無原金額，維持空白）
+      const target = initialInvoice?.totalAmount ?? 0
+      const assigned = s.splits.reduce((sum, sp) => sum + (toAmount(sp.expr) ?? 0), 0)
+      const remaining = target - assigned
+      const expr = target > 0 && remaining > 0 ? String(remaining) : ''
+      return {
+        ...s,
+        splits: [...s.splits, { ...emptySplit(), expr }],
+        activeSplit: s.splits.length,
+      }
+    })
   }
   const removeSplit = (idx) => {
     setState((s) => {
@@ -370,6 +401,16 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
       return
     }
 
+    // 發票歸帳：buildList 產出交易，交由 recordInvoice 原子寫入並回寫雙向 ref（docs/07 §6C）。
+    // 歸帳表單不顯示分期/週期，故此處不處理；切成 stock 已由上方 isStock 分支攔截（不綁發票）。
+    if (initialInvoice && !initialTx) {
+      const list = buildList()
+      if (list.length === 0) return
+      await recordInvoice(initialInvoice.id, list)
+      onSaved?.()
+      return
+    }
+
     // 分期付款（Model B）：刷卡全額 expense 記在卡 ＋ N 筆銀行→卡還款轉帳。
     // 僅新增、僅支出＋信用卡帳戶；忽略拆帳/代墊，以總額單一分類建立。
     if (!initialTx && isExpenseLike && type === 'expense' && state.installment) {
@@ -449,7 +490,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
         >
           <FontAwesomeIcon icon={faXmark} />
         </button>
-        <span className="text-base font-semibold">{initialTx ? '編輯記錄' : '記帳'}</span>
+        <span className="text-base font-semibold">{initialTx ? '編輯記錄' : initialInvoice ? '歸帳' : '記帳'}</span>
         <div className="flex items-center gap-2">
           {onDelete && (
             <button
@@ -493,8 +534,8 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           })}
       </div>
 
-      {/* scroll body */}
-      <div className="flex-1 overflow-y-auto flex flex-col">
+      {/* scroll body（min-h-0：flex item 預設 min-height:auto 會被長內容撐開，導致底部與 NumberPad 被擠出視窗）*/}
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
         {/* stock type: dedicated body, no amount header or NumberPad */}
         {isStock ? (
           <StockFields state={stockState} setState={setStockState} />
@@ -538,6 +579,23 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
         {/* type-specific body */}
         {isExpenseLike && (
           <div className="p-3.5">
+            {/* 歸帳時列出發票明細，供手動拆帳對照（唯讀，docs/01：明細僅供參考）*/}
+            {initialInvoice?.lineItems?.length > 0 && (
+              <div className="mb-3 bg-surface border border-line rounded-modal overflow-hidden">
+                <div className="px-3.5 py-2 text-[13px] font-semibold text-text-secondary bg-surface-alt">
+                  發票明細 · 供拆帳對照
+                </div>
+                {initialInvoice.lineItems.map((it, i) => (
+                  <div key={i} className="flex items-center justify-between px-3.5 py-2 text-[13px] border-t border-line-light">
+                    <span className="truncate text-text-secondary">
+                      {it.name || '（未命名）'}
+                      {it.qty > 1 ? ` ×${it.qty}` : ''}
+                    </span>
+                    <span className="tabular-nums flex-none ml-2">{formatNumber(it.amount ?? 0)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             {!multiRow ? (
               // 單一分類：大 chip
               <SingleCategoryChip
@@ -557,6 +615,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
                 onMarkAdvance={markAdvance}
                 onAddSplit={addSplit}
                 total={total}
+                targetTotal={initialInvoice?.totalAmount ?? 0}
               />
             )}
 
@@ -601,8 +660,8 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
                   onToggle={() => set({ reconciled: !state.reconciled })}
                 />
 
-                {/* 分期付款（僅支出＋信用卡帳戶；新增時可設定）*/}
-                {type === 'expense' && !initialTx && (
+                {/* 分期付款（僅支出＋信用卡帳戶；新增時可設定；歸帳不提供）*/}
+                {type === 'expense' && !initialTx && !initialInvoice && (
                   <InstallmentBox
                     enabled={isCardAccount}
                     installment={state.installment}
@@ -614,8 +673,8 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
                   />
                 )}
 
-                {/* 週期性收支（新增、非分期時可設定）*/}
-                {!initialTx && !state.installment && (
+                {/* 週期性收支（新增、非分期時可設定；歸帳不提供）*/}
+                {!initialTx && !initialInvoice && !state.installment && (
                   <RecurringBox recurring={state.recurring} onToggle={toggleRecurring} onSet={setRecurring} />
                 )}
               </div>
@@ -782,13 +841,28 @@ function SplitRows({
   onMarkAdvance,
   onAddSplit,
   total,
+  targetTotal = 0,
 }) {
+  const diff = targetTotal - total
   return (
     <div className="bg-surface border border-line rounded-modal overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-line-light">
         <span className="text-[13px] font-semibold text-text-secondary">拆帳明細</span>
         <span className="text-[13px] text-text-tertiary tabular-nums">合計 NT$ {formatNumber(total)}</span>
       </div>
+      {/* 歸帳拆帳時顯示與發票原金額的差額，協助湊平 */}
+      {targetTotal > 0 && (
+        <div className="flex items-center justify-between px-4 py-1.5 bg-surface-alt border-b border-line-light text-[12px]">
+          <span className="text-text-tertiary tabular-nums">發票金額 NT$ {formatNumber(targetTotal)}</span>
+          {diff === 0 ? (
+            <span className="text-income font-semibold">已湊平</span>
+          ) : diff > 0 ? (
+            <span className="text-warning-text font-semibold tabular-nums">剩餘 NT$ {formatNumber(diff)}</span>
+          ) : (
+            <span className="text-expense font-semibold tabular-nums">超出 NT$ {formatNumber(-diff)}</span>
+          )}
+        </div>
+      )}
       {splits.map((s, i) => {
         const active = i === activeSplit
         const cat = lookups.cat[s.categoryId]

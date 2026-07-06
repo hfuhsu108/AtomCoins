@@ -8,6 +8,7 @@ import { formatAmount, formatSigned } from '../lib/format'
 import { todayStr, parseDate, monthLabel, monthPrefix, addMonth, formatMd, weekday } from '../lib/date'
 import TransactionRow from '../components/transaction/TransactionRow'
 import StockPanel from '../components/stock/StockPanel'
+import InvoicePanel from '../components/invoice/InvoicePanel'
 
 const TABS = [
   { id: 'ledger', label: '帳本' },
@@ -92,10 +93,8 @@ export default function TransactionsPage() {
 
       {tab === 'stock' ? (
         <StockPanel hidden={hidden} />
-      ) : tab !== 'ledger' ? (
-        <div className="py-16 text-center text-text-tertiary text-sm">
-          發票載具於階段 6 開放
-        </div>
+      ) : tab === 'invoice' ? (
+        <InvoicePanel hidden={hidden} />
       ) : (
         <>
           {/* 月份摘要 */}

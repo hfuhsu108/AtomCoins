@@ -68,4 +68,6 @@
 
 **2026-07-03 重大轉向＋完成**：因發票自動抓取需求（財政部 API 個人無法申請），技術棧解鎖改用 **Firebase**（Auth＋Firestore 取代 Dexie 與未實作的 Drive 同步），完整決策與階段計畫見 `docs/07-firebase-migration.md`。**階段 6A（M0–M3）已於同日完成並驗證**：登入＋rules、資料遷移、全站讀寫切換、Dexie 移除、離線與雙裝置同步皆通過。注意：GitHub Pages 線上版仍為舊 Dexie build，尚未部署新版。
 
-**階段 6B（發票爬蟲）已於 2026-07-04 完成**：本機 Python（Playwright＋ddddocr 辨識驗證碼）登入財政部整合服務平台，抓最近 7 天載具發票含品項明細，firebase-admin 走 **gcloud ADC（keyless；組織政策禁下載 service account 金鑰）** upsert 到 `users/{uid}/invoices`。scraper 在 repo 外 `CLAUDE工作區\atomcoins-scraper\`（`.env`／金鑰不進版控）。實測 API 合約與踩坑見 `docs/07 §6B 實作結果`。剩餘驗證（冪等、歸帳保護、Windows 工作排程器）待補。下一步＝**階段 6C：載具匣 UI**（開場 prompt 見 `docs/07 §6C`）。
+**階段 6B（發票爬蟲）已於 2026-07-04 完成**：本機 Python（Playwright＋ddddocr 辨識驗證碼）登入財政部整合服務平台，抓最近 7 天載具發票含品項明細，firebase-admin 走 **gcloud ADC（keyless；組織政策禁下載 service account 金鑰）** upsert 到 `users/{uid}/invoices`。scraper 在 repo 外 `CLAUDE工作區\atomcoins-scraper\`（`.env`／金鑰不進版控）。實測 API 合約與踩坑見 `docs/07 §6B 實作結果`。剩餘驗證（冪等、歸帳保護）待補。
+
+**階段 6C（載具匣 UI）已於 2026-07-05 完成**：發票分頁（未歸帳／已處理切換、同步條顯示 `scraperStatus`）、歸帳（帶入 TransactionForm、`writeBatch` 雙向 ref、拆帳自動湊回發票原額）、取消歸帳、略過／復原、手動新增；順修記帳／歸帳表單長內容截斷（scroll body `min-h-0`＋桌面容器 `lg:h-[88vh]`）。爬蟲手動同步用 `atomcoins-scraper\同步發票.bat`、每日自動用 Windows 工作排程器（`Register-ScheduledTask`，僅登入時執行＋錯過補跑）。實作結果見 `docs/07 §6C 實作結果`。**待辦**：CSV 匯入（工作項 5）延後待財政部匯出真實 CSV 樣本；歸帳寫入 E2E 待真機（已登入）驗證；線上 GitHub Pages 仍為舊 Dexie build，新版尚未部署。
