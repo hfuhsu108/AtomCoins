@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faEye, faEyeSlash, faArrowsRotate, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons'
 import { useCollection } from '../db/DataProvider'
@@ -27,7 +28,13 @@ export default function ReportsPage() {
   const stockTxns = useCollection('stockTransactions')
   const prices = useCollection('stockPrices')
 
-  const [tab, setTab] = useState('flow')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [tab, setTab] = useState(searchParams.get('tab') || 'flow')
+  // 切分頁寫回 URL：離開報表再返回能停在原分頁；預設 flow 不帶參數
+  const changeTab = (id) => {
+    setTab(id)
+    setSearchParams(id === 'flow' ? {} : { tab: id }, { replace: true })
+  }
   const [hidden, setHidden] = useState(false)
   const opt = { hidden }
   const asOf = todayStr()
@@ -99,7 +106,7 @@ export default function ReportsPage() {
         {TABS.map((t) => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => changeTab(t.id)}
             className={`flex-1 py-2 rounded-btn text-[13px] font-semibold ${
               tab === t.id ? 'bg-surface text-text-primary shadow-segment' : 'text-text-secondary'
             }`}

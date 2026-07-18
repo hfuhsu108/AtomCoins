@@ -2,7 +2,9 @@ import { useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCheck, faTrashCan } from '@fortawesome/free-solid-svg-icons'
 import { createInvoice, updateInvoice, deleteInvoice } from '../../db/repo'
+import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
 import { todayStr } from '../../lib/date'
+import { useConfirm } from '../ConfirmSheet'
 import Sheet from '../Sheet'
 
 function initState(invoice) {
@@ -31,7 +33,10 @@ export default function InvoiceEditSheet({ open, invoice, onClose }) {
   const amount = parseInt(s.totalAmount, 10)
   const canSave = s.merchant.trim().length > 0 && Number.isFinite(amount) && amount > 0
 
-  const save = async () => {
+  const { run, busy, error } = useAsyncAction()
+  const { confirm, confirmElement } = useConfirm()
+
+  const save = () => {
     if (!canSave) return
     const data = {
       merchant: s.merchant.trim(),
@@ -40,16 +45,24 @@ export default function InvoiceEditSheet({ open, invoice, onClose }) {
       invoiceNumber: s.invoiceNumber.trim() || null,
       note: s.note.trim() || null,
     }
-    if (invoice) await updateInvoice(invoice.id, data)
-    else await createInvoice(data)
-    onClose()
+    run(async () => {
+      await settle(invoice ? updateInvoice(invoice.id, data) : createInvoice(data))
+      onClose()
+    })
   }
 
   const handleDelete = async () => {
     if (!invoice) return
-    if (!window.confirm('確定刪除此發票？')) return
-    await deleteInvoice(invoice.id)
-    onClose()
+    // 已歸帳發票硬擋直接刪（少數硬擋情境）：刪了會留下帶懸空 invoiceId 的交易
+    if (invoice.transactionId) {
+      await confirm({ title: '無法刪除', message: '此發票已歸帳，請先到發票列表取消歸帳，再刪除。', alert: true, confirmLabel: '知道了' })
+      return
+    }
+    if (!(await confirm({ title: '刪除發票', message: '確定刪除此發票？', danger: true }))) return
+    run(async () => {
+      await settle(deleteInvoice(invoice.id))
+      onClose()
+    })
   }
 
   return (
@@ -104,24 +117,27 @@ export default function InvoiceEditSheet({ open, invoice, onClose }) {
           />
         </Field>
 
+        {error && <div className="text-[13px] text-error px-1">{error}</div>}
         <div className="flex items-center gap-2 mt-1">
           {invoice && (
             <button
               onClick={handleDelete}
-              className="flex items-center gap-1.5 h-[42px] px-3.5 rounded-btn bg-surface border border-line text-[13px] font-medium text-error"
+              disabled={busy}
+              className="flex items-center gap-1.5 h-[42px] px-3.5 rounded-btn bg-surface border border-line text-[13px] font-medium text-error disabled:opacity-40"
             >
               <FontAwesomeIcon icon={faTrashCan} className="text-xs" /> 刪除
             </button>
           )}
           <button
             onClick={save}
-            disabled={!canSave}
+            disabled={!canSave || busy}
             className="flex-1 flex items-center justify-center gap-1.5 h-[42px] rounded-btn bg-brand text-white text-[13px] font-semibold disabled:opacity-40"
           >
             <FontAwesomeIcon icon={faCheck} className="text-xs" /> 儲存
           </button>
         </div>
       </div>
+      {confirmElement}
     </Sheet>
   )
 }

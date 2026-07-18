@@ -26,6 +26,8 @@ export function parseGasPrices(json) {
     // symbol 缺失或價格非有限數（含 NaN / null）→ 略過該列，不讓髒資料污染快取
     if (!symbol || !Number.isFinite(close)) continue
     const priceDate = String(raw.date ?? raw.priceDate ?? raw.d ?? today).slice(0, 10)
+    // 日期格式不符 YYYY-MM-DD → 略過該列（容錯，避免寫入髒 priceDate）
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(priceDate)) continue
     out.push({ symbol, closePrice: close, priceDate })
   }
   return out

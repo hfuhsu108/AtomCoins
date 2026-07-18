@@ -23,10 +23,15 @@ export default function TransactionsPage() {
   const categories = useCollection('categories')
   const counterparties = useCollection('counterparties')
 
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const now = parseDate(todayStr())
   const [tab, setTab] = useState(searchParams.get('tab') || 'ledger')
+  // 切分頁寫回 URL：歸帳離開再返回（navigate -1）能停在原分頁；預設 ledger 不帶參數
+  const changeTab = (id) => {
+    setTab(id)
+    setSearchParams(id === 'ledger' ? {} : { tab: id }, { replace: true })
+  }
   const [ym, setYm] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 })
   const [hidden, setHidden] = useState(false)
 
@@ -81,7 +86,7 @@ export default function TransactionsPage() {
         {TABS.map((t) => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => changeTab(t.id)}
             className={`flex-1 py-2 rounded-btn text-[13px] font-semibold ${
               tab === t.id ? 'bg-surface text-text-primary shadow-segment' : 'text-text-secondary'
             }`}

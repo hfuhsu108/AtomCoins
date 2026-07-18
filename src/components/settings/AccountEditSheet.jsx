@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCheck, faXmark, faChevronDown, faBoxArchive, faBoxOpen, faPercent } from '@fortawesome/free-solid-svg-icons'
 import { createAccount, updateAccount } from '../../db/repo'
+import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
 import { todayStr } from '../../lib/date'
 import Sheet from '../Sheet'
 import AccountPicker from '../transaction/AccountPicker'
@@ -57,7 +58,9 @@ export default function AccountEditSheet({ open, account, accounts, brokers = []
   const settleBankObj = accounts.find((a) => a.id === s.defaultSettlementBankId)
   const brokerObj = brokers.find((b) => b.id === s.defaultBrokerId)
 
-  const save = async () => {
+  const { run, busy, error } = useAsyncAction()
+
+  const save = () => {
     if (!canSave) return
     const nextSort = accounts.length ? Math.max(...accounts.map((a) => a.sortOrder ?? 0)) + 1 : 0
     const data = {
@@ -79,15 +82,18 @@ export default function AccountEditSheet({ open, account, accounts, brokers = []
       defaultSettlementBankId: isSecurities ? s.defaultSettlementBankId : null,
       defaultBrokerId: isSecurities ? s.defaultBrokerId : null,
     }
-    if (account) await updateAccount(account.id, data)
-    else await createAccount(data)
-    onClose()
+    run(async () => {
+      await settle(account ? updateAccount(account.id, data) : createAccount(data))
+      onClose()
+    })
   }
 
-  const toggleArchive = async () => {
+  const toggleArchive = () => {
     if (!account) return
-    await updateAccount(account.id, { isArchived: !account.isArchived })
-    onClose()
+    run(async () => {
+      await settle(updateAccount(account.id, { isArchived: !account.isArchived }))
+      onClose()
+    })
   }
 
   // 自動扣繳來源只取現金/銀行帳戶
@@ -187,6 +193,7 @@ export default function AccountEditSheet({ open, account, accounts, brokers = []
                 />
               </Field>
             </div>
+            <p className="text-[11px] text-text-tertiary px-1 -mt-1.5">繳款日小於等於結帳日時，視為次月繳款</p>
             <Field label="自動扣繳帳戶（選填）">
               <button
                 onClick={() => setPickerTarget('debit')}
@@ -269,11 +276,13 @@ export default function AccountEditSheet({ open, account, accounts, brokers = []
         )}
 
         {/* 動作 */}
+        {error && <div className="text-[13px] text-error px-1">{error}</div>}
         <div className="flex items-center gap-2 mt-1">
           {account && (
             <button
               onClick={toggleArchive}
-              className="flex items-center gap-1.5 h-[42px] px-3.5 rounded-btn bg-surface border border-line text-[13px] font-medium text-text-secondary"
+              disabled={busy}
+              className="flex items-center gap-1.5 h-[42px] px-3.5 rounded-btn bg-surface border border-line text-[13px] font-medium text-text-secondary disabled:opacity-40"
             >
               <FontAwesomeIcon icon={account.isArchived ? faBoxOpen : faBoxArchive} className="text-xs" />
               {account.isArchived ? '取消封存' : '封存'}
@@ -281,7 +290,7 @@ export default function AccountEditSheet({ open, account, accounts, brokers = []
           )}
           <button
             onClick={save}
-            disabled={!canSave}
+            disabled={!canSave || busy}
             className="flex-1 flex items-center justify-center gap-1.5 h-[42px] rounded-btn bg-brand text-white text-[13px] font-semibold disabled:opacity-40"
           >
             <FontAwesomeIcon icon={faCheck} className="text-xs" /> 儲存

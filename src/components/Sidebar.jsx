@@ -9,6 +9,7 @@ import {
   faPlus,
   faUser,
 } from '@fortawesome/free-solid-svg-icons'
+import { useAuth } from '../hooks/useAuth'
 
 const navItems = [
   { to: '/', icon: faHouse, label: '首頁' },
@@ -19,6 +20,9 @@ const navItems = [
 
 export default function Sidebar() {
   const navigate = useNavigate()
+  const user = useAuth()
+  // undefined＝登入狀態載入中、null＝未登入、物件＝已登入
+  const userLabel = user === undefined ? '…' : user === null ? '未登入' : (user.displayName || user.email)
 
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-[236px] bg-surface border-r border-line flex flex-col z-40">
@@ -75,7 +79,7 @@ export default function Sidebar() {
             className="text-brand text-xs"
           />
         </div>
-        <span className="text-sm text-text-secondary">本機帳戶</span>
+        <span className="text-sm text-text-secondary truncate">{userLabel}</span>
       </div>
     </aside>
   )

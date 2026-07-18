@@ -1,11 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faCircleCheck, faTriangleExclamation, faRotate } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faCircleCheck, faTriangleExclamation, faRotate, faRotateLeft } from '@fortawesome/free-solid-svg-icons'
 import { useCollection } from '../../db/DataProvider'
 import { useScraperStatus } from '../../hooks/useScraperStatus'
+import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
 import { updateInvoice, unrecordInvoice } from '../../db/repo'
 import { formatDateTime } from '../../lib/date'
+import { useConfirm } from '../ConfirmSheet'
 import InvoiceRow from './InvoiceRow'
 import InvoiceEditSheet from './InvoiceEditSheet'
 
@@ -30,17 +32,50 @@ export default function InvoicePanel({ hidden }) {
 
   const list = sub === 'inbox' ? inbox : processed
 
-  const onIgnore = (inv) => updateInvoice(inv.id, { status: 'ignored' })
-  const onRestore = (inv) => updateInvoice(inv.id, { status: 'inbox' })
-  const onUnrecord = (inv) => {
-    if (!window.confirm('取消歸帳將刪除這張發票對應的交易，發票回到未歸帳。確定？')) return
-    unrecordInvoice(inv)
+  const { run, error } = useAsyncAction()
+  const { confirm, confirmElement } = useConfirm()
+
+  // 略過後的行內回饋（可復原）：略過是單一 × 動作、無提示，容易誤點
+  const [ignoredNotice, setIgnoredNotice] = useState(null) // { id }
+  const noticeTimer = useRef(null)
+  useEffect(() => () => clearTimeout(noticeTimer.current), [])
+
+  const onRestore = (inv) => run(async () => { await settle(updateInvoice(inv.id, { status: 'inbox' })) })
+  const onIgnore = (inv) =>
+    run(async () => {
+      await settle(updateInvoice(inv.id, { status: 'ignored' }))
+      setIgnoredNotice({ id: inv.id })
+      clearTimeout(noticeTimer.current)
+      noticeTimer.current = setTimeout(() => setIgnoredNotice(null), 4000)
+    })
+  const undoIgnore = () => {
+    const inv = invoices.find((i) => i.id === ignoredNotice?.id)
+    clearTimeout(noticeTimer.current)
+    setIgnoredNotice(null)
+    if (inv) onRestore(inv)
+  }
+  const onUnrecord = async (inv) => {
+    if (!(await confirm({ title: '取消歸帳', message: '取消歸帳將刪除這張發票對應的交易，發票回到未歸帳。確定？', danger: true }))) return
+    run(async () => { await settle(unrecordInvoice(inv)) })
   }
 
   return (
     <>
       {/* 爬蟲同步狀態條 */}
       <SyncBar status={status} onAdd={() => setSheetOpen(true)} />
+
+      {error && (
+        <div className="mb-3 px-4 py-2.5 bg-error-bg text-error text-[13px] rounded-card">{error}</div>
+      )}
+
+      {ignoredNotice && (
+        <div className="mb-3 flex items-center gap-2 px-4 py-2.5 bg-surface border border-line rounded-card text-[13px] text-text-secondary">
+          <span className="flex-1 min-w-0">已略過，可於「已處理」分頁復原</span>
+          <button onClick={undoIgnore} className="flex items-center gap-1.5 text-brand font-semibold flex-none">
+            <FontAwesomeIcon icon={faRotateLeft} className="text-xs" /> 復原
+          </button>
+        </div>
+      )}
 
       {/* 子分頁 */}
       <div className="flex gap-1.5 p-1 mb-3 bg-surface-alt rounded-modal">
@@ -70,6 +105,7 @@ export default function InvoicePanel({ hidden }) {
       )}
 
       <InvoiceEditSheet open={sheetOpen} invoice={null} onClose={() => setSheetOpen(false)} />
+      {confirmElement}
     </>
   )
 }

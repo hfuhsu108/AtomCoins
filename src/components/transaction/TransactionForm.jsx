@@ -19,13 +19,15 @@ import {
   createTransaction,
   createLinkedTransactions,
   updateTransaction,
-  deleteTransaction,
+  replaceTransactionGroup,
   createInstallmentPlan,
   createRecurringRule,
   createStockTransaction,
   updateStockTransaction,
   recordInvoice,
 } from '../../db/repo'
+import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
+import { useConfirm } from '../ConfirmSheet'
 import {
   FEE_CATEGORY_ID,
   UNCATEGORIZED_EXPENSE_ID,
@@ -108,7 +110,7 @@ function stateFromInvoice(invoice) {
   }
 }
 
-export default function TransactionForm({ initialTx = null, initialStock = null, initialInvoice = null, onClose, onSaved, onDelete }) {
+export default function TransactionForm({ initialTx = null, initialStock = null, initialInvoice = null, onClose, onSaved, onDelete, deleteBusy = false, deleteError = null }) {
   const settings = useSettings()
   const accounts = useCollection('accounts')
   const categories = useCollection('categories')
@@ -390,84 +392,102 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
     ]
   }
 
-  const save = async () => {
+  const { run, busy, error } = useAsyncAction()
+  const { confirm, confirmElement } = useConfirm()
+
+  const save = () => {
     if (!canSave) return
 
-    if (isStock) {
-      const record = buildStockRecord(stockState, brokers)
-      if (initialStock) await updateStockTransaction(initialStock.id, record)
-      else await createStockTransaction(record)
-      onSaved?.()
-      return
-    }
+    run(async () => {
+      if (isStock) {
+        const record = buildStockRecord(stockState, brokers)
+        await settle(initialStock ? updateStockTransaction(initialStock.id, record) : createStockTransaction(record))
+        onSaved?.()
+        return
+      }
 
-    // 發票歸帳：buildList 產出交易，交由 recordInvoice 原子寫入並回寫雙向 ref（docs/07 §6C）。
-    // 歸帳表單不顯示分期/週期，故此處不處理；切成 stock 已由上方 isStock 分支攔截（不綁發票）。
-    if (initialInvoice && !initialTx) {
+      // 發票歸帳：buildList 產出交易，交由 recordInvoice 原子寫入並回寫雙向 ref（docs/07 §6C）。
+      // 歸帳表單不顯示分期/週期，故此處不處理；切成 stock 已由上方 isStock 分支攔截（不綁發票）。
+      if (initialInvoice && !initialTx) {
+        const list = buildList()
+        if (list.length === 0) return
+        await settle(recordInvoice(initialInvoice.id, list))
+        onSaved?.()
+        return
+      }
+
+      // 分期付款（Model B）：刷卡全額 expense 記在卡 ＋ N 筆銀行→卡還款轉帳。
+      // 僅新增、僅支出＋信用卡帳戶；忽略拆帳/代墊，以總額單一分類建立。
+      if (!initialTx && isExpenseLike && type === 'expense' && state.installment) {
+        const fallback = UNCATEGORIZED_EXPENSE_ID
+        const categoryId = state.splits.find((s) => s.categoryId)?.categoryId || fallback
+        const tradeDate = state.tradeDate
+        const expense = {
+          type: 'expense',
+          accountId,
+          amount: total,
+          tradeDate,
+          postingDate: tradeDate,
+          note: state.note.trim() || null,
+          tagIds: [],
+          projectId: null,
+          isReconciled: state.reconciled,
+          splits: [{ categoryId, amount: total, note: null }],
+        }
+        await settle(createInstallmentPlan({
+          expense,
+          periods: state.installment.periods,
+          startDate: state.installment.startDate,
+          fundingAccountId: state.installment.fundingAccountId,
+        }))
+        onSaved?.()
+        return
+      }
+
       const list = buildList()
       if (list.length === 0) return
-      await recordInvoice(initialInvoice.id, list)
-      onSaved?.()
-      return
-    }
-
-    // 分期付款（Model B）：刷卡全額 expense 記在卡 ＋ N 筆銀行→卡還款轉帳。
-    // 僅新增、僅支出＋信用卡帳戶；忽略拆帳/代墊，以總額單一分類建立。
-    if (!initialTx && isExpenseLike && type === 'expense' && state.installment) {
-      const fallback = UNCATEGORIZED_EXPENSE_ID
-      const categoryId = state.splits.find((s) => s.categoryId)?.categoryId || fallback
-      const tradeDate = state.tradeDate
-      const expense = {
-        type: 'expense',
-        accountId,
-        amount: total,
-        tradeDate,
-        postingDate: tradeDate,
-        note: state.note.trim() || null,
-        tagIds: [],
-        projectId: null,
-        isReconciled: state.reconciled,
-        splits: [{ categoryId, amount: total, note: null }],
+      if (initialTx) {
+        // 編輯：單筆直接更新；變多筆則原子重建整組（發票 ref 跟著移到新主筆）。
+        // 群組成員的編輯不做連動（語義複雜，單人 app 用刪除重建較安全，docs/08 批次 1-3），
+        // 只警告＋允許讓使用者知情。
+        if (list.length === 1) {
+          if (
+            (initialTx.linkGroupId || initialTx.installmentPlanId) &&
+            !(await confirm({ title: '群組交易', message: '此筆屬於代墊／分期群組：儲存只會更新本筆，群組其他筆不會連動修改，金額或日期改動會造成兩邊不一致。建議刪除整組後重新建立。仍要儲存？' }))
+          ) return
+          await settle(updateTransaction(initialTx.id, list[0]))
+        } else {
+          if (initialTx.installmentPlanId) {
+            await confirm({ title: '無法儲存', message: '分期交易不支援改為多筆，請刪除整組後重建', alert: true, confirmLabel: '知道了' })
+            return
+          }
+          if (
+            initialTx.linkGroupId &&
+            !(await confirm({ title: '重建群組', message: '將重建整組關聯交易，關聯應收筆上已記錄的還款會被清除。繼續？', danger: true }))
+          ) return
+          await settle(replaceTransactionGroup(initialTx, list))
+        }
+      } else if (list.length === 1) {
+        await settle(createTransaction(list[0]))
+      } else {
+        await settle(createLinkedTransactions(list))
       }
-      await createInstallmentPlan({
-        expense,
-        periods: state.installment.periods,
-        startDate: state.installment.startDate,
-        fundingAccountId: state.installment.fundingAccountId,
-      })
-      onSaved?.()
-      return
-    }
 
-    const list = buildList()
-    if (list.length === 0) return
-    if (initialTx) {
-      // 編輯：單筆直接更新；若編輯中新增了代墊（變多筆）則刪原筆改寫整組
-      if (list.length === 1) await updateTransaction(initialTx.id, list[0])
-      else {
-        await deleteTransaction(initialTx.id)
-        await createLinkedTransactions(list)
+      // 週期性：記下本筆後另建規則，nextDate=本筆記錄日後推一個週期（payload 用主筆範本，
+      // 不含 id/時間戳，tradeDate/postingDate 於觸發時以當期日期覆寫）
+      if (!initialTx && state.recurring) {
+        const freq = { unit: state.recurring.unit, interval: state.recurring.interval ?? 1 }
+        await settle(createRecurringRule({
+          name: list[0].note ?? typeMeta?.label ?? '週期',
+          payload: { ...list[0] },
+          frequency: freq,
+          postingMode: state.recurring.mode,
+          nextDate: advanceDate(state.tradeDate, freq),
+        }))
       }
-    } else if (list.length === 1) {
-      await createTransaction(list[0])
-    } else {
-      await createLinkedTransactions(list)
-    }
 
-    // 週期性：記下本筆後另建規則，nextDate=本筆記錄日後推一個週期（payload 用主筆範本，
-    // 不含 id/時間戳，tradeDate/postingDate 於觸發時以當期日期覆寫）
-    if (!initialTx && state.recurring) {
-      const freq = { unit: state.recurring.unit, interval: state.recurring.interval ?? 1 }
-      await createRecurringRule({
-        name: list[0].note ?? typeMeta?.label ?? '週期',
-        payload: { ...list[0] },
-        frequency: freq,
-        postingMode: state.recurring.mode,
-        nextDate: advanceDate(state.tradeDate, freq),
-      })
-    }
-
-    onSaved?.()
+      onSaved?.()
+    })
   }
 
   // ── 衍生顯示 ───────────────────────────────────────────────
@@ -495,20 +515,26 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           {onDelete && (
             <button
               onClick={onDelete}
-              className="w-[38px] h-[38px] rounded-chip bg-error-bg text-error flex items-center justify-center"
+              disabled={deleteBusy}
+              className="w-[38px] h-[38px] rounded-chip bg-error-bg text-error flex items-center justify-center disabled:opacity-40"
             >
               <FontAwesomeIcon icon={faTrash} className="text-sm" />
             </button>
           )}
           <button
             onClick={save}
-            disabled={!canSave}
+            disabled={!canSave || busy}
             className="flex items-center gap-1.5 h-[38px] px-4 rounded-btn bg-brand text-white text-[13px] font-semibold disabled:opacity-40"
           >
             <FontAwesomeIcon icon={faCheck} className="text-xs" /> 儲存
           </button>
         </div>
       </header>
+
+      {/* 寫入失敗回饋（儲存或刪除），成功則表單已關閉 */}
+      {(error || deleteError) && (
+        <div className="px-3.5 py-2 bg-error-bg text-error text-[13px] flex-none">{error || deleteError}</div>
+      )}
 
       {/* type pills */}
       <div className="flex gap-2 px-3.5 py-3 bg-surface border-b border-line overflow-x-auto flex-none">
@@ -637,16 +663,13 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
               />
             </div>
 
+            {/* 備註常駐可見（不再摺進進階），入帳日等其餘設定維持在進階 */}
+            <div className="mt-2.5">
+              <NoteRow note={state.note} onChange={(v) => set({ note: v })} />
+            </div>
+
             {advOpen && (
               <div className="mt-2.5 flex flex-col gap-2.5">
-                <div className="bg-surface border border-line rounded-modal p-3">
-                  <input
-                    value={state.note}
-                    onChange={(e) => set({ note: e.target.value })}
-                    placeholder="新增備註…"
-                    className="w-full text-sm outline-none bg-transparent placeholder:text-text-tertiary"
-                  />
-                </div>
                 {!state.installment && (
                   <PostingDateRow
                     tradeDate={state.tradeDate}
@@ -793,6 +816,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
         value={picker?.target === 'main' ? state.counterpartyId : null}
         onSelect={handlePick}
       />
+      {confirmElement}
     </div>
   )
 }

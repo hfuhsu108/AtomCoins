@@ -74,7 +74,9 @@ export default function FlowReport({ hidden }) {
   }, [slices, total])
 
   // 較上月：trend 末筆＝viewMonth、前一筆＝上月；百分比為 null 代表無上月基準
-  const curV = isExpense ? trend[trend.length - 1].expense : trend[trend.length - 1].income
+  // 全新無資料帳號 trend 可能為空，末筆取不到會整頁白畫面 → 補預設
+  const lastTrend = trend[trend.length - 1] ?? { income: 0, expense: 0 }
+  const curV = isExpense ? lastTrend.expense : lastTrend.income
   const prevRow = trend[trend.length - 2]
   const prevV = prevRow ? (isExpense ? prevRow.expense : prevRow.income) : 0
   const change = prevV ? ((curV - prevV) / prevV) * 100 : null
@@ -142,7 +144,8 @@ export default function FlowReport({ hidden }) {
             <>
               <div className="flex justify-center mb-1.5">
                 <div className="relative w-44 h-44 flex-none">
-                  <div className="absolute inset-0 rounded-full" style={{ background: donutBg }} />
+                  {/* 隱藏金額時 donut 改單色環，不洩漏各分類比例 */}
+                  <div className="absolute inset-0 rounded-full" style={{ background: hidden ? 'var(--color-surface-alt)' : donutBg }} />
                   <div className="absolute inset-[26px] rounded-full bg-surface flex flex-col items-center justify-center gap-0.5">
                     <div className="text-[11px] text-text-tertiary">本月{tabWord}</div>
                     <div className="text-[22px] font-bold tabular-nums">{hidden ? '••••' : formatNumber(total)}</div>
@@ -229,8 +232,10 @@ function Stat({ label, value }) {
 }
 
 function RankRow({ slice, total, maxAmt, opt }) {
+  const hidden = opt?.hidden
   const pct = total > 0 ? (slice.amount / total) * 100 : 0
-  const barW = maxAmt > 0 ? (slice.amount / maxAmt) * 100 : 0
+  // 隱藏金額時長條等寬淡色、百分比遮掉，不洩漏比例
+  const barW = hidden ? 100 : maxAmt > 0 ? (slice.amount / maxAmt) * 100 : 0
   return (
     <div className="flex items-center gap-3 py-2.5 border-t border-line-light first:border-t-0">
       <span
@@ -246,9 +251,9 @@ function RankRow({ slice, total, maxAmt, opt }) {
         </div>
         <div className="flex items-center gap-2.5 mt-1.5">
           <div className="flex-1 h-1.5 bg-surface-alt rounded-pill overflow-hidden">
-            <div className="h-full rounded-pill" style={{ width: `${barW}%`, background: slice.color }} />
+            <div className="h-full rounded-pill" style={{ width: `${barW}%`, background: hidden ? 'var(--color-surface-alt)' : slice.color }} />
           </div>
-          <span className="text-[11px] text-text-tertiary tabular-nums w-8 text-right">{pct.toFixed(0)}%</span>
+          <span className="text-[11px] text-text-tertiary tabular-nums w-8 text-right">{hidden ? '••' : `${pct.toFixed(0)}%`}</span>
         </div>
       </div>
     </div>

@@ -5,6 +5,7 @@ import { faChevronLeft, faChevronDown, faCheck } from '@fortawesome/free-solid-s
 import { useCollection, useSettings } from '../db/DataProvider'
 import { accountBalances, statementPeriods } from '../lib/engine'
 import { payCreditCardStatement } from '../db/repo'
+import { useAsyncAction, settle } from '../hooks/useAsyncAction'
 import { formatAmount, formatBalance, formatNumber } from '../lib/format'
 import { todayStr, formatMd } from '../lib/date'
 import { accountIcon } from '../lib/icons'
@@ -185,10 +186,14 @@ function PaySheet({ period, card, defaultFundingId, accounts, onClose }) {
   const candidates = accounts.filter((a) => a.type === 'cash' || a.type === 'bank')
   const canPay = amount > 0 && !!fundingId
 
-  const confirm = async () => {
+  const { run, busy, error } = useAsyncAction()
+
+  const confirm = () => {
     if (!canPay) return
-    await payCreditCardStatement({ card, fundingAccountId: fundingId, amount, postingDate: date, period })
-    onClose()
+    run(async () => {
+      await settle(payCreditCardStatement({ card, fundingAccountId: fundingId, amount, postingDate: date, period }))
+      onClose()
+    })
   }
 
   return (
@@ -228,9 +233,10 @@ function PaySheet({ period, card, defaultFundingId, accounts, onClose }) {
             className="w-full px-3.5 py-2.5 bg-surface border border-line rounded-modal text-[15px] outline-none"
           />
         </div>
+        {error && <div className="text-[13px] text-error px-1">{error}</div>}
         <button
           onClick={confirm}
-          disabled={!canPay}
+          disabled={!canPay || busy}
           className="flex items-center justify-center gap-1.5 h-[42px] rounded-btn bg-brand text-white text-[13px] font-semibold disabled:opacity-40"
         >
           <FontAwesomeIcon icon={faCheck} className="text-xs" /> 確認繳費（轉帳 {formatBalance(-amount)}）

@@ -67,7 +67,7 @@ export default function CategoryPicker({ open, onClose, categories, value, onSel
                 <FontAwesomeIcon icon={getIcon(p.icon)} />
               </span>
               <span
-                className={`text-sm flex-1 ${
+                className={`text-sm flex-1 min-w-0 truncate ${
                   active ? 'font-semibold text-text-primary' : 'font-medium text-text-secondary'
                 }`}
               >

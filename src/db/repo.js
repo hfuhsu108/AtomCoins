@@ -81,6 +81,41 @@ export async function createLinkedTransactions(list) {
   return records
 }
 
+// 編輯把單筆改寫成多筆（或重組群組）時原子替換：刪舊（含整組）→ 建新群組，
+// 發票 ref 跟著移到新主筆，避免 recorded 發票指向已刪交易
+export async function replaceTransactionGroup(oldTx, list) {
+  const batch = writeBatch(firestore)
+  // invoiceId 可能掛在群組的其他筆（如編輯的是歸帳拆代墊的 receivable），刪整組時順手收集
+  let invoiceId = oldTx.invoiceId ?? null
+  if (oldTx.linkGroupId) {
+    const group = await getDocs(query(col('transactions'), where('linkGroupId', '==', oldTx.linkGroupId)))
+    group.docs.forEach((d) => {
+      if (!invoiceId && d.data().invoiceId) invoiceId = d.data().invoiceId
+      batch.delete(d.ref)
+    })
+  } else {
+    batch.delete(ref('transactions', oldTx.id))
+  }
+  const groupId = newId()
+  const records = list.map((d, i) =>
+    buildRecord({
+      ...d,
+      linkGroupId: groupId,
+      ...(i === 0 && invoiceId ? { invoiceId } : {}),
+    }),
+  )
+  records.forEach((r) => batch.set(ref('transactions', r.id), stripUndefined(r)))
+  if (invoiceId) {
+    // update 不存在的文件會讓整個 batch 失敗：發票已被刪就只重建交易、不回寫 ref
+    const invSnap = await getDoc(ref('invoices', invoiceId))
+    if (invSnap.exists()) {
+      batch.update(ref('invoices', invoiceId), stripUndefined({ transactionId: records[0].id, updatedAt: now() }))
+    }
+  }
+  await batch.commit()
+  return records
+}
+
 // ── Invoice 發票載具（docs/01 §3.7、docs/07 §6C）─────────────────
 // 爬蟲（6B）以 firebase-admin 直寫 status='inbox'；以下是 App 端手動補登與歸帳。
 export async function createInvoice(data) {
@@ -219,6 +254,8 @@ export async function payCreditCardStatement({ card, fundingAccountId, amount, p
 // ── 分期付款（docs/03 §B Model B）──────────────────────────────
 // 主支出全額入卡帳＋N 筆還款轉帳＋方案，全部綁同一 installmentPlanId、writeBatch 原子寫入
 export async function createInstallmentPlan({ expense, periods, startDate, fundingAccountId }) {
+  // periods=0 會除以零建出 Infinity 髒方案：非正整數一律擋下
+  if (!Number.isInteger(periods) || periods < 1) throw new Error('分期期數需為 1 以上的整數')
   const planId = newId()
   const ts = now()
   const total = expense.amount

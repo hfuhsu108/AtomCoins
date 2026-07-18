@@ -33,22 +33,29 @@ export async function processRecurringRules(asOf = todayStr()) {
     if (!rule.isActive) continue
     if (rule.postingMode === 'reminder') continue
 
-    const limit = rule.postingMode === 'deferred' ? addDays(asOf, DEFERRED_LEAD_DAYS) : asOf
-    let nextDate = rule.nextDate
-    let runs = 0
-    let dirty = false
-    while (nextDate && nextDate <= limit && runs < MAX_CATCHUP) {
-      if (rule.endDate && nextDate > rule.endDate) break
-      await createTransaction(occurrenceFromRule(rule, nextDate))
-      created++
-      nextDate = advanceDate(nextDate, rule.frequency)
-      runs++
-      dirty = true
-    }
-    if (dirty) {
-      const patch = { nextDate, lastRunAt: asOf }
-      if (rule.endDate && nextDate > rule.endDate) patch.isActive = false
-      await updateRecurringRule(rule.id, patch)
+    // 單條 rule 壞資料（如 frequency 非法）不得中斷其他 rule，也不把壞 nextDate 寫回
+    try {
+      // 先驗證 frequency（丟棄結果）：壞的話在建任何交易前就拋，避免「建了交易才在推進時失敗」每次啟動重複建
+      if (rule.nextDate) advanceDate(rule.nextDate, rule.frequency)
+      const limit = rule.postingMode === 'deferred' ? addDays(asOf, DEFERRED_LEAD_DAYS) : asOf
+      let nextDate = rule.nextDate
+      let runs = 0
+      let dirty = false
+      while (nextDate && nextDate <= limit && runs < MAX_CATCHUP) {
+        if (rule.endDate && nextDate > rule.endDate) break
+        await createTransaction(occurrenceFromRule(rule, nextDate))
+        created++
+        nextDate = advanceDate(nextDate, rule.frequency)
+        runs++
+        dirty = true
+      }
+      if (dirty) {
+        const patch = { nextDate, lastRunAt: asOf }
+        if (rule.endDate && nextDate > rule.endDate) patch.isActive = false
+        await updateRecurringRule(rule.id, patch)
+      }
+    } catch (e) {
+      console.error(`週期規則 ${rule.id} 處理失敗，已跳過`, e)
     }
   }
   return created

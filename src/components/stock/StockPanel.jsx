@@ -5,6 +5,7 @@ import { faChevronRight, faPen, faArrowsRotate, faTriangleExclamation } from '@f
 import { useCollection } from '../../db/DataProvider'
 import { computeHoldings, holdingsMarketValue } from '../../lib/stock'
 import { upsertStockPrice } from '../../db/repo'
+import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
 import useSyncPrices from '../../hooks/useSyncPrices'
 import { formatNumber, formatBalance, formatSigned } from '../../lib/format'
 import { todayStr, formatMd, formatDateTime } from '../../lib/date'
@@ -311,11 +312,15 @@ function PriceSheet({ holding, prices, onClose }) {
     setDateStr(existing?.priceDate ?? todayStr())
   }
 
-  const save = async () => {
+  const { run, busy, error } = useAsyncAction()
+
+  const save = () => {
     const p = parseFloat(priceStr)
     if (!holding || !Number.isFinite(p) || p <= 0) return
-    await upsertStockPrice({ symbol: holding.symbol, closePrice: p, priceDate: dateStr })
-    onClose()
+    run(async () => {
+      await settle(upsertStockPrice({ symbol: holding.symbol, closePrice: p, priceDate: dateStr }))
+      onClose()
+    })
   }
 
   return (
@@ -343,9 +348,10 @@ function PriceSheet({ holding, prices, onClose }) {
             className="w-full px-3.5 py-2.5 bg-surface border border-line rounded-modal text-[15px] outline-none"
           />
         </div>
+        {error && <div className="text-[13px] text-error px-1">{error}</div>}
         <button
           onClick={save}
-          disabled={!priceStr || !(parseFloat(priceStr) > 0)}
+          disabled={!priceStr || !(parseFloat(priceStr) > 0) || busy}
           className="flex items-center justify-center gap-1.5 h-[42px] rounded-btn bg-brand text-white text-[13px] font-semibold disabled:opacity-40"
         >
           儲存現價

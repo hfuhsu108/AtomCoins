@@ -2,12 +2,13 @@ import { useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPlus, faChevronRight, faTrashCan, faRepeat, faPercent, faCopy } from '@fortawesome/free-solid-svg-icons'
 import { faGoogle } from '@fortawesome/free-brands-svg-icons'
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { useCollection } from '../db/DataProvider'
-import { firestore, signInWithGoogle, signOutUser } from '../lib/firebase'
+import { signInWithGoogle, signOutUser } from '../lib/firebase'
 import { useAuth } from '../hooks/useAuth'
 import { accountBalances } from '../lib/engine'
 import { updateRecurringRule, deleteRecurringRule } from '../db/repo'
+import { useAsyncAction, settle } from '../hooks/useAsyncAction'
+import { useConfirm } from '../components/ConfirmSheet'
 import { formatBalance, formatAmount } from '../lib/format'
 import { todayStr, formatMd } from '../lib/date'
 import { accountIcon } from '../lib/icons'
@@ -38,7 +39,8 @@ export default function SettingsPage() {
   const user = useAuth()
   const [authError, setAuthError] = useState(null)
   const [uidCopied, setUidCopied] = useState(false)
-  const [connResult, setConnResult] = useState(null)
+  const { run: runRule, error: ruleError } = useAsyncAction()
+  const { confirm, confirmElement } = useConfirm()
 
   async function handleSignIn() {
     setAuthError(null)
@@ -55,20 +57,6 @@ export default function SettingsPage() {
     await navigator.clipboard.writeText(user.uid)
     setUidCopied(true)
     setTimeout(() => setUidCopied(false), 2000)
-  }
-
-  // M0 驗證用：確認 security rules 對本人放行（寫 users/{uid}/meta/connTest）
-  async function testFirestoreWrite() {
-    setConnResult(null)
-    try {
-      await setDoc(doc(firestore, 'users', user.uid, 'meta', 'connTest'), {
-        at: serverTimestamp(),
-        from: 'settings',
-      })
-      setConnResult({ ok: true, msg: '寫入成功，rules 驗證通過' })
-    } catch (e) {
-      setConnResult({ ok: false, msg: e.code ?? e.message })
-    }
   }
 
   const balances = accountBalances(accounts, txns, todayStr())
@@ -194,14 +182,15 @@ export default function SettingsPage() {
                     </div>
                   </div>
                   <button
-                    onClick={() => updateRecurringRule(r.id, { isActive: !r.isActive })}
+                    onClick={() => runRule(async () => { await settle(updateRecurringRule(r.id, { isActive: !r.isActive })) })}
                     className="text-[13px] font-medium text-text-secondary px-2"
                   >
                     {r.isActive ? '暫停' : '啟用'}
                   </button>
                   <button
-                    onClick={() => {
-                      if (window.confirm('刪除此週期性規則？（已產生的交易不受影響）')) deleteRecurringRule(r.id)
+                    onClick={async () => {
+                      if (await confirm({ title: '刪除週期規則', message: '刪除此週期性規則？（已產生的交易不受影響）', danger: true }))
+                        runRule(async () => { await settle(deleteRecurringRule(r.id)) })
                     }}
                     className="w-8 h-8 flex items-center justify-center text-text-tertiary"
                   >
@@ -209,6 +198,7 @@ export default function SettingsPage() {
                   </button>
                 </div>
               ))}
+            {ruleError && <div className="py-2 text-[13px] text-error">{ruleError}</div>}
           </div>
         </>
       )}
@@ -250,19 +240,6 @@ export default function SettingsPage() {
               </button>
               {uidCopied && <span className="text-success flex-none">已複製</span>}
             </div>
-            <div className="flex items-center gap-2 mt-2">
-              <button
-                onClick={testFirestoreWrite}
-                className="h-[30px] px-3 rounded-chip border border-line text-[13px] text-text-secondary"
-              >
-                Firestore 連線測試
-              </button>
-              {connResult && (
-                <span className={`text-xs ${connResult.ok ? 'text-success' : 'text-error'}`}>
-                  {connResult.ok ? '✓' : '✗'} {connResult.msg}
-                </span>
-              )}
-            </div>
           </div>
         )}
         {authError && <div className="text-xs text-error mt-2">登入失敗：{authError}</div>}
@@ -286,6 +263,7 @@ export default function SettingsPage() {
         stockTxns={stockTxns}
         onClose={() => setEditingBroker(undefined)}
       />
+      {confirmElement}
     </div>
   )
 }

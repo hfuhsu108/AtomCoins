@@ -72,6 +72,10 @@ export function dayOfMonth(year, month, day) {
 
 // 依頻率把日期往後推一個週期。frequency = { unit:'week'|'month'|'year', interval:n }
 export function advanceDate(str, { unit, interval = 1 } = {}) {
+  // 未知 unit 若靜默走 month 分支會產出 'NaN-…' 髒日期並寫回規則使其永久失效；fail loud
+  if (unit !== 'week' && unit !== 'month' && unit !== 'year') {
+    throw new Error(`未知的週期單位：${unit}`)
+  }
   if (unit === 'week') return addDays(str, 7 * interval)
   const d = parseDate(str)
   const day = d.getDate()

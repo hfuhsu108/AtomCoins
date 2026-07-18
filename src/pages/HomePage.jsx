@@ -335,8 +335,12 @@ function AccountRow({ account, balance, pending = 0, opt, onClick, settlementBan
         )}
         {isCard && limit > 0 && (
           <>
+            {/* 隱藏金額時進度條固定等寬淡色，不洩漏使用率比例 */}
             <div className="h-1.5 bg-surface-alt rounded-pill my-2 overflow-hidden">
-              <div className="h-full bg-brand rounded-pill" style={{ width: `${pct}%` }} />
+              <div
+                className="h-full rounded-pill"
+                style={{ width: opt?.hidden ? '40%' : `${pct}%`, background: opt?.hidden ? 'var(--color-line)' : 'var(--color-brand)' }}
+              />
             </div>
             <div className="flex justify-between text-xs text-text-tertiary tabular-nums">
               <span>可用 {formatAmount(limit + balance, opt)}</span>

@@ -2,23 +2,30 @@ import { useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCheck, faPlus, faUser } from '@fortawesome/free-solid-svg-icons'
 import { createCounterparty } from '../../db/repo'
+import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
+import { newId } from '../../lib/id'
 import Sheet from '../Sheet'
 
 // 對象選擇器（借還款／代墊用）。清單空時可直接輸入新增。
 export default function CounterpartyPicker({ open, onClose, counterparties, value, onSelect }) {
   const [name, setName] = useState('')
+  const { run, busy, error } = useAsyncAction()
 
   const pick = (id) => {
     onSelect(id)
     onClose()
   }
 
-  const addNew = async () => {
+  const addNew = () => {
     const trimmed = name.trim()
     if (!trimmed) return
-    const cp = await createCounterparty({ name: trimmed })
-    setName('')
-    pick(cp.id)
+    // 先產生 id 再寫入：settle 離線逾時仍能取得 id 選回（不依賴 createCounterparty 的回傳）
+    const id = newId()
+    run(async () => {
+      await settle(createCounterparty({ name: trimmed, id }))
+      setName('')
+      pick(id)
+    })
   }
 
   return (
@@ -33,12 +40,13 @@ export default function CounterpartyPicker({ open, onClose, counterparties, valu
         />
         <button
           onClick={addNew}
-          disabled={!name.trim()}
+          disabled={!name.trim() || busy}
           className="h-10 px-4 rounded-btn bg-brand text-white text-sm font-medium flex items-center gap-1.5 disabled:opacity-40"
         >
           <FontAwesomeIcon icon={faPlus} className="text-xs" /> 新增
         </button>
       </div>
+      {error && <div className="px-3 pt-2 text-[13px] text-error">{error}</div>}
       <div className="flex-1 overflow-y-auto p-2">
         {counterparties.length === 0 && (
           <div className="py-8 text-center text-text-tertiary text-sm">

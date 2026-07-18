@@ -75,6 +75,8 @@ export function computeHoldings(stockTxns, prices, { asOf = todayStr() } = {}) {
     .slice()
     .sort((a, b) => {
       if (a.tradeDate !== b.tradeDate) return a.tradeDate < b.tradeDate ? -1 : 1
+      // 同日 buy 先於 sell：補登交易 createdAt 反序時，避免賣出先於買進處理造成 avgCost=0、已實現損益全額錯算
+      if (a.side !== b.side) return a.side === 'buy' ? -1 : 1
       return (a.createdAt ?? '') < (b.createdAt ?? '') ? -1 : 1
     })
 

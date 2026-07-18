@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCheck, faTrashCan } from '@fortawesome/free-solid-svg-icons'
 import { createBroker, updateBroker, deleteBroker } from '../../db/repo'
+import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
+import { useConfirm } from '../ConfirmSheet'
 import Sheet from '../Sheet'
 
 function initState(broker) {
@@ -27,7 +29,10 @@ export default function BrokerEditSheet({ open, broker, onClose, stockTxns = [] 
   const discount = parseFloat(s.feeDiscount)
   const minFee = parseInt(s.minFee, 10)
 
-  const save = async () => {
+  const { run, busy, error } = useAsyncAction()
+  const { confirm, confirmElement } = useConfirm()
+
+  const save = () => {
     if (!canSave) return
     const data = {
       name: s.name.trim(),
@@ -36,9 +41,10 @@ export default function BrokerEditSheet({ open, broker, onClose, stockTxns = [] 
       rounding: 'floor',
       note: broker?.note ?? null,
     }
-    if (broker) await updateBroker(broker.id, data)
-    else await createBroker(data)
-    onClose()
+    run(async () => {
+      await settle(broker ? updateBroker(broker.id, data) : createBroker(data))
+      onClose()
+    })
   }
 
   const handleDelete = async () => {
@@ -47,9 +53,11 @@ export default function BrokerEditSheet({ open, broker, onClose, stockTxns = [] 
     const msg = used
       ? '此券商已有交易紀錄引用，刪除後相關交易的券商欄位將失效。確定刪除？'
       : '確定刪除此券商？'
-    if (!window.confirm(msg)) return
-    await deleteBroker(broker.id)
-    onClose()
+    if (!(await confirm({ title: '刪除券商', message: msg, danger: true }))) return
+    run(async () => {
+      await settle(deleteBroker(broker.id))
+      onClose()
+    })
   }
 
   return (
@@ -88,24 +96,27 @@ export default function BrokerEditSheet({ open, broker, onClose, stockTxns = [] 
           捨去方式：無條件捨去（floor）— 業界標準
         </div>
 
+        {error && <div className="text-[13px] text-error px-1">{error}</div>}
         <div className="flex items-center gap-2 mt-1">
           {broker && (
             <button
               onClick={handleDelete}
-              className="flex items-center gap-1.5 h-[42px] px-3.5 rounded-btn bg-surface border border-line text-[13px] font-medium text-error"
+              disabled={busy}
+              className="flex items-center gap-1.5 h-[42px] px-3.5 rounded-btn bg-surface border border-line text-[13px] font-medium text-error disabled:opacity-40"
             >
               <FontAwesomeIcon icon={faTrashCan} className="text-xs" /> 刪除
             </button>
           )}
           <button
             onClick={save}
-            disabled={!canSave}
+            disabled={!canSave || busy}
             className="flex-1 flex items-center justify-center gap-1.5 h-[42px] rounded-btn bg-brand text-white text-[13px] font-semibold disabled:opacity-40"
           >
             <FontAwesomeIcon icon={faCheck} className="text-xs" /> 儲存
           </button>
         </div>
       </div>
+      {confirmElement}
     </Sheet>
   )
 }

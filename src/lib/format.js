@@ -5,6 +5,8 @@ const MASK = '••••••'
 
 // 純數字千分位（無貨幣符號），股價等小數用 maximumFractionDigits 控制
 export function formatNumber(n, maxFractionDigits = 0) {
+  // 缺值/非數欄位顯示 NT$ 0 勝過 NT$ NaN
+  if (!Number.isFinite(Number(n))) n = 0
   return Number(n).toLocaleString('en-US', { maximumFractionDigits: maxFractionDigits })
 }
 
