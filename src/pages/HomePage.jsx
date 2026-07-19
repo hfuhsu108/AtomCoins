@@ -22,6 +22,7 @@ import {
 } from '../lib/engine'
 import { computeHoldings, holdingsMarketValue } from '../lib/stock'
 import { dueReminders, fireReminder } from '../lib/recurring'
+import { dueCardPayments, settlementShortfalls } from '../lib/notifications'
 import { formatBalance, formatSigned, formatAmount } from '../lib/format'
 import { todayStr, parseDate, monthLabel, formatMd } from '../lib/date'
 import { getIcon, ACCOUNT_TYPE_ICON } from '../lib/icons'
@@ -57,6 +58,8 @@ export default function HomePage() {
 
   const reminders = dueReminders(rules)
 
+  const statements = useCollection('creditCardStatements')
+
   const asOf = todayStr()
   const today = parseDate(asOf)
   const year = today.getFullYear()
@@ -79,6 +82,11 @@ export default function HomePage() {
   }, [holdings])
 
   // 現餘額／淨資產一律以「今天」為入帳截止：未來入帳日記錄（未入帳）不計入現況
+  // 通知區三類：週期提醒＋卡費到期＋交割缺口（階段 7）
+  const cardDues = dueCardPayments(accounts, txns, statements, asOf)
+  const shortfalls = settlementShortfalls(accounts, txns, stockTxns, asOf)
+  const notifyCount = reminders.length + cardDues.length + shortfalls.length
+
   const balances = accountBalances(accounts, txns, asOf, stockTxns)
   const pending = pendingByAccount(accounts, txns, asOf, stockTxns)
   const nw = netWorth(accounts, txns, { holdingsValue, asOf, stockTxns })
@@ -116,7 +124,7 @@ export default function HomePage() {
             className="relative w-[38px] h-[38px] rounded-chip bg-surface border border-line text-text-secondary flex items-center justify-center"
           >
             <FontAwesomeIcon icon={faBell} />
-            {reminders.length > 0 && (
+            {notifyCount > 0 && (
               <span className="absolute top-2 right-2 w-[7px] h-[7px] bg-error rounded-full" />
             )}
           </button>
@@ -254,39 +262,112 @@ export default function HomePage() {
         </div>
       </div>
 
-      <RemindersSheet
+      <NotificationsSheet
         open={remindersOpen}
         reminders={reminders}
+        cardDues={cardDues}
+        shortfalls={shortfalls}
         onClose={() => setRemindersOpen(false)}
       />
     </div>
   )
 }
 
-function RemindersSheet({ open, reminders, onClose }) {
+function NotifySection({ title, children }) {
   return (
-    <Sheet open={open} onClose={onClose} title="週期性提醒" bodyClassName="overflow-y-auto p-3">
-      {reminders.length === 0 ? (
-        <div className="py-10 text-center text-text-tertiary text-sm">目前沒有待確認的提醒</div>
+    <div>
+      <div className="text-[13px] font-semibold text-text-secondary px-0.5 mb-1.5">{title}</div>
+      <div className="flex flex-col gap-2">{children}</div>
+    </div>
+  )
+}
+
+// 通知區（階段 7 擴充）：卡費到期／交割缺口／週期提醒 三節，空節不顯示
+function NotificationsSheet({ open, reminders, cardDues, shortfalls, onClose }) {
+  const navigate = useNavigate()
+  const total = reminders.length + cardDues.length + shortfalls.length
+  const go = (to) => {
+    onClose()
+    navigate(to)
+  }
+  return (
+    <Sheet open={open} onClose={onClose} title="通知" bodyClassName="overflow-y-auto p-3">
+      {total === 0 ? (
+        <div className="py-10 text-center text-text-tertiary text-sm">目前沒有通知</div>
       ) : (
-        <div className="flex flex-col gap-2">
-          {reminders.map((r) => (
-            <div
-              key={r.id}
-              className="flex items-center gap-3 p-3 bg-surface border border-line rounded-modal"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="text-[15px] font-medium truncate">{r.name ?? '週期項目'}</div>
-                <div className="text-xs text-text-tertiary tabular-nums">到期 {formatMd(r.nextDate)}</div>
-              </div>
-              <button
-                onClick={() => fireReminder(r)}
-                className="flex items-center gap-1.5 h-[34px] px-3 rounded-btn bg-brand text-white text-[13px] font-semibold"
-              >
-                <FontAwesomeIcon icon={faCheck} className="text-xs" /> 記一筆
-              </button>
-            </div>
-          ))}
+        <div className="flex flex-col gap-4">
+          {cardDues.length > 0 && (
+            <NotifySection title="信用卡繳費">
+              {cardDues.map((d) => (
+                <div
+                  key={`${d.account.id}|${d.periodEnd}`}
+                  className="flex items-center gap-3 p-3 bg-surface border border-line rounded-modal"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[15px] font-medium truncate">{d.account.name}</span>
+                      {d.overdue && (
+                        <span className="flex-none text-[11px] text-error bg-error-bg rounded-chip px-1.5 py-0.5">已逾期</span>
+                      )}
+                    </div>
+                    <div className="text-xs text-text-tertiary tabular-nums">
+                      應繳 {formatAmount(d.amount)}・截止 {formatMd(d.dueDate)}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => go(`/card/${d.account.id}`)}
+                    className="h-[34px] px-3 rounded-btn bg-brand text-white text-[13px] font-semibold flex-none"
+                  >
+                    查看
+                  </button>
+                </div>
+              ))}
+            </NotifySection>
+          )}
+          {shortfalls.length > 0 && (
+            <NotifySection title="交割餘額不足">
+              {shortfalls.map((s) => (
+                <div
+                  key={`${s.bank?.id}|${s.date}`}
+                  className="flex items-center gap-3 p-3 bg-surface border border-line rounded-modal"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[15px] font-medium truncate">{s.bank?.name ?? '交割銀行'}</div>
+                    <div className="text-xs text-text-tertiary tabular-nums">
+                      {formatMd(s.date)} 交割前需補 {formatAmount(s.shortfall)}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => go('/transactions?tab=stock')}
+                    className="h-[34px] px-3 rounded-btn bg-brand text-white text-[13px] font-semibold flex-none"
+                  >
+                    查看
+                  </button>
+                </div>
+              ))}
+            </NotifySection>
+          )}
+          {reminders.length > 0 && (
+            <NotifySection title="週期性提醒">
+              {reminders.map((r) => (
+                <div
+                  key={r.id}
+                  className="flex items-center gap-3 p-3 bg-surface border border-line rounded-modal"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[15px] font-medium truncate">{r.name ?? '週期項目'}</div>
+                    <div className="text-xs text-text-tertiary tabular-nums">到期 {formatMd(r.nextDate)}</div>
+                  </div>
+                  <button
+                    onClick={() => fireReminder(r)}
+                    className="flex items-center gap-1.5 h-[34px] px-3 rounded-btn bg-brand text-white text-[13px] font-semibold flex-none"
+                  >
+                    <FontAwesomeIcon icon={faCheck} className="text-xs" /> 記一筆
+                  </button>
+                </div>
+              ))}
+            </NotifySection>
+          )}
         </div>
       )}
     </Sheet>

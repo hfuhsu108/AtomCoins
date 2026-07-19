@@ -71,6 +71,58 @@
   --radius-key: 12px;
 }
 
+/* 深色主題（階段 7）：由淺色 token 推導的對應值，只覆蓋色彩與陰影。
+   Tailwind v4 utilities 引用 var(--color-*)，覆蓋 :root 變數即全站生效。 */
+:root[data-theme="dark"] {
+  --color-brand: #5C77E6;
+  --color-brand-light: #232A45;
+
+  --color-app-bg: #111417;
+  --color-surface: #1A1E23;
+  --color-surface-alt: #242A31;
+
+  --color-line: #2E353D;
+  --color-line-light: #262C33;
+
+  --color-text-primary: #E8EAED;
+  --color-text-secondary: #9AA3AE;
+  --color-text-tertiary: #6E7681;
+  --color-text-disabled: #4A525B;
+  --color-text-quaternary: #545C66;
+
+  /* 語意色調亮以維持深底對比；income 與 brand 分離（淺色下同值） */
+  --color-expense: #FFA333;
+  --color-income: #8CA3F8;
+
+  --color-success: #51CF66;
+  --color-success-bg: #16301C;
+  --color-error: #FA5252;
+  --color-error-bg: #391E20;
+  --color-warning: #FF922B;
+  --color-warning-text: #FFC078;
+  --color-warning-bg: #3A2A14;
+  --color-warning-border: #5C431F;
+
+  --color-stock-buy: #FA5252;
+  --color-stock-sell: #51CF66;
+
+  --color-chart-1: #748FFC;
+  --color-chart-2: #FFA94D;
+  --color-chart-3: #9775FA;
+  --color-chart-4: #3BC9DB;
+  --color-chart-5: #FF922B;
+  --color-chart-6: #91A7FF;
+  --color-chart-7: #F06595;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-fab: 0 8px 18px rgba(92, 119, 230, 0.45);
+  --shadow-modal: 0 24px 70px rgba(0, 0, 0, 0.65);
+  --shadow-sheet: 0 -10px 40px rgba(0, 0, 0, 0.5);
+  --shadow-segment: 0 1px 3px rgba(0, 0, 0, 0.45);
+  --shadow-dropdown: 0 16px 44px rgba(0, 0, 0, 0.55);
+  --shadow-selected: 0 2px 8px rgba(92, 119, 230, 0.25);
+}
+
 body {
   margin: 0;
   font-family: var(--font-sans);

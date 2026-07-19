@@ -31,6 +31,21 @@ export default defineConfig({
             type: 'image/png',
           },
         ],
+        // 長按 app icon 的捷徑（iOS 桌面 widget 無法用純 PWA 達成，改捷徑秒開，docs/06 §5）
+        shortcuts: [
+          {
+            name: '記一筆',
+            short_name: '記一筆',
+            url: '/AtomCoins/#/add',
+            icons: [{ src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' }],
+          },
+          {
+            name: '發票匣',
+            short_name: '發票匣',
+            url: '/AtomCoins/#/transactions?tab=invoice',
+            icons: [{ src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' }],
+          },
+        ],
       },
     }),
   ],

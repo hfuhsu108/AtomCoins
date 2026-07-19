@@ -62,6 +62,11 @@ export function useCollection(name) {
   return data[name]
 }
 
+// 整包資料（備份匯出用）：一次拿全部 collections，避免呼叫端逐一 useCollection
+export function useAllCollections() {
+  return useContext(DataContext)
+}
+
 // settings 單例（docId=SETTINGS_ID）；未載入/未登入回 undefined，語義同原 db.settings.get()
 export function useSettings() {
   return useCollection('settings').find((s) => s.id === SETTINGS_ID)

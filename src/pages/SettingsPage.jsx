@@ -1,8 +1,11 @@
 import { useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faChevronRight, faTrashCan, faRepeat, faPercent, faCopy } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faChevronRight, faTrashCan, faRepeat, faPercent, faCopy, faFileArrowDown } from '@fortawesome/free-solid-svg-icons'
 import { faGoogle } from '@fortawesome/free-brands-svg-icons'
-import { useCollection } from '../db/DataProvider'
+import { useCollection, useAllCollections } from '../db/DataProvider'
+import { buildJsonBackup, buildTransactionsCsv, downloadFile } from '../lib/backup'
+import { getTheme, setTheme } from '../lib/theme'
+import { useInstallPrompt } from '../hooks/useInstallPrompt'
 import { signInWithGoogle, signOutUser } from '../lib/firebase'
 import { useAuth } from '../hooks/useAuth'
 import { accountBalances } from '../lib/engine'
@@ -14,6 +17,12 @@ import { todayStr, formatMd } from '../lib/date'
 import { accountIcon } from '../lib/icons'
 import AccountEditSheet from '../components/settings/AccountEditSheet'
 import BrokerEditSheet from '../components/settings/BrokerEditSheet'
+
+const THEME_OPTIONS = [
+  { value: 'light', label: '淺色' },
+  { value: 'dark', label: '深色' },
+  { value: 'system', label: '跟隨系統' },
+]
 
 const FREQ_LABEL = { week: '每週', month: '每月', year: '每年' }
 const MODE_LABEL = { immediate: '自動入帳', deferred: '提前產生', reminder: '僅提醒' }
@@ -37,6 +46,9 @@ export default function SettingsPage() {
   const [editingBroker, setEditingBroker] = useState(undefined)
 
   const user = useAuth()
+  const allData = useAllCollections()
+  const [theme, setThemeState] = useState(getTheme)
+  const { canInstall, install, isIos, isStandalone } = useInstallPrompt()
   const [authError, setAuthError] = useState(null)
   const [uidCopied, setUidCopied] = useState(false)
   const { run: runRule, error: ruleError } = useAsyncAction()
@@ -61,6 +73,29 @@ export default function SettingsPage() {
 
   const balances = accountBalances(accounts, txns, todayStr())
   const sorted = [...accounts].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+
+  function exportJson() {
+    downloadFile(
+      `原子記帳備份-${todayStr()}.json`,
+      buildJsonBackup(allData, user.uid),
+      'application/json;charset=utf-8',
+    )
+  }
+
+  function exportCsv() {
+    downloadFile(
+      `原子記帳交易明細-${todayStr()}.csv`,
+      buildTransactionsCsv({
+        transactions: allData.transactions,
+        accounts: allData.accounts,
+        categories: allData.categories,
+        tags: allData.tags,
+        projects: allData.projects,
+        counterparties: allData.counterparties,
+      }),
+      'text/csv;charset=utf-8',
+    )
+  }
 
   return (
     <div className="px-4 pt-4 pb-4 lg:px-7 lg:pt-6 max-w-3xl mx-auto">
@@ -243,6 +278,80 @@ export default function SettingsPage() {
           </div>
         )}
         {authError && <div className="text-xs text-error mt-2">登入失敗：{authError}</div>}
+      </div>
+
+      {/* 偏好（階段 7）：主題三段切換，localStorage per-device */}
+      <div className="px-0.5 mt-6 mb-2 text-[15px] font-semibold">偏好</div>
+      <div className="bg-surface border border-line rounded-card shadow-card px-3.5 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm text-text-secondary">主題</span>
+          <div className="flex bg-surface-alt rounded-btn p-0.5">
+            {THEME_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                onClick={() => { setTheme(o.value); setThemeState(o.value) }}
+                className={`h-[30px] px-3 rounded-[8px] text-[13px] font-medium ${
+                  theme === o.value ? 'bg-surface shadow-segment font-semibold' : 'text-text-secondary'
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* 安裝 App（階段 7）：Chromium 走 beforeinstallprompt，iOS 顯示加入主畫面指引 */}
+      <div className="px-0.5 mt-6 mb-2 text-[15px] font-semibold">安裝 App</div>
+      <div className="bg-surface border border-line rounded-card shadow-card px-3.5 py-3">
+        {isStandalone ? (
+          <div className="text-sm text-text-secondary">已安裝為 App，長按圖示可使用「記一筆」「發票匣」捷徑。</div>
+        ) : canInstall ? (
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-text-secondary">安裝到主畫面，離線也能記帳</span>
+            <button
+              onClick={install}
+              className="h-[34px] px-3 rounded-chip bg-brand text-white text-[13px] font-semibold flex-none"
+            >
+              安裝
+            </button>
+          </div>
+        ) : isIos ? (
+          <div className="text-sm text-text-secondary">
+            iPhone／iPad：用 Safari 開啟本頁 → 點「分享」→「加入主畫面」即可安裝。
+          </div>
+        ) : (
+          <div className="text-sm text-text-tertiary">
+            目前瀏覽器未提供安裝提示；部署上線後可在 Chrome／Edge 網址列安裝。
+          </div>
+        )}
+      </div>
+
+      {/* 備份匯出（階段 7）：只匯出、不做還原——Firestore 即雲端源 */}
+      <div className="px-0.5 mt-6 mb-2 text-[15px] font-semibold">備份匯出</div>
+      <div className="bg-surface border border-line rounded-card shadow-card px-3.5 py-3">
+        <div className="text-xs text-text-tertiary mb-2.5">
+          交易 {allData.transactions.length} 筆・股票 {allData.stockTransactions.length} 筆・發票 {allData.invoices.length} 張
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={exportJson}
+            disabled={!user}
+            className="flex-1 flex items-center justify-center gap-1.5 h-[38px] rounded-btn border border-line bg-surface-alt text-[13px] font-semibold disabled:opacity-40"
+          >
+            <FontAwesomeIcon icon={faFileArrowDown} className="text-xs" /> JSON 完整備份
+          </button>
+          <button
+            onClick={exportCsv}
+            disabled={!user}
+            className="flex-1 flex items-center justify-center gap-1.5 h-[38px] rounded-btn border border-line bg-surface-alt text-[13px] font-semibold disabled:opacity-40"
+          >
+            <FontAwesomeIcon icon={faFileArrowDown} className="text-xs" /> 交易明細 CSV
+          </button>
+        </div>
+        <p className="text-[11px] text-text-tertiary mt-2">
+          JSON 為全部資料的完整備份；CSV 為交易明細（拆帳逐列展開），可用 Excel 開啟。
+        </p>
       </div>
 
       <p className="text-text-tertiary text-xs mt-6 px-0.5">

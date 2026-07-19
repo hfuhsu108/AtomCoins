@@ -5,6 +5,14 @@
     <link rel="icon" type="image/svg+xml" href="/AtomCoins/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#3B5BDB" />
+    <script>
+      // 防閃爍：render 前依 localStorage／系統偏好套主題（與 src/lib/theme.js 同一把 key）
+      (function () {
+        var v = localStorage.getItem('atomcoins-theme');
+        var dark = v === 'dark' || (v !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet" />
