@@ -5,7 +5,7 @@ import { faGoogle } from '@fortawesome/free-brands-svg-icons'
 import { useCollection, useAllCollections } from '../db/DataProvider'
 import { buildJsonBackup, buildTransactionsCsv, downloadFile } from '../lib/backup'
 import { getTheme, setTheme } from '../lib/theme'
-import { useInstallPrompt } from '../hooks/useInstallPrompt'
+import { usePwa } from '../components/PwaProvider'
 import { signInWithGoogle, signOutUser } from '../lib/firebase'
 import { useAuth } from '../hooks/useAuth'
 import { accountBalances } from '../lib/engine'
@@ -17,6 +17,14 @@ import { todayStr, formatMd } from '../lib/date'
 import { accountIcon } from '../lib/icons'
 import AccountEditSheet from '../components/settings/AccountEditSheet'
 import BrokerEditSheet from '../components/settings/BrokerEditSheet'
+
+// build 時間以 ISO（UTC）注入，顯示時轉本地時區
+function formatBuiltAt(iso) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 const THEME_OPTIONS = [
   { value: 'light', label: '淺色' },
@@ -48,7 +56,7 @@ export default function SettingsPage() {
   const user = useAuth()
   const allData = useAllCollections()
   const [theme, setThemeState] = useState(getTheme)
-  const { canInstall, install, isIos, isStandalone } = useInstallPrompt()
+  const pwa = usePwa()
   const [authError, setAuthError] = useState(null)
   const [uidCopied, setUidCopied] = useState(false)
   const { run: runRule, error: ruleError } = useAsyncAction()
@@ -301,30 +309,66 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* 安裝 App（階段 7）：Chromium 走 beforeinstallprompt，iOS 顯示加入主畫面指引 */}
-      <div className="px-0.5 mt-6 mb-2 text-[15px] font-semibold">安裝 App</div>
-      <div className="bg-surface border border-line rounded-card shadow-card px-3.5 py-3">
-        {isStandalone ? (
-          <div className="text-sm text-text-secondary">已安裝為 App，長按圖示可使用「記一筆」「發票匣」捷徑。</div>
-        ) : canInstall ? (
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-sm text-text-secondary">安裝到主畫面，離線也能記帳</span>
-            <button
-              onClick={install}
-              className="h-[34px] px-3 rounded-chip bg-brand text-white text-[13px] font-semibold flex-none"
-            >
-              安裝
-            </button>
+      {/* 關於與更新：版本顯示、檢查更新（prompt 模式手動套用）、安裝 App（沿用 CoTravel 機制） */}
+      <div className="px-0.5 mt-6 mb-2 text-[15px] font-semibold">關於與更新</div>
+      <div className="bg-surface border border-line rounded-card shadow-card px-3.5 divide-y divide-line-light">
+        <div className="py-3">
+          <div className="text-[15px] font-medium">原子記帳 AtomCoins</div>
+          <div className="text-xs text-text-tertiary tabular-nums mt-0.5">
+            版本 {pwa.version} · {formatBuiltAt(pwa.builtAt)}
           </div>
-        ) : isIos ? (
-          <div className="text-sm text-text-secondary">
-            iPhone／iPad：用 Safari 開啟本頁 → 點「分享」→「加入主畫面」即可安裝。
+        </div>
+        <button
+          onClick={
+            pwa.checkResult === 'available'
+              ? pwa.applyUpdate
+              : pwa.checkResult === 'checking'
+                ? undefined
+                : pwa.checkForUpdate
+          }
+          className="flex items-center justify-between gap-3 w-full py-3 text-left"
+        >
+          <div className="min-w-0">
+            <div className={`text-[15px] font-medium ${pwa.checkResult === 'available' ? 'text-brand' : ''}`}>
+              {pwa.checkResult === 'available' ? '有新版本可用' : '檢查更新'}
+            </div>
+            <div className="text-xs text-text-tertiary mt-0.5">
+              {pwa.checkResult === 'checking'
+                ? '檢查中…'
+                : pwa.checkResult === 'available'
+                  ? '點此立即更新並重新載入'
+                  : pwa.checkResult === 'latest'
+                    ? '已是最新版本'
+                    : pwa.checkResult === 'error'
+                      ? '暫時無法檢查，請稍後再試'
+                      : '看看有沒有新版本'}
+            </div>
           </div>
-        ) : (
-          <div className="text-sm text-text-tertiary">
-            目前瀏覽器未提供安裝提示；部署上線後可在 Chrome／Edge 網址列安裝。
-          </div>
-        )}
+          <FontAwesomeIcon icon={faChevronRight} className="text-text-tertiary text-[11px] flex-none" />
+        </button>
+        <div className="py-3">
+          {pwa.installed ? (
+            <div className="text-sm text-text-secondary">已安裝為 App，長按圖示可使用「記一筆」「發票匣」捷徑。</div>
+          ) : pwa.canInstall ? (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-text-secondary">安裝到主畫面，離線也能記帳</span>
+              <button
+                onClick={pwa.promptInstall}
+                className="h-[34px] px-3 rounded-chip bg-brand text-white text-[13px] font-semibold flex-none"
+              >
+                安裝
+              </button>
+            </div>
+          ) : pwa.isIOS ? (
+            <div className="text-sm text-text-secondary">
+              iPhone／iPad：用 Safari 開啟本頁 → 點「分享」→「加入主畫面」即可安裝。
+            </div>
+          ) : (
+            <div className="text-sm text-text-tertiary">
+              可從瀏覽器選單選「安裝／加入主畫面」。
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 備份匯出（階段 7）：只匯出、不做還原——Firestore 即雲端源 */}

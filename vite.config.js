@@ -2,14 +2,39 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { readFileSync } from 'node:fs'
+import { execSync } from 'node:child_process'
+
+// 語意版本取自 package.json（發布時手動 bump），附建置 SHA（CI 用 GITHUB_SHA、本機用 git），
+// 供設定頁顯示「目前版本」，部署後可在手機比對是否更新到位（做法沿用 CoTravel）
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'))
+
+function resolveAppVersion() {
+  const sha = process.env.GITHUB_SHA
+    ? process.env.GITHUB_SHA.slice(0, 7)
+    : (() => {
+        try {
+          return execSync('git rev-parse --short HEAD').toString().trim()
+        } catch {
+          return ''
+        }
+      })()
+  return sha ? `v${pkg.version} (${sha})` : `v${pkg.version}`
+}
 
 export default defineConfig({
   base: '/AtomCoins/',
+  // 編譯期注入版本資訊（dev 與 build 皆生效），由設定頁顯示
+  define: {
+    __APP_VERSION__: JSON.stringify(resolveAppVersion()),
+    __APP_BUILT_AT__: JSON.stringify(new Date().toISOString()),
+  },
   plugins: [
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // prompt：偵測到新版時不靜默重載，由頂部橫幅／設定頁「檢查更新」讓使用者手動套用
+      registerType: 'prompt',
       manifest: {
         name: '原子記帳 AtomCoins',
         short_name: '原子記帳',
