@@ -2,6 +2,11 @@
 
 本專案遵循 [語意化版本](https://semver.org/lang/zh-TW/)；發布流程＝bump `package.json` 版號 → 補本檔 → push（自動部署）→ 打 git tag。
 
+## v1.0.1 — 2026-07-20
+
+### 修正
+- 全新 app 圖示（原子軌道＋金幣，手繪 `branding/icon.png`），全套 PWA icon 重產；來源大圖移出 `public/` 避免進預快取
+
 ## v1.0.0 — 2026-07-20
 
 首個正式版（1.0 前的開發歷程見 git tag `v0.7.0` 與 `docs/05-roadmap.md` 階段 0–7）。
