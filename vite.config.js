@@ -19,7 +19,13 @@ export default defineConfig({
         display: 'standalone',
         scope: '/AtomCoins/',
         start_url: '/AtomCoins/',
+        // icons 由 scripts/gen-icons.mjs 從 public/favicon.svg 產生（換圖重跑 npm run gen:icons）
         icons: [
+          {
+            src: 'pwa-64x64.png',
+            sizes: '64x64',
+            type: 'image/png',
+          },
           {
             src: 'pwa-192x192.png',
             sizes: '192x192',
@@ -29,6 +35,13 @@ export default defineConfig({
             src: 'pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
+          },
+          {
+            // Android 自適應圖示用：滿版無圓角、主元素縮進安全區
+            src: 'maskable-icon-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
           },
         ],
         // 長按 app icon 的捷徑（iOS 桌面 widget 無法用純 PWA 達成，改捷徑秒開，docs/06 §5）
