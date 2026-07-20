@@ -2,6 +2,11 @@
 
 本專案遵循 [語意化版本](https://semver.org/lang/zh-TW/)；發布流程＝bump `package.json` 版號 → 補本檔 → push（自動部署）→ 打 git tag。
 
+## v1.0.2 — 2026-07-20
+
+### 修正
+- 瀏覽器分頁 favicon 改用新 app 圖示（金幣原子），與 PWA icon 統一，取代舊藍底 `$`
+
 ## v1.0.1 — 2026-07-20
 
 ### 修正

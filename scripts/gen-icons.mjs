@@ -37,6 +37,8 @@ const targets = [
   ['pwa-512x512.png', 512, normal],
   ['apple-touch-icon-180x180.png', 180, normal],
   ['maskable-icon-512x512.png', 512, maskable],
+  // 瀏覽器分頁 favicon（與 PWA icon 同圖，取代舊 favicon.svg 的藍底 $）
+  ['favicon-96x96.png', 96, normal],
 ]
 
 for (const [name, size, source] of targets) {
