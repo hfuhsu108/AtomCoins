@@ -20,12 +20,12 @@ import {
   outstandingAsOf,
   pendingByAccount,
 } from '../lib/engine'
-import { computeHoldings, holdingsMarketValue } from '../lib/stock'
 import { dueReminders, fireReminder } from '../lib/recurring'
 import { dueCardPayments, settlementShortfalls } from '../lib/notifications'
 import { formatBalance, formatSigned, formatAmount } from '../lib/format'
 import { todayStr, parseDate, monthLabel, formatMd } from '../lib/date'
 import { getIcon, ACCOUNT_TYPE_ICON } from '../lib/icons'
+import useNetWorth from '../hooks/useNetWorth'
 import Sheet from '../components/Sheet'
 
 const GROUPS = [
@@ -49,7 +49,6 @@ export default function HomePage() {
   const txns = useCollection('transactions')
   const rules = useCollection('recurringRules')
   const stockTxns = useCollection('stockTransactions')
-  const stockPrices = useCollection('stockPrices')
 
   const [hidden, setHidden] = useState(false)
   const [compOpen, setCompOpen] = useState(false)
@@ -65,12 +64,8 @@ export default function HomePage() {
   const year = today.getFullYear()
   const month = today.getMonth() + 1
 
-  // 持股計算
-  const { holdings } = useMemo(
-    () => computeHoldings(stockTxns, stockPrices, { asOf }),
-    [stockTxns, stockPrices, asOf],
-  )
-  const holdingsValue = holdingsMarketValue(holdings)
+  // 持股與淨資產（抽成 useNetWorth，與每日快照／趨勢圖同一口徑）
+  const { total: nw, holdingsValue, holdings } = useNetWorth(asOf)
 
   // 各證券帳戶的持股市值
   const holdingsByAcct = useMemo(() => {
@@ -89,7 +84,7 @@ export default function HomePage() {
 
   const balances = accountBalances(accounts, txns, asOf, stockTxns)
   const pending = pendingByAccount(accounts, txns, asOf, stockTxns)
-  const nw = netWorth(accounts, txns, { holdingsValue, asOf, stockTxns })
+  // 「較上月」沿用今日 holdingsValue（缺歷史股價，口徑同既有實作，不回補）
   const nwPrev = netWorth(accounts, txns, { holdingsValue, asOf: lastMonthEnd(), stockTxns })
   const change = nw - nwPrev
   const { income, expense, balance } = monthlySummary(txns, year, month)

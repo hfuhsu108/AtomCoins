@@ -16,6 +16,12 @@ export function formatAmount(n, { hidden = false } = {}) {
   return 'NT$ ' + formatNumber(Math.abs(n))
 }
 
+// 縮寫（日曆格等窄空間）：≥ 10000 顯示「x.x萬」，否則千分位整數（docs/09 批次 5）
+export function formatWan(n) {
+  if (Math.abs(n) >= 10000) return `${(n / 10000).toFixed(1)}萬`
+  return formatNumber(n)
+}
+
 // 帶正負號：收入/應收用 +，支出/應付/負餘額用 −
 export function formatSigned(n, { hidden = false } = {}) {
   if (hidden) return MASK

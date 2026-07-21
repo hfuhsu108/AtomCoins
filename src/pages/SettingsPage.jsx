@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faChevronRight, faTrashCan, faRepeat, faPercent, faCopy, faFileArrowDown } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faChevronRight, faTrashCan, faRepeat, faPercent, faCopy, faFileArrowDown, faBookmark, faStore } from '@fortawesome/free-solid-svg-icons'
 import { faGoogle } from '@fortawesome/free-brands-svg-icons'
 import { useCollection, useAllCollections } from '../db/DataProvider'
 import { buildJsonBackup, buildTransactionsCsv, downloadFile } from '../lib/backup'
@@ -9,7 +9,7 @@ import { usePwa } from '../components/PwaProvider'
 import { signInWithGoogle, signOutUser } from '../lib/firebase'
 import { useAuth } from '../hooks/useAuth'
 import { accountBalances } from '../lib/engine'
-import { updateRecurringRule, deleteRecurringRule } from '../db/repo'
+import { updateRecurringRule, deleteRecurringRule, updateTemplate, deleteTemplate, deleteMerchantAlias } from '../db/repo'
 import { useAsyncAction, settle } from '../hooks/useAsyncAction'
 import { useConfirm } from '../components/ConfirmSheet'
 import { formatBalance, formatAmount } from '../lib/format'
@@ -17,6 +17,8 @@ import { todayStr, formatMd } from '../lib/date'
 import { accountIcon } from '../lib/icons'
 import AccountEditSheet from '../components/settings/AccountEditSheet'
 import BrokerEditSheet from '../components/settings/BrokerEditSheet'
+import MerchantAliasSheet from '../components/settings/MerchantAliasSheet'
+import Sheet from '../components/Sheet'
 
 // build 時間以 ISO（UTC）注入，顯示時轉本地時區
 function formatBuiltAt(iso) {
@@ -34,6 +36,25 @@ const THEME_OPTIONS = [
 
 const FREQ_LABEL = { week: '每週', month: '每月', year: '每年' }
 const MODE_LABEL = { immediate: '自動入帳', deferred: '提前產生', reminder: '僅提醒' }
+const TX_TYPE_LABEL = { expense: '支出', income: '收入', transfer: '轉帳', receivable: '應收', payable: '應付' }
+
+// 範本摘要行（docs/09 批次 2）：型別＋分類／帳戶／對象＋金額
+function templateSummary(t, { catById, accById, cpById }) {
+  const p = t.payload ?? {}
+  const parts = [TX_TYPE_LABEL[p.type] ?? '']
+  if (p.type === 'expense' || p.type === 'income') {
+    const names = (p.splits ?? []).map((s) => catById[s.categoryId]?.name).filter(Boolean)
+    if (names.length) parts.push(names.join('、'))
+    const sum = (p.splits ?? []).reduce((a, s) => a + (s.amount ?? 0), 0)
+    if (sum > 0) parts.push(formatAmount(sum))
+  } else if (p.type === 'transfer') {
+    parts.push(`${accById[p.fromAccountId]?.name ?? '?'} → ${accById[p.toAccountId]?.name ?? '?'}`)
+  } else {
+    if (p.counterpartyId) parts.push(cpById[p.counterpartyId]?.name ?? '')
+    if (p.amount > 0) parts.push(formatAmount(p.amount))
+  }
+  return parts.filter(Boolean).join(' · ')
+}
 
 const GROUPS = [
   { type: 'cash', label: '現金' },
@@ -48,10 +69,16 @@ export default function SettingsPage() {
   const rules = useCollection('recurringRules')
   const brokers = useCollection('brokers')
   const stockTxns = useCollection('stockTransactions')
+  const templates = useCollection('templates')
+  const categories = useCollection('categories')
+  const counterparties = useCollection('counterparties')
+  const merchantAliases = useCollection('merchantAliases')
 
   // editing: undefined=關閉、null=新增、帳戶物件=編輯
   const [editing, setEditing] = useState(undefined)
   const [editingBroker, setEditingBroker] = useState(undefined)
+  const [renamingTemplate, setRenamingTemplate] = useState(null)
+  const [editingAlias, setEditingAlias] = useState(undefined)
 
   const user = useAuth()
   const allData = useAllCollections()
@@ -60,7 +87,15 @@ export default function SettingsPage() {
   const [authError, setAuthError] = useState(null)
   const [uidCopied, setUidCopied] = useState(false)
   const { run: runRule, error: ruleError } = useAsyncAction()
+  const { run: runTemplate, error: templateError } = useAsyncAction()
+  const { run: runAlias, error: aliasError } = useAsyncAction()
   const { confirm, confirmElement } = useConfirm()
+
+  const tplLookups = {
+    catById: Object.fromEntries(categories.map((c) => [c.id, c])),
+    accById: Object.fromEntries(accounts.map((a) => [a.id, a])),
+    cpById: Object.fromEntries(counterparties.map((c) => [c.id, c])),
+  }
 
   async function handleSignIn() {
     setAuthError(null)
@@ -246,6 +281,86 @@ export default function SettingsPage() {
         </>
       )}
 
+      {/* 範本（docs/09 批次 2）：改名、刪除；建立入口在記帳表單 */}
+      {templates.length > 0 && (
+        <>
+          <div className="px-0.5 mt-6 mb-2 text-[15px] font-semibold">範本</div>
+          <div className="bg-surface border border-line rounded-card shadow-card px-3.5 divide-y divide-line-light">
+            {templates
+              .slice()
+              .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+              .map((t) => (
+                <div key={t.id} className="flex items-center gap-3 py-3">
+                  <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
+                    <FontAwesomeIcon icon={faBookmark} className="text-sm" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[15px] font-medium truncate">{t.name}</div>
+                    <div className="text-xs text-text-tertiary truncate">{templateSummary(t, tplLookups)}</div>
+                  </div>
+                  <button
+                    onClick={() => setRenamingTemplate(t)}
+                    className="text-[13px] font-medium text-text-secondary px-2"
+                  >
+                    改名
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (await confirm({ title: '刪除範本', message: `刪除範本「${t.name}」？`, danger: true }))
+                        runTemplate(async () => { await settle(deleteTemplate(t.id)) })
+                    }}
+                    className="w-8 h-8 flex items-center justify-center text-text-tertiary"
+                  >
+                    <FontAwesomeIcon icon={faTrashCan} className="text-xs" />
+                  </button>
+                </div>
+              ))}
+            {templateError && <div className="py-2 text-[13px] text-error">{templateError}</div>}
+          </div>
+        </>
+      )}
+
+      {/* 商家別名（docs/09 批次 3）：把載具冗長公司名對應到店名，影響顯示與統計 */}
+      <div className="flex items-center justify-between px-0.5 mt-6 mb-2">
+        <span className="text-[15px] font-semibold">商家別名</span>
+        <button
+          onClick={() => setEditingAlias(null)}
+          className="flex items-center gap-1.5 h-[34px] px-3 rounded-chip bg-brand text-white text-[13px] font-semibold"
+        >
+          <FontAwesomeIcon icon={faPlus} className="text-xs" /> 新增別名
+        </button>
+      </div>
+      <div className="bg-surface border border-line rounded-card shadow-card px-3.5 divide-y divide-line-light">
+        {merchantAliases.length === 0 ? (
+          <div className="py-6 text-center text-text-tertiary text-sm">尚未建立別名</div>
+        ) : (
+          merchantAliases
+            .slice()
+            .sort((a, b) => (b.match?.length ?? 0) - (a.match?.length ?? 0))
+            .map((a) => (
+              <div key={a.id} className="flex items-center gap-3 py-3">
+                <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
+                  <FontAwesomeIcon icon={faStore} className="text-sm" />
+                </span>
+                <button onClick={() => setEditingAlias(a)} className="flex-1 min-w-0 text-left">
+                  <div className="text-[15px] font-medium truncate">{a.alias}</div>
+                  <div className="text-xs text-text-tertiary truncate">比對：{a.match}</div>
+                </button>
+                <button
+                  onClick={async () => {
+                    if (await confirm({ title: '刪除別名', message: `刪除別名「${a.alias}」？（不影響已記錄交易）`, danger: true }))
+                      runAlias(async () => { await settle(deleteMerchantAlias(a.id)) })
+                  }}
+                  className="w-8 h-8 flex items-center justify-center text-text-tertiary"
+                >
+                  <FontAwesomeIcon icon={faTrashCan} className="text-xs" />
+                </button>
+              </div>
+            ))
+        )}
+        {aliasError && <div className="py-2 text-[13px] text-error">{aliasError}</div>}
+      </div>
+
       {/* 帳號與雲端同步（docs/07 M0：登入＋rules 連線驗證；資料遷移為 M1–M3） */}
       <div className="px-0.5 mt-6 mb-2 text-[15px] font-semibold">帳號與雲端同步</div>
       <div className="bg-surface border border-line rounded-card shadow-card px-3.5 py-3">
@@ -416,7 +531,51 @@ export default function SettingsPage() {
         stockTxns={stockTxns}
         onClose={() => setEditingBroker(undefined)}
       />
+
+      <TemplateRenameSheet
+        template={renamingTemplate}
+        onClose={() => setRenamingTemplate(null)}
+        onSave={(id, name) => runTemplate(async () => {
+          await settle(updateTemplate(id, { name }))
+          setRenamingTemplate(null)
+        })}
+      />
+
+      <MerchantAliasSheet
+        open={editingAlias !== undefined}
+        alias={editingAlias ?? null}
+        onClose={() => setEditingAlias(undefined)}
+      />
       {confirmElement}
     </div>
+  )
+}
+
+// 範本改名 Sheet
+function TemplateRenameSheet({ template, onClose, onSave }) {
+  const open = !!template
+  const [name, setName] = useState('')
+  // 每次開啟時以現有名稱預填
+  useEffect(() => {
+    if (open) setName(template?.name ?? '')
+  }, [open, template])
+  const trimmed = name.trim()
+  return (
+    <Sheet open={open} onClose={onClose} title="範本改名" bodyClassName="p-4">
+      <input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="範本名稱"
+        className="w-full h-[46px] px-3.5 bg-surface-alt rounded-modal text-[15px] outline-none placeholder:text-text-tertiary mb-3"
+      />
+      <button
+        onClick={() => trimmed && onSave(template.id, trimmed)}
+        disabled={!trimmed}
+        className="w-full h-[46px] rounded-btn bg-brand text-white text-[15px] font-semibold disabled:opacity-40"
+      >
+        儲存
+      </button>
+    </Sheet>
   )
 }

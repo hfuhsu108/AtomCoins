@@ -38,7 +38,7 @@
 - `id` / `type` enum(`expense` `income` `transfer` `receivable` `payable`)
 - `amount` int（永遠正數，正負由 type 決定） / `currency`'TWD'
 - `tradeDate` date / `postingDate` date（預設=tradeDate）
-- `note?`（**明細寫這裡**） / `tagIds: array<ref→Tag>` / `projectId` ref→Project?
+- `note?`（**明細寫這裡**） / `merchant?`（商家，交易層、不入拆帳列，僅 expense/income 適用，docs/09 批次 3） / `tagIds: array<ref→Tag>` / `projectId` ref→Project?
 - `invoiceId` ref→Invoice?（自發票匣歸帳時帶入） / `templateId` ref→Template?
 - `isReconciled` bool（對帳用）
 - `linkGroupId` string?（**待決定，見 `06-open-questions.md`**；用於把同一筆消費拆出的「自己支出＋代墊應收」綁在一起）
@@ -90,9 +90,23 @@
 - **RecurringRule 週期性收支**(階段2+)：`id` / `payload`(交易範本) / `frequency`(間隔) / `nextDate` / `postingMode` enum(`immediate` `reminder` `deferred`) / `isActive`。
 - **InstallmentPlan 分期付款**(階段2)：`id` / `accountId`(信用卡) / `totalAmount` / `periods` / `startDate` / `perPeriodAmount`；產生子交易。
 - **CreditCardStatement 信用卡帳單**(階段2)：`id` / `accountId` / `periodStart` / `periodEnd` / `statementDate` / `dueDate` / `totalAmount` / `isPaid` / `paymentTransactionId?`。可由區間交易動態算或存結算快照。
-- **Template 範本**(階段6)：`id` / `name` / `payload`(預填交易) / `shortcut?` / `sortOrder`。
+- **Template 範本**(docs/09 批次 2，已實作)：`id` / `name` / `payload`(交易欄位子集，見下) / `sortOrder`(建立時間序 `Date.now()`) / `createdAt` / `updatedAt`。
+  - `payload` = 可還原表單的欄位子集，**不含** id／日期／戳記：`type`；expense/income 帶 `accountId?` + `splits:[{categoryId, amount}]`；transfer 帶 `fromAccountId?`/`toAccountId?`/`fee`；receivable/payable 帶 `accountId?`/`counterpartyId?`/`amount`；共同 `note?`。
+  - 建立入口在 TransactionForm「存為範本」（股票／分期／週期／含代墊拆帳不可存）；套用時日期一律今天、金額空值不預填（`stateFromTemplate`）。`shortcut` 欄位取消（未實作）。
 - **Budget 預算**(暫不實作)：`id` / `scope`(overall/category/project) / `period` / `amount`。
 - **Settings 偏好**(單一文件)：`theme` / `defaultAccountId`(主帳戶) / `hideAmountsDefault` / `autoBackup` bool / `lastBackupAt` / `driveFileId` / `lastPriceSyncAt`(上次股價同步時間) / 通知設定…（GAS proxy 網址不在此存放，見 `00-overview.md`「環境／機密值」）
+
+## 3.13 NetWorthSnapshot 淨資產每日快照（docs/09 批次 1/6a）
+
+`id`（=`date`，docId 亦為此）/ `date` date（`YYYY-MM-DD`）/ `total` int（淨資產全口徑，同首頁，來自 `useNetWorth`）/ `holdingsValue` int（持股市值；現金部分由差值推得，不另存）/ `createdAt`。
+
+> 由 `useDailySnapshot`（掛 AppLayout）於登入且 settings 就緒、當日無快照時 `setDoc` 寫入；docId=date 使同日冪等覆寫。趨勢圖（批次 6）資料源。歷史不回補（缺歷史股價，見 docs/09 批次 6）。
+
+## 3.14 MerchantAlias 商家別名（docs/09 批次 3）
+
+`id` / `match`（比對字串，`raw.includes(match)` 命中即套用）/ `alias`（顯示名稱）/ `createdAt` / `updatedAt`。
+
+> 解析 `resolveMerchant(raw, aliases)`（`src/lib/merchant.js`）：raw 空回 null；命中者取 **match 最長**的一條回其 alias；無命中回 raw 原樣。contains 比對讓一條「統一超商股份有限公司」吃下所有分公司；要對特定分店給店名，設更長 match 自然勝出。**invoice.merchant 原始名永不改寫**，別名只影響顯示層與交易 `merchant` 欄位。商家統計 `merchantStats`（日期區間版）對 `tx.merchant ?? invoiceById[tx.invoiceId]?.merchant` 做 fallback，歷史歸帳交易免遷移即納入。
 
 ## 列舉值總表
 

@@ -1,6 +1,6 @@
 // 日期一律 'YYYY-MM-DD'（本地時區，避免 toISOString 的 UTC 位移踩坑）
 
-const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
+export const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
 
 export function todayStr(d = new Date()) {
   const y = d.getFullYear()

@@ -10,11 +10,14 @@ import {
 } from '@fortawesome/free-solid-svg-icons'
 import { formatAmount, formatNumber } from '../../lib/format'
 import { formatMd } from '../../lib/date'
+import { resolveMerchant } from '../../lib/merchant'
 
 // 單張發票列。動作按鈕依 status 而異（inbox 歸帳/略過、recorded 取消歸帳、ignored 復原）。
 // 有 lineItems 時可點列展開唯讀明細，供歸帳拆帳時對照。
-export default function InvoiceRow({ invoice, hidden, onRecord, onIgnore, onRestore, onUnrecord, onOpenTx }) {
+// 顯示名稱套用商家別名（原始名 invoice.merchant 永不改寫）。
+export default function InvoiceRow({ invoice, aliases, hidden, onRecord, onIgnore, onRestore, onUnrecord, onOpenTx }) {
   const [open, setOpen] = useState(false)
+  const displayName = resolveMerchant(invoice.merchant, aliases)
   const items = invoice.lineItems ?? []
   const hasItems = items.length > 0
   const status = invoice.status
@@ -37,7 +40,7 @@ export default function InvoiceRow({ invoice, hidden, onRecord, onIgnore, onRest
           </span>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="text-[15px] font-medium truncate">{invoice.merchant || '未知商家'}</span>
+              <span className="text-[15px] font-medium truncate">{displayName || '未知商家'}</span>
               {hasItems && (
                 <span className="flex-none text-[11px] text-text-tertiary bg-surface-alt rounded-pill px-1.5 py-0.5">
                   {items.length} 品項

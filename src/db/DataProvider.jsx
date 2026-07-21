@@ -12,6 +12,7 @@ export const COLLECTIONS = [
   'accounts', 'categories', 'tags', 'projects', 'counterparties',
   'transactions', 'invoices', 'brokers', 'stockTransactions', 'stockPrices',
   'settings', 'creditCardStatements', 'installmentPlans', 'recurringRules',
+  'netWorthSnapshots', 'templates', 'merchantAliases',
 ]
 
 const EMPTY = Object.freeze(Object.fromEntries(COLLECTIONS.map((n) => [n, []])))

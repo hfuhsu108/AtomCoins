@@ -62,6 +62,7 @@
 | [docs/07-firebase-migration.md](docs/07-firebase-migration.md) | **Firebase 遷移計畫（Dexie→Firestore）＋發票爬蟲**：架構決策、金鑰邊界、階段 M0–M3／6B／6C 與各階段開場 prompt |
 | [docs/design-brief.md](docs/design-brief.md) | **給 Claude Design 的介面設計 brief**（design tokens、元件、狀態、寫實範例資料；自我包含可整份貼上） |
 | [docs/08-fix-plan.md](docs/08-fix-plan.md) | **2026-07-06 健檢修復計畫**：7 個批次（資料一致性／錯誤處理／拆帳顯示展開／防呆／UX／確認框／打磨）＋進度追蹤表＋各批次自包含開場 prompt |
+| [docs/09-features-plan.md](docs/09-features-plan.md) | **2026-07-20 功能擴充計畫**（MOZE 比對後選定）：7 個批次（搜尋篩選＋快照先行／範本／商家別名／年報表／日曆＋熱力圖／淨資產趨勢／Web Push 推播）＋進度表＋各批次自包含開場 prompt |
 
 ## 現況
 
@@ -77,4 +78,6 @@
 
 **階段 7 已於 2026-07-19 完成並實測通過**：① 備份匯出（`lib/backup.js`：JSON 全量 14 collections＋交易 CSV 拆帳逐列展開、UTF-8 BOM、差額補列；只匯出不做還原）② 深淺主題（`index.css` 深色 token 覆蓋＋`lib/theme.js` 淺/深/跟隨系統三段、localStorage per-device、index.html 防閃爍 script、meta theme-color 連動）③ 通知擴充（`lib/notifications.js`：信用卡繳費提醒 `dueCardPayments`（7 天內／逾期、比對 `creditCardStatements.isPaid`）＋交割缺口 `settlementShortfalls`；首頁鈴鐺 `NotificationsSheet` 三節合併＋跳轉；不做系統推播）④ PWA（manifest `shortcuts` 記一筆／發票匣＋`useInstallPrompt` 安裝區塊）。
 
-**待辦**：CSV 發票匯入（延後待財政部真實 CSV 樣本）；**部署**——尚未部署過任何版本：GitHub 上無 AtomCoins repo、`hfuhsu108.github.io/AtomCoins/` 404（2026-07-19 查證；早期「線上為舊 Dexie build」的記載有誤），屆時建 public repo＋Pages，並補真機驗證 PWA 捷徑／iOS 安裝／通知列色。
+**功能擴充計畫（docs/09）批次 1–6 已於 2026-07-21 完成，程式碼冒煙測試通過（build×6 綠燈、lint 乾淨、全站空資料渲染無 console 錯誤），核心功能待登入實機驗收**：① 搜尋篩選（`lib/search.js` 純函式＋`SearchPanel`，跨月 client-side filter）＋淨資產每日快照 6a（`hooks/useNetWorth` 抽首頁口徑、`hooks/useDailySnapshot` 掛 AppLayout 寫 `netWorthSnapshots`）② 交易範本（`templates` collection、TransactionForm 存為範本／範本 chips／`stateFromTemplate`、SettingsPage 管理）③ 商家欄位＋別名（`lib/merchant.js` `resolveMerchant`／`merchantStats`、`merchantAliases` collection、TransactionForm 商家列、InvoiceRow／TransactionRow 顯示別名、FlowReport 商家排行、CSV 加商家欄）④ 年度報表（engine `categoryStatsRange`／`yearlySummary`、FlowReport 月/年 segment）⑤ 日曆檢視＋年度熱力圖（`CalendarView`、`YearHeatmap`、engine `dailyExpenseTotals`、format `formatWan`、date `WEEKDAYS` export）⑥ 淨資產趨勢圖（ReportsPage `assets` tab、`AssetsReport` SVG 折線）。**批次 7（Web Push／Cloud Functions）本輪未做，另開 session**（探勘結論存計畫檔）。
+
+**待辦**：docs/09 批次 1–6 登入實機驗收（搜尋結果、範本存取、別名解析與排行、日曆/趨勢帶資料、快照寫入）＋批次 7 Web Push；CSV 發票匯入（延後待財政部真實 CSV 樣本）；**部署**——尚未部署過任何版本：GitHub 上無 AtomCoins repo、`hfuhsu108.github.io/AtomCoins/` 404（2026-07-19 查證；早期「線上為舊 Dexie build」的記載有誤），屆時建 public repo＋Pages，並補真機驗證 PWA 捷徑／iOS 安裝／通知列色。

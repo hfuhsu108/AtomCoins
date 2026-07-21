@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faXmark,
@@ -13,6 +13,7 @@ import {
   faTrashCan,
   faPlus,
   faTrash,
+  faBookmark,
 } from '@fortawesome/free-solid-svg-icons'
 import { useCollection, useSettings } from '../../db/DataProvider'
 import {
@@ -25,15 +26,18 @@ import {
   createStockTransaction,
   updateStockTransaction,
   recordInvoice,
+  createTemplate,
 } from '../../db/repo'
 import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
 import { useConfirm } from '../ConfirmSheet'
+import Sheet from '../Sheet'
 import {
   FEE_CATEGORY_ID,
   UNCATEGORIZED_EXPENSE_ID,
   UNCATEGORIZED_INCOME_ID,
 } from '../../db/seed'
 import { newId } from '../../lib/id'
+import { resolveMerchant, merchantSuggestions } from '../../lib/merchant'
 import { todayStr, formatMd, advanceDate } from '../../lib/date'
 import { formatNumber } from '../../lib/format'
 import { getIcon, ACCOUNT_TYPE_ICON } from '../../lib/icons'
@@ -42,6 +46,7 @@ import NumberPad from './NumberPad'
 import CategoryPicker from './CategoryPicker'
 import AccountPicker from './AccountPicker'
 import CounterpartyPicker from './CounterpartyPicker'
+import MerchantAliasSheet from '../settings/MerchantAliasSheet'
 import StockFields, { initStockState, stockCanSave, buildStockRecord } from './StockFields'
 
 const TYPES = [
@@ -63,6 +68,7 @@ function stateFromTx(tx) {
     // null = 入帳日跟隨記錄日；僅在實際延後（postingDate≠tradeDate）時保留明確值
     postingDate: tx.postingDate && tx.postingDate !== tx.tradeDate ? tx.postingDate : null,
     note: tx.note ?? '',
+    merchant: tx.merchant ?? '',
     splits: [emptySplit()],
     activeSplit: 0,
     amountExpr: '',
@@ -89,13 +95,15 @@ function stateFromTx(tx) {
   return base
 }
 
-// 從發票歸帳預填：一律支出、記錄日=發票日、備註=商家、單列拆帳帶入總額（分類待選）。
-function stateFromInvoice(invoice) {
+// 從發票歸帳預填：一律支出、記錄日=發票日、商家=別名解析後名稱（原始名永遠保留在 invoice.merchant）、
+// 備註留空（不再帶商家名）、單列拆帳帶入總額（分類待選）。
+function stateFromInvoice(invoice, aliases) {
   return {
     type: 'expense',
     tradeDate: invoice.invoiceDate,
     postingDate: null,
-    note: invoice.merchant ?? '',
+    note: '',
+    merchant: resolveMerchant(invoice.merchant, aliases) ?? '',
     splits: [{ key: newId(), categoryId: null, expr: String(invoice.totalAmount ?? ''), advanceCounterpartyId: null }],
     activeSplit: 0,
     amountExpr: '',
@@ -110,12 +118,51 @@ function stateFromInvoice(invoice) {
   }
 }
 
+// 從範本重建表單狀態（docs/09 批次 2）：日期一律今天、不帶對帳；金額空值代表不預填。
+// payload 為交易欄位子集（type／帳戶／splits／amount／fee／note／counterpartyId），寫法仿 stateFromTx。
+function stateFromTemplate(template) {
+  const p = template.payload ?? {}
+  const base = {
+    type: p.type ?? 'expense',
+    tradeDate: todayStr(),
+    postingDate: null,
+    note: p.note ?? '',
+    splits: [emptySplit()],
+    activeSplit: 0,
+    amountExpr: '',
+    accountId: p.accountId ?? null,
+    fromAccountId: p.fromAccountId ?? null,
+    toAccountId: p.toAccountId ?? null,
+    feeExpr: p.fee ? String(p.fee) : '',
+    counterpartyId: p.counterpartyId ?? null,
+    merchant: p.merchant ?? '',
+    reconciled: false,
+    installment: null,
+    recurring: null,
+  }
+  if (p.type === 'expense' || p.type === 'income') {
+    const splits = (p.splits ?? []).map((s) => ({
+      key: newId(),
+      categoryId: s.categoryId ?? null,
+      expr: s.amount ? String(s.amount) : '',
+      advanceCounterpartyId: null,
+    }))
+    base.splits = splits.length ? splits : [emptySplit()]
+  } else if (p.type !== 'transfer') {
+    base.amountExpr = p.amount ? String(p.amount) : ''
+  }
+  return base
+}
+
 export default function TransactionForm({ initialTx = null, initialStock = null, initialInvoice = null, onClose, onSaved, onDelete, deleteBusy = false, deleteError = null }) {
   const settings = useSettings()
   const accounts = useCollection('accounts')
   const categories = useCollection('categories')
   const counterparties = useCollection('counterparties')
   const brokers = useCollection('brokers')
+  const templates = useCollection('templates')
+  const merchantAliases = useCollection('merchantAliases')
+  const txns = useCollection('transactions')
 
   const [stockState, setStockState] = useState(() => initStockState(initialStock, accounts))
 
@@ -123,12 +170,13 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
     initialTx
       ? stateFromTx(initialTx)
       : initialInvoice
-        ? stateFromInvoice(initialInvoice)
+        ? stateFromInvoice(initialInvoice, merchantAliases)
         : {
           type: initialStock ? 'stock' : 'expense',
           tradeDate: todayStr(),
           postingDate: null, // null = 跟隨記錄日
           note: '',
+          merchant: '',
           splits: [emptySplit()],
           activeSplit: 0,
           amountExpr: '',
@@ -144,7 +192,15 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
   )
   // 開啟中的選擇器：{ kind:'category'|'account'|'counterparty', target }
   const [picker, setPicker] = useState(null)
-  const [advOpen, setAdvOpen] = useState(false)
+  // 歸帳時預設展開進階區，讓帶入的商家（別名解析後）與「設別名」快捷可見
+  const [advOpen, setAdvOpen] = useState(!!initialInvoice)
+  const [tplNameOpen, setTplNameOpen] = useState(false)
+  const [aliasSheetOpen, setAliasSheetOpen] = useState(false)
+
+  const merchantSugg = useMemo(
+    () => merchantSuggestions(state.merchant, txns, merchantAliases),
+    [state.merchant, txns, merchantAliases],
+  )
 
   const set = (patch) => setState((s) => ({ ...s, ...patch }))
 
@@ -319,6 +375,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
       const normal = evaluated.filter((s) => !s.advance)
       const advances = type === 'expense' ? evaluated.filter((s) => s.advance) : []
 
+      const merchant = state.merchant.trim() || null
       const list = []
       if (normal.length) {
         list.push({
@@ -328,6 +385,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           tradeDate,
           postingDate,
           note,
+          merchant,
           tagIds: [],
           projectId: null,
           isReconciled: state.reconciled,
@@ -490,6 +548,60 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
     })
   }
 
+  // ── 範本（docs/09 批次 2）───────────────────────────────────
+  // 顯示範本 chips：純新增（非編輯／歸帳／股票）且有範本
+  const showTemplateChips = !initialTx && !initialInvoice && !isStock && templates.length > 0
+  const applyTemplate = (t) => setState(stateFromTemplate(t))
+
+  // 存為範本可用性：股票／分期／週期／代墊拆帳不可存；且需有實質內容
+  const templateHasContent = isExpenseLike
+    ? state.splits.some((s) => s.categoryId || (toAmount(s.expr) ?? 0) > 0)
+    : isTransfer
+      ? !!(fromAccountId && state.toAccountId && fromAccountId !== state.toAccountId)
+      : isLoanLike
+        ? !!state.counterpartyId
+        : false
+  const templateBlocked = isStock || !!state.installment || !!state.recurring || hasAdvance
+  const canSaveTemplate = !templateBlocked && templateHasContent
+
+  // 以目前表單狀態組 payload（不含 id／日期／戳記，剝殼仿 recurring occurrenceFromRule）
+  const buildTemplatePayload = () => {
+    const note = state.note.trim() || null
+    if (isExpenseLike) {
+      return {
+        type,
+        accountId: state.accountId ?? null,
+        note,
+        merchant: state.merchant.trim() || null,
+        splits: state.splits
+          .filter((s) => !s.advanceCounterpartyId)
+          .map((s) => ({ categoryId: s.categoryId ?? null, amount: toAmount(s.expr) ?? 0 })),
+      }
+    }
+    if (isTransfer) {
+      return {
+        type,
+        fromAccountId: state.fromAccountId ?? null,
+        toAccountId: state.toAccountId ?? null,
+        fee: toAmount(state.feeExpr) ?? 0,
+        note,
+      }
+    }
+    return {
+      type,
+      accountId: state.accountId ?? null,
+      counterpartyId: state.counterpartyId ?? null,
+      amount: toAmount(state.amountExpr) ?? 0,
+      note,
+    }
+  }
+  const saveAsTemplate = (name) => {
+    run(async () => {
+      await settle(createTemplate({ name, payload: buildTemplatePayload(), sortOrder: Date.now() }))
+      setTplNameOpen(false)
+    })
+  }
+
   // ── 衍生顯示 ───────────────────────────────────────────────
   const amountStr = typeMeta.sign + 'NT$ ' + formatNumber(Math.abs(total))
   const accountObj = lookups.acc[accountId]
@@ -559,6 +671,25 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
             )
           })}
       </div>
+
+      {/* 範本 chips（純新增模式）：點擊以 payload 重建表單 */}
+      {showTemplateChips && (
+        <div className="flex gap-2 px-3.5 py-2 bg-surface border-b border-line overflow-x-auto flex-none">
+          {templates
+            .slice()
+            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+            .map((t) => (
+              <button
+                key={t.id}
+                onClick={() => applyTemplate(t)}
+                className="flex-none flex items-center gap-1.5 px-3 h-8 rounded-pill bg-surface-alt text-[13px] font-medium text-text-secondary whitespace-nowrap"
+              >
+                <FontAwesomeIcon icon={faBookmark} className="text-[11px] text-text-tertiary" />
+                {t.name}
+              </button>
+            ))}
+        </div>
+      )}
 
       {/* scroll body（min-h-0：flex item 預設 min-height:auto 會被長內容撐開，導致底部與 NumberPad 被擠出視窗）*/}
       <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
@@ -670,6 +801,12 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
 
             {advOpen && (
               <div className="mt-2.5 flex flex-col gap-2.5">
+                <MerchantRow
+                  value={state.merchant}
+                  onChange={(v) => set({ merchant: v })}
+                  suggestions={merchantSugg}
+                  onSetAlias={initialInvoice ? () => setAliasSheetOpen(true) : null}
+                />
                 {!state.installment && (
                   <PostingDateRow
                     tradeDate={state.tradeDate}
@@ -759,6 +896,24 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
             <NoteRow note={state.note} onChange={(v) => set({ note: v })} />
           </div>
         )}
+
+        {/* 存為範本（純新增模式；股票／分期／週期／代墊拆帳不可存）*/}
+        {!initialTx && !initialInvoice && (
+          <div className="px-3.5 pb-4">
+            <button
+              onClick={() => setTplNameOpen(true)}
+              disabled={!canSaveTemplate}
+              className="w-full flex items-center justify-center gap-1.5 h-[42px] rounded-btn bg-surface border border-line text-[13px] font-medium text-text-secondary disabled:opacity-40"
+            >
+              <FontAwesomeIcon icon={faBookmark} className="text-xs" /> 存為範本
+            </button>
+            {templateBlocked && (
+              <p className="text-[11px] text-text-tertiary text-center mt-1.5">
+                股票／分期／週期／代墊拆帳不可存範本
+              </p>
+            )}
+          </div>
+        )}
         </>
         )}
       </div>
@@ -816,8 +971,86 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
         value={picker?.target === 'main' ? state.counterpartyId : null}
         onSelect={handlePick}
       />
+      <TemplateNameSheet open={tplNameOpen} busy={busy} onClose={() => setTplNameOpen(false)} onSave={saveAsTemplate} />
+      <MerchantAliasSheet
+        open={aliasSheetOpen}
+        presetMatch={initialInvoice?.merchant ?? ''}
+        onClose={() => setAliasSheetOpen(false)}
+        onSaved={(aliasName) => set({ merchant: aliasName })}
+      />
       {confirmElement}
     </div>
+  )
+}
+
+// 商家列（docs/09 批次 3）：文字輸入＋建議下拉（既有交易 merchant 去重＋別名）；
+// 歸帳時另提供「設別名」快捷（開別名 Sheet，match 預填發票原始商家名）
+function MerchantRow({ value, onChange, suggestions, onSetAlias }) {
+  const [focused, setFocused] = useState(false)
+  const list = focused ? suggestions.filter((s) => s !== value) : []
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-3 px-4 py-3 bg-surface border border-line rounded-modal">
+        <span className="text-sm text-text-secondary flex-none">商家</span>
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
+          placeholder="選填，如 7-11、全聯"
+          className="flex-1 min-w-0 text-right text-[15px] outline-none bg-transparent placeholder:text-text-tertiary"
+        />
+        {onSetAlias && (
+          <button onClick={onSetAlias} className="flex-none text-[13px] font-medium text-brand">
+            設別名
+          </button>
+        )}
+      </div>
+      {list.length > 0 && (
+        <div className="absolute z-10 left-0 right-0 mt-1 bg-surface border border-line rounded-modal shadow-card overflow-hidden max-h-56 overflow-y-auto">
+          {list.map((s) => (
+            <button
+              key={s}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                onChange(s)
+                setFocused(false)
+              }}
+              className="block w-full text-left px-4 py-2.5 text-sm border-t border-line-light first:border-t-0"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 存為範本的名稱輸入 Sheet
+function TemplateNameSheet({ open, busy, onClose, onSave }) {
+  const [name, setName] = useState('')
+  useEffect(() => {
+    if (open) setName('')
+  }, [open])
+  const trimmed = name.trim()
+  return (
+    <Sheet open={open} onClose={onClose} title="存為範本" bodyClassName="p-4">
+      <input
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="範本名稱（如：早餐、捷運）"
+        className="w-full h-[46px] px-3.5 bg-surface-alt rounded-modal text-[15px] outline-none placeholder:text-text-tertiary mb-3"
+      />
+      <button
+        onClick={() => trimmed && onSave(trimmed)}
+        disabled={!trimmed || busy}
+        className="w-full h-[46px] rounded-btn bg-brand text-white text-[15px] font-semibold disabled:opacity-40"
+      >
+        儲存範本
+      </button>
+    </Sheet>
   )
 }
 

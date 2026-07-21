@@ -8,10 +8,12 @@ import useSyncPrices from '../hooks/useSyncPrices'
 import { formatBalance, formatSigned, formatNumber } from '../lib/format'
 import { todayStr, formatMd, formatDateTime } from '../lib/date'
 import FlowReport from '../components/report/FlowReport'
+import AssetsReport from '../components/report/AssetsReport'
 
 const TABS = [
   { id: 'flow', label: '收支' },
   { id: 'invest', label: '投資' },
+  { id: 'assets', label: '資產' },
 ]
 
 // 損益／報酬率上色：台股慣例，正=紅(買)、負=綠(賣)
@@ -118,6 +120,8 @@ export default function ReportsPage() {
 
       {tab === 'flow' ? (
         <FlowReport hidden={hidden} />
+      ) : tab === 'assets' ? (
+        <AssetsReport hidden={hidden} />
       ) : !hasAny ? (
         <div className="py-16 text-center text-text-tertiary text-sm">尚無投資資料</div>
       ) : (

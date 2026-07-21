@@ -20,6 +20,7 @@ function byDateDesc(a, b) {
 export default function InvoicePanel({ hidden }) {
   const navigate = useNavigate()
   const invoices = useCollection('invoices')
+  const merchantAliases = useCollection('merchantAliases')
   const status = useScraperStatus()
   const [sub, setSub] = useState('inbox') // inbox | processed
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -93,6 +94,7 @@ export default function InvoicePanel({ hidden }) {
             <InvoiceRow
               key={inv.id}
               invoice={inv}
+              aliases={merchantAliases}
               hidden={hidden}
               onRecord={() => navigate(`/add?invoiceId=${inv.id}`)}
               onIgnore={() => onIgnore(inv)}

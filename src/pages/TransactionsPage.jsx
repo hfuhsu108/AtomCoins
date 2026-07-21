@@ -1,12 +1,14 @@
 import { useState, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faChevronLeft, faChevronRight, faEye, faEyeSlash } from '@fortawesome/free-solid-svg-icons'
+import { faChevronLeft, faChevronRight, faEye, faEyeSlash, faMagnifyingGlass, faList, faCalendarDays } from '@fortawesome/free-solid-svg-icons'
 import { useCollection } from '../db/DataProvider'
 import { monthlySummary } from '../lib/engine'
 import { formatAmount, formatSigned } from '../lib/format'
 import { todayStr, parseDate, monthLabel, monthPrefix, addMonth, formatMd, weekday } from '../lib/date'
 import TransactionRow from '../components/transaction/TransactionRow'
+import SearchPanel from '../components/transaction/SearchPanel'
+import CalendarView from '../components/transaction/CalendarView'
 import StockPanel from '../components/stock/StockPanel'
 import InvoicePanel from '../components/invoice/InvoicePanel'
 
@@ -34,6 +36,8 @@ export default function TransactionsPage() {
   }
   const [ym, setYm] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 })
   const [hidden, setHidden] = useState(false)
+  const [searching, setSearching] = useState(false)
+  const [ledgerView, setLedgerView] = useState('list') // list | calendar
 
   const lookups = useMemo(() => {
     const cat = {}, acc = {}, cp = {}
@@ -73,14 +77,35 @@ export default function TransactionsPage() {
     <div className="px-4 pt-4 pb-4 lg:px-7 lg:pt-6 max-w-3xl mx-auto">
       <header className="flex items-center justify-between mb-3">
         <h1 className="text-xl font-semibold">明細</h1>
-        <button
-          onClick={() => setHidden((v) => !v)}
-          className="w-[38px] h-[38px] rounded-chip bg-surface border border-line text-text-secondary flex items-center justify-center"
-        >
-          <FontAwesomeIcon icon={hidden ? faEyeSlash : faEye} />
-        </button>
+        <div className="flex items-center gap-2">
+          {!searching && (
+            <button
+              onClick={() => setSearching(true)}
+              className="w-[38px] h-[38px] rounded-chip bg-surface border border-line text-text-secondary flex items-center justify-center"
+            >
+              <FontAwesomeIcon icon={faMagnifyingGlass} />
+            </button>
+          )}
+          <button
+            onClick={() => setHidden((v) => !v)}
+            className="w-[38px] h-[38px] rounded-chip bg-surface border border-line text-text-secondary flex items-center justify-center"
+          >
+            <FontAwesomeIcon icon={hidden ? faEyeSlash : faEye} />
+          </button>
+        </div>
       </header>
 
+      {searching ? (
+        <SearchPanel
+          txns={txns}
+          categories={categories}
+          accounts={accounts}
+          lookups={lookups}
+          hidden={hidden}
+          onClose={() => setSearching(false)}
+        />
+      ) : (
+        <>
       {/* 分頁 */}
       <div className="flex gap-1.5 p-1 mb-3 bg-surface-alt rounded-modal">
         {TABS.map((t) => (
@@ -130,8 +155,32 @@ export default function TransactionsPage() {
             </div>
           </div>
 
-          {/* 列表 */}
-          {days.length === 0 ? (
+          {/* 列表／日曆切換 */}
+          <div className="flex justify-end mb-2">
+            <div className="flex bg-surface-alt rounded-btn p-0.5">
+              {[['list', faList], ['calendar', faCalendarDays]].map(([v, icon]) => (
+                <button
+                  key={v}
+                  onClick={() => setLedgerView(v)}
+                  className={`w-9 h-8 rounded-[8px] flex items-center justify-center text-[13px] ${
+                    ledgerView === v ? 'bg-surface shadow-segment text-text-primary' : 'text-text-secondary'
+                  }`}
+                >
+                  <FontAwesomeIcon icon={icon} />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {ledgerView === 'calendar' ? (
+            <CalendarView
+              ym={ym}
+              days={days}
+              lookups={lookups}
+              hidden={hidden}
+              onRowClick={(t) => navigate(`/add?id=${t.id}`)}
+            />
+          ) : days.length === 0 ? (
             <div className="py-16 text-center text-text-tertiary text-sm">本月尚無記錄</div>
           ) : (
             days.map((d) => (
@@ -159,6 +208,8 @@ export default function TransactionsPage() {
               </div>
             ))
           )}
+        </>
+      )}
         </>
       )}
     </div>

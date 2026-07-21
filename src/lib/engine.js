@@ -236,11 +236,11 @@ export function monthlySummary(txns, year, month) {
   return { income, expense, balance: income - expense }
 }
 
-// 某月某類（expense/income）的分類彙總，拆帳列 rollup 到母分類（docs/02 §4.4）。
-// expense 另納入轉帳手續費（歸該轉帳 feeCategoryId 之母分類，通常為「金融」）。
-// 回傳 { total, count, rows }：rows 依金額由大到小，total 與 monthlySummary 對應值一致。
-export function monthlyCategoryStats(txns, categories, kind, year, month) {
-  const prefix = `${year}-${String(month).padStart(2, '0')}`
+// 某區間某類（expense/income）的分類彙總，拆帳列 rollup 到母分類（docs/02 §4.4）。
+// from/to 為 'YYYY-MM-DD'（含端點，比對 tradeDate）。expense 另納入轉帳手續費
+// （歸該轉帳 feeCategoryId 之母分類，通常為「金融」）。
+// 回傳 { total, count, rows }：rows 依金額由大到小，total 與 summary 對應值一致。
+export function categoryStatsRange(txns, categories, kind, from, to) {
   const byId = new Map(categories.map((c) => [c.id, c]))
   // categoryId → 母分類（取 id/name/icon）；查無退回「未分類」防呆（seed 保證存在）
   const rollup = (categoryId) => {
@@ -261,7 +261,8 @@ export function monthlyCategoryStats(txns, categories, kind, year, month) {
   let total = 0
   let count = 0
   for (const tx of txns) {
-    if (!tx.tradeDate?.startsWith(prefix)) continue
+    const d = tx.tradeDate
+    if (!d || (from && d < from) || (to && d > to)) continue
     if (tx.type === kind) {
       for (const sp of tx.splits ?? []) add(sp.categoryId, sp.amount)
       total += splitsTotal(tx)
@@ -274,6 +275,38 @@ export function monthlyCategoryStats(txns, categories, kind, year, month) {
 
   const rows = [...buckets.values()].sort((a, b) => b.amount - a.amount)
   return { total, count, rows }
+}
+
+// 某月分類彙總（薄包裝 categoryStatsRange，保留原簽名，月視角呼叫端不動）
+export function monthlyCategoryStats(txns, categories, kind, year, month) {
+  const prefix = `${year}-${String(month).padStart(2, '0')}`
+  return categoryStatsRange(txns, categories, kind, `${prefix}-01`, `${prefix}-31`)
+}
+
+// 某年收支彙總：12 個月 monthlySummary 加總（含轉帳手續費，同口徑）
+export function yearlySummary(txns, year) {
+  let income = 0
+  let expense = 0
+  for (let m = 1; m <= 12; m++) {
+    const s = monthlySummary(txns, year, m)
+    income += s.income
+    expense += s.expense
+  }
+  return { income, expense, balance: income - expense }
+}
+
+// 全年每日支出合計（拆帳列口徑＋轉帳手續費，與 monthlySummary 同口徑），供年度消費熱力圖。
+// 回傳 { 'YYYY-MM-DD': amount }（只含有支出的日）。
+export function dailyExpenseTotals(txns, year) {
+  const prefix = `${year}-`
+  const map = {}
+  for (const tx of txns) {
+    const d = tx.tradeDate
+    if (!d || !d.startsWith(prefix)) continue
+    if (tx.type === 'expense') map[d] = (map[d] ?? 0) + splitsTotal(tx)
+    else if (tx.type === 'transfer' && tx.fee) map[d] = (map[d] ?? 0) + tx.fee
+  }
+  return map
 }
 
 // 近 months 個月收支趨勢（預設 6），以 endYear/endMonth 為最新一月往回推。

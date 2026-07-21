@@ -30,7 +30,7 @@ export function buildJsonBackup(data, uid) {
 
 const TYPE_LABEL = { expense: '支出', income: '收入', transfer: '轉帳', receivable: '應收', payable: '應付' }
 
-const HEADER = ['交易ID', '類型', '記錄日', '入帳日', '帳戶', '轉入帳戶', '母分類', '子分類', '金額', '備註', '標籤', '專案', '對象']
+const HEADER = ['交易ID', '類型', '記錄日', '入帳日', '帳戶', '轉入帳戶', '母分類', '子分類', '金額', '商家', '備註', '標籤', '專案', '對象']
 
 function esc(v) {
   const s = v == null ? '' : String(v)
@@ -70,12 +70,13 @@ export function buildTransactionsCsv({ transactions, accounts, categories, tags,
     if (tx.type === 'expense' || tx.type === 'income') {
       const splits = tx.splits ?? []
       let sum = 0
+      const merchant = tx.merchant ?? ''
       for (const sp of splits) {
         sum += sp.amount
         const [parent, child] = catPair(sp.categoryId)
         rows.push([
           tx.id, label, tx.tradeDate, tx.postingDate, accName(tx.accountId), '',
-          parent, child, sp.amount, sp.note ?? tx.note ?? '',
+          parent, child, sp.amount, merchant, sp.note ?? tx.note ?? '',
           tagNames(sp.tagIds?.length ? sp.tagIds : tx.tagIds), projName(sp.projectId ?? tx.projectId), '',
         ])
       }
@@ -84,32 +85,32 @@ export function buildTransactionsCsv({ transactions, accounts, categories, tags,
       if (diff !== 0) {
         rows.push([
           tx.id, label, tx.tradeDate, tx.postingDate, accName(tx.accountId), '',
-          '未分類', '', diff, splits.length ? '拆帳差額' : (tx.note ?? ''),
+          '未分類', '', diff, merchant, splits.length ? '拆帳差額' : (tx.note ?? ''),
           tagNames(tx.tagIds), projName(tx.projectId), '',
         ])
       }
     } else if (tx.type === 'transfer') {
       rows.push([
         tx.id, label, tx.tradeDate, tx.postingDate, accName(tx.fromAccountId), accName(tx.toAccountId),
-        '', '', tx.amount, tx.note ?? '', tagNames(tx.tagIds), projName(tx.projectId), '',
+        '', '', tx.amount, '', tx.note ?? '', tagNames(tx.tagIds), projName(tx.projectId), '',
       ])
       if (tx.fee > 0) {
         const [parent, child] = catPair(tx.feeCategoryId)
         rows.push([
           tx.id, '轉帳手續費', tx.tradeDate, tx.postingDate, accName(tx.fromAccountId), '',
-          parent, child, tx.fee, tx.note ?? '', '', '', '',
+          parent, child, tx.fee, '', tx.note ?? '', '', '', '',
         ])
       }
     } else if (tx.type === 'receivable' || tx.type === 'payable') {
       const cp = cpM[tx.counterpartyId]?.name ?? ''
       rows.push([
         tx.id, label, tx.tradeDate, tx.postingDate, accName(tx.accountId), '',
-        '', '', tx.amount, tx.note ?? '', tagNames(tx.tagIds), projName(tx.projectId), cp,
+        '', '', tx.amount, '', tx.note ?? '', tagNames(tx.tagIds), projName(tx.projectId), cp,
       ])
       for (const rp of tx.repayments ?? []) {
         rows.push([
           tx.id, tx.type === 'receivable' ? '收款' : '還款', rp.date, rp.date, accName(rp.accountId), '',
-          '', '', rp.amount, '', '', '', cp,
+          '', '', rp.amount, '', '', '', '', cp,
         ])
       }
     }

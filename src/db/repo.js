@@ -381,6 +381,40 @@ export async function upsertStockPrice({ symbol, closePrice, priceDate }) {
   await setDoc(ref('stockPrices', symbol), stripUndefined({ symbol, closePrice, priceDate, updatedAt: now() }))
 }
 
+// ── MerchantAlias 商家別名（docs/09 批次 3）──────────────────────
+export async function createMerchantAlias(data) {
+  return createDoc('merchantAliases', buildRecord(data))
+}
+
+export async function updateMerchantAlias(id, patch) {
+  await patchDoc('merchantAliases', id, patch)
+}
+
+export async function deleteMerchantAlias(id) {
+  await deleteDoc(ref('merchantAliases', id))
+}
+
+// ── Template 交易範本（docs/09 批次 2）────────────────────────────
+export async function createTemplate(data) {
+  return createDoc('templates', buildRecord(data))
+}
+
+export async function updateTemplate(id, patch) {
+  await patchDoc('templates', id, patch)
+}
+
+export async function deleteTemplate(id) {
+  await deleteDoc(ref('templates', id))
+}
+
+// ── NetWorthSnapshot 淨資產每日快照（docs/09 批次 1/6a）──────────
+// docId＝'YYYY-MM-DD'，setDoc 覆寫語義：同日重複寫入冪等（趨勢圖資料源）
+export async function upsertNetWorthSnapshot({ date, total, holdingsValue }) {
+  await setDoc(ref('netWorthSnapshots', date), stripUndefined({
+    id: date, date, total, holdingsValue, createdAt: now(),
+  }))
+}
+
 // ── Settings（單例，docId＝SETTINGS_ID）──────────────────────────
 export async function getSettings() {
   const snap = await getDoc(ref('settings', SETTINGS_ID))

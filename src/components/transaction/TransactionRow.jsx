@@ -16,6 +16,12 @@ const STATUS = {
   settled: { label: '已結清', cls: 'text-success bg-success-bg' },
 }
 
+// 副標：有商家時商家優先，與 note 並存則「商家・note」（docs/09 批次 3）
+function mergeMerchant(merchant, note) {
+  if (!merchant) return note
+  return note ? `${merchant}・${note}` : merchant
+}
+
 // 由分類 id 取「母·子」（或母）名稱與母分類圖示
 function categoryView(categoryId, lookups) {
   const cat = lookups.cat[categoryId]
@@ -36,7 +42,7 @@ function describe(tx, lookups) {
       icon,
       title,
       acct: acct?.name,
-      note: tx.note,
+      note: mergeMerchant(tx.merchant, tx.note),
       amount: tx.amount,
       amountColor: tx.type === 'expense' ? 'text-expense' : 'text-income',
       sign: tx.type === 'expense' ? '−' : '+',
@@ -81,7 +87,7 @@ function splitView(tx, split, index, count, lookups) {
     title,
     badge: { label: `拆帳 ${index + 1}/${count}`, icon: faArrowsSplitUpAndLeft },
     acct: acct?.name,
-    note: split.note || tx.note,
+    note: mergeMerchant(tx.merchant, split.note || tx.note),
     amount: split.amount,
     amountColor: tx.type === 'expense' ? 'text-expense' : 'text-income',
     sign: tx.type === 'expense' ? '−' : '+',
