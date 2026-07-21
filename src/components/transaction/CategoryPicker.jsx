@@ -61,8 +61,11 @@ export default function CategoryPicker({ open, onClose, categories, value, onSel
                 className={`w-[30px] h-[30px] flex-none rounded-chip flex items-center justify-center text-[13px] border ${
                   active
                     ? 'bg-brand text-white border-brand'
-                    : 'bg-surface text-text-secondary border-line'
+                    : p.color
+                      ? 'border-transparent'
+                      : 'bg-surface text-text-secondary border-line'
                 }`}
+                style={!active && p.color ? { background: `color-mix(in srgb, ${p.color} 15%, transparent)`, color: p.color } : undefined}
               >
                 <FontAwesomeIcon icon={getIcon(p.icon)} />
               </span>
@@ -89,18 +92,28 @@ export default function CategoryPicker({ open, onClose, categories, value, onSel
             <button
               key={c.id}
               onClick={() => commit(c.id)}
-              className={`flex items-center justify-between w-full p-3 rounded-chip text-left ${
+              className={`flex items-center justify-between gap-2 w-full p-3 rounded-chip text-left ${
                 active ? 'bg-brand-light' : ''
               }`}
             >
-              <span
-                className={`text-sm ${
-                  active ? 'font-semibold text-brand' : 'font-medium text-text-primary'
-                }`}
-              >
-                {c.name}
+              <span className="flex items-center gap-2.5 min-w-0">
+                <span
+                  className={`w-7 h-7 flex-none rounded-chip flex items-center justify-center text-[12px] ${
+                    c.color ? '' : 'bg-surface-alt text-text-secondary'
+                  }`}
+                  style={c.color ? { background: `color-mix(in srgb, ${c.color} 15%, transparent)`, color: c.color } : undefined}
+                >
+                  <FontAwesomeIcon icon={getIcon(c.icon ?? activeParent?.icon)} />
+                </span>
+                <span
+                  className={`text-sm truncate ${
+                    active ? 'font-semibold text-brand' : 'font-medium text-text-primary'
+                  }`}
+                >
+                  {c.name}
+                </span>
               </span>
-              {active && <FontAwesomeIcon icon={faCheck} className="text-brand text-[13px]" />}
+              {active && <FontAwesomeIcon icon={faCheck} className="text-brand text-[13px] flex-none" />}
             </button>
           )
         })}

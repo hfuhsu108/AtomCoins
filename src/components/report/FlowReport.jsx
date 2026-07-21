@@ -79,10 +79,11 @@ export default function FlowReport({ hidden }) {
   // 圓餅切片：>7 類時 top 6 保留、其餘併「其他」；同時指派色盤
   const slices = useMemo(() => {
     const rows = stats.rows
+    // 分類自訂色優先，未設色的退回圖表色盤（docs/09 後續調整）
     if (rows.length <= MAX_SLICES) {
-      return rows.map((r, i) => ({ ...r, color: CHART_VARS[i] }))
+      return rows.map((r, i) => ({ ...r, color: r.color ?? CHART_VARS[i] }))
     }
-    const top = rows.slice(0, MAX_SLICES - 1).map((r, i) => ({ ...r, color: CHART_VARS[i] }))
+    const top = rows.slice(0, MAX_SLICES - 1).map((r, i) => ({ ...r, color: r.color ?? CHART_VARS[i] }))
     const restAmt = rows.slice(MAX_SLICES - 1).reduce((s, r) => s + r.amount, 0)
     return [...top, { id: '__other', name: '其他', icon: 'ellipsis', amount: restAmt, color: OTHER_COLOR }]
   }, [stats.rows])

@@ -8,7 +8,7 @@ import {
 import { firestore, auth } from '../lib/firebase'
 import { newId } from '../lib/id'
 import { advanceDate } from '../lib/date'
-import { SETTINGS_ID } from './seed'
+import { SETTINGS_ID, UNCATEGORIZED_EXPENSE_ID, UNCATEGORIZED_INCOME_ID } from './seed'
 
 const now = () => new Date().toISOString()
 
@@ -244,6 +244,45 @@ export async function createCategory(data) {
 
 export async function updateCategory(id, patch) {
   await patchDoc('categories', id, patch)
+}
+
+// 刪除分類（docs/09 後續調整，拍板：把它的交易改歸未分類再刪）。
+// 母分類連同子分類一起刪；引用到的拆帳列 categoryId、轉帳 feeCategoryId 一律改指「未分類」。
+export async function deleteCategoryReassign(category) {
+  const uncat = category.kind === 'income' ? UNCATEGORIZED_INCOME_ID : UNCATEGORIZED_EXPENSE_ID
+  const [catSnap, txSnap] = await Promise.all([getDocs(col('categories')), getDocs(col('transactions'))])
+  const childIds = catSnap.docs.map((d) => d.data()).filter((c) => c.parentId === category.id).map((c) => c.id)
+  const affected = new Set([category.id, ...childIds])
+
+  const ops = []
+  txSnap.docs.forEach((d) => {
+    const t = d.data()
+    const patch = {}
+    if (Array.isArray(t.splits) && t.splits.some((s) => affected.has(s.categoryId))) {
+      patch.splits = t.splits.map((s) => (affected.has(s.categoryId) ? { ...s, categoryId: uncat } : s))
+    }
+    if (t.feeCategoryId && affected.has(t.feeCategoryId)) patch.feeCategoryId = UNCATEGORIZED_EXPENSE_ID
+    if (Object.keys(patch).length) ops.push({ type: 'update', ref: d.ref, data: { ...patch, updatedAt: now() } })
+  })
+  catSnap.docs.forEach((d) => {
+    if (affected.has(d.data().id)) ops.push({ type: 'delete', ref: d.ref })
+  })
+  for (let i = 0; i < ops.length; i += 450) {
+    const batch = writeBatch(firestore)
+    for (const op of ops.slice(i, i + 450)) {
+      if (op.type === 'delete') batch.delete(op.ref)
+      else batch.update(op.ref, stripUndefined(op.data))
+    }
+    await batch.commit()
+  }
+}
+
+// 批次寫入 sortOrder（帳戶／分類上下移動排序，docs/09 後續調整）
+export async function setSortOrders(name, updates) {
+  const batch = writeBatch(firestore)
+  const ts = now()
+  for (const u of updates) batch.update(ref(name, u.id), stripUndefined({ sortOrder: u.sortOrder, updatedAt: ts }))
+  await batch.commit()
 }
 
 // ── Counterparty / Project / Tag（借還款與標記用，建立即用）────

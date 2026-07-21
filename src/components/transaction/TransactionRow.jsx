@@ -22,12 +22,13 @@ function mergeMerchant(merchant, note) {
   return note ? `${merchant}・${note}` : merchant
 }
 
-// 由分類 id 取「母·子」（或母）名稱與母分類圖示
+// 由分類 id 取「母·子」（或母）名稱、母分類圖示與顏色
 function categoryView(categoryId, lookups) {
   const cat = lookups.cat[categoryId]
   const parent = cat?.parentId ? lookups.cat[cat.parentId] : cat
   return {
     icon: getIcon(parent?.icon),
+    color: parent?.color ?? null,
     title: cat ? (cat.parentId ? `${parent.name}·${cat.name}` : parent.name) : '未分類',
   }
 }
@@ -36,10 +37,11 @@ function categoryView(categoryId, lookups) {
 function describe(tx, lookups) {
   if (tx.type === 'expense' || tx.type === 'income') {
     const first = tx.splits?.[0]
-    const { icon, title } = categoryView(first?.categoryId, lookups)
+    const { icon, title, color } = categoryView(first?.categoryId, lookups)
     const acct = lookups.acc[tx.accountId]
     return {
       icon,
+      color,
       title,
       acct: acct?.name,
       note: mergeMerchant(tx.merchant, tx.note),
@@ -80,10 +82,11 @@ function describe(tx, lookups) {
 
 // 拆帳列各自的視圖：類別、金額、備註取自該 split（badge 標「拆帳 i/N」）
 function splitView(tx, split, index, count, lookups) {
-  const { icon, title } = categoryView(split.categoryId, lookups)
+  const { icon, title, color } = categoryView(split.categoryId, lookups)
   const acct = lookups.acc[tx.accountId]
   return {
     icon,
+    color,
     title,
     badge: { label: `拆帳 ${index + 1}/${count}`, icon: faArrowsSplitUpAndLeft },
     acct: acct?.name,
@@ -131,7 +134,10 @@ export default function TransactionRow({ tx, lookups, onClick }) {
 function Row({ view: d, pending, installment, reconciled, pendingDate, onClick }) {
   return (
     <button onClick={onClick} className="flex items-center gap-3 w-full py-3 text-left">
-      <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
+      <span
+        className={`w-9 h-9 flex-none rounded-btn flex items-center justify-center ${d.color ? '' : 'bg-surface-alt text-text-secondary'}`}
+        style={d.color ? { background: `color-mix(in srgb, ${d.color} 15%, transparent)`, color: d.color } : undefined}
+      >
         <FontAwesomeIcon icon={d.icon} />
       </span>
       <div className="flex-1 min-w-0">

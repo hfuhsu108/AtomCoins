@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faChevronRight, faChevronLeft, faTrashCan, faRepeat, faPercent, faCopy, faFileArrowDown, faBookmark, faStore, faWallet, faCloud } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faChevronRight, faChevronLeft, faTrashCan, faRepeat, faPercent, faCopy, faFileArrowDown, faBookmark, faStore, faWallet, faCloud, faTag } from '@fortawesome/free-solid-svg-icons'
 import { faGoogle } from '@fortawesome/free-brands-svg-icons'
 import { useCollection, useAllCollections } from '../db/DataProvider'
 import { buildJsonBackup, buildTransactionsCsv, downloadFile } from '../lib/backup'
@@ -9,7 +9,7 @@ import { usePwa } from '../components/PwaProvider'
 import { signInWithGoogle, signOutUser } from '../lib/firebase'
 import { useAuth } from '../hooks/useAuth'
 import { accountBalances } from '../lib/engine'
-import { updateRecurringRule, deleteRecurringRule, updateTemplate, deleteTemplate, deleteMerchantAlias } from '../db/repo'
+import { updateRecurringRule, deleteRecurringRule, updateTemplate, deleteTemplate, deleteMerchantAlias, setSortOrders } from '../db/repo'
 import { useAsyncAction, settle } from '../hooks/useAsyncAction'
 import { useConfirm } from '../components/ConfirmSheet'
 import { formatBalance, formatAmount } from '../lib/format'
@@ -18,6 +18,7 @@ import { accountIcon } from '../lib/icons'
 import AccountEditSheet from '../components/settings/AccountEditSheet'
 import BrokerEditSheet from '../components/settings/BrokerEditSheet'
 import MerchantAliasSheet from '../components/settings/MerchantAliasSheet'
+import CategoryManager, { ReorderBtns } from '../components/settings/CategoryManager'
 import Sheet from '../components/Sheet'
 
 // build 時間以 ISO（UTC）注入，顯示時轉本地時區
@@ -65,7 +66,8 @@ const GROUPS = [
 
 // 設定二層選單（docs/09 需求2，仿 CoTravel）：點列進入子區塊，避免主頁越加越長
 const MENU = [
-  { key: 'accounts', label: '帳戶管理', sub: '新增、編輯、刪除帳戶', icon: faWallet },
+  { key: 'accounts', label: '帳戶管理', sub: '新增、編輯、刪除、排序帳戶', icon: faWallet },
+  { key: 'categories', label: '分類管理', sub: '大/小分類、圖示、顏色、排序', icon: faTag },
   { key: 'brokers', label: '券商設定', sub: '手續費折數與最低手續費', icon: faPercent },
   { key: 'recurring', label: '週期性收支', sub: '自動記帳與提醒規則', icon: faRepeat },
   { key: 'templates', label: '範本', sub: '快速記帳範本', icon: faBookmark },
@@ -103,7 +105,24 @@ export default function SettingsPage() {
   const { run: runRule, error: ruleError } = useAsyncAction()
   const { run: runTemplate, error: templateError } = useAsyncAction()
   const { run: runAlias, error: aliasError } = useAsyncAction()
+  const { run: runOrder } = useAsyncAction()
   const { confirm, confirmElement } = useConfirm()
+
+  // 帳戶排序：同型別群組內與相鄰帳戶交換 sortOrder（docs/09 後續調整）
+  const moveAccount = (list, index, dir) => {
+    const j = index + dir
+    if (j < 0 || j >= list.length) return
+    const a = list[index]
+    const b = list[j]
+    const soA = a.sortOrder != null ? a.sortOrder : index
+    const soB = b.sortOrder != null ? b.sortOrder : j
+    runOrder(async () => {
+      await settle(setSortOrders('accounts', [
+        { id: a.id, sortOrder: soB },
+        { id: b.id, sortOrder: soA },
+      ]))
+    })
+  }
 
   const tplLookups = {
     catById: Object.fromEntries(categories.map((c) => [c.id, c])),
@@ -211,38 +230,42 @@ export default function SettingsPage() {
           return (
             <div key={g.type} className={gi > 0 ? 'border-t border-line-light' : ''}>
               <div className="text-[13px] font-semibold text-text-secondary pt-3 pb-1">{g.label}</div>
-              {list.map((a) => {
+              {list.map((a, ai) => {
                 const isCard = a.type === 'credit_card'
                 const bal = balances[a.id] ?? 0
                 return (
-                  <button
-                    key={a.id}
-                    onClick={() => setEditing(a)}
-                    className={`flex items-center gap-3 w-full py-2.5 text-left ${a.isArchived ? 'opacity-50' : ''}`}
-                  >
-                    <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
-                      <FontAwesomeIcon icon={accountIcon(a)} />
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[15px] font-medium truncate">{a.name}</span>
-                        {a.isArchived && (
-                          <span className="flex-none text-[11px] text-text-tertiary bg-surface-alt rounded-chip px-1.5 py-0.5">
-                            已封存
+                  <div key={a.id} className={`flex items-center gap-2 py-2.5 ${a.isArchived ? 'opacity-50' : ''}`}>
+                    <ReorderBtns
+                      onUp={() => moveAccount(list, ai, -1)}
+                      onDown={() => moveAccount(list, ai, 1)}
+                      first={ai === 0}
+                      last={ai === list.length - 1}
+                    />
+                    <button onClick={() => setEditing(a)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                      <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
+                        <FontAwesomeIcon icon={accountIcon(a)} />
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[15px] font-medium truncate">{a.name}</span>
+                          {a.isArchived && (
+                            <span className="flex-none text-[11px] text-text-tertiary bg-surface-alt rounded-chip px-1.5 py-0.5">
+                              已封存
+                            </span>
+                          )}
+                        </div>
+                        {isCard && a.creditLimit > 0 && (
+                          <span className="text-xs text-text-tertiary tabular-nums">
+                            額度 {formatAmount(a.creditLimit)} · 可用 {formatAmount(a.creditLimit + bal)}
                           </span>
                         )}
                       </div>
-                      {isCard && a.creditLimit > 0 && (
-                        <span className="text-xs text-text-tertiary tabular-nums">
-                          額度 {formatAmount(a.creditLimit)} · 可用 {formatAmount(a.creditLimit + bal)}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[13px] text-text-secondary tabular-nums">
-                      {isCard ? `已用 ${formatAmount(-bal)}` : formatBalance(bal)}
-                    </span>
-                    <FontAwesomeIcon icon={faChevronRight} className="text-text-tertiary text-[11px]" />
-                  </button>
+                      <span className="text-[13px] text-text-secondary tabular-nums">
+                        {isCard ? `已用 ${formatAmount(-bal)}` : formatBalance(bal)}
+                      </span>
+                      <FontAwesomeIcon icon={faChevronRight} className="text-text-tertiary text-[11px]" />
+                    </button>
+                  </div>
                 )
               })}
             </div>
@@ -250,6 +273,9 @@ export default function SettingsPage() {
         })}
       </div>
       </>)}
+
+      {/* 分類管理（docs/09 後續調整） */}
+      {section === 'categories' && <CategoryManager />}
 
       {/* 券商設定 */}
       {section === 'brokers' && (<>

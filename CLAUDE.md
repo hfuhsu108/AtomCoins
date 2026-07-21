@@ -82,4 +82,6 @@
 
 **2026-07-21 批次 1–6 後追加 4 項調整（已完成、build/lint/空資料冒煙通過，待實機驗收）**：① 發票明細（已歸帳可展開品項＋查看記帳、歸帳把品項摘要寫入交易備註）＋手動發票編輯/刪除入口（`InvoiceRow` 鉛筆鈕→`InvoiceEditSheet`）② 設定頁二層級（`SettingsPage` menu→subsection，仿 CoTravel）③ 帳戶刪除（`repo.deleteAccountCascade` 連同引用交易/股票/帳單/分期一起刪＋清參照，`AccountEditSheet` 刪除鈕）④ 證券帳戶期初持股（`engine.stockPostings` 對 `isOpening` 回空不扣現金，`AccountEditSheet` 新增證券時填已持有證券建 isOpening buy）。詳見 docs/09「後續調整」。
 
+**2026-07-21 再追加 2 項（已完成、build/lint/空資料冒煙通過，待實機驗收）**：⑤ 分類管理（設定頁「分類管理」子區塊 `CategoryManager`＋`CategoryEditSheet`：支出/收入切換、母子清單、上下箭頭排序、新增/編輯/刪除、選 icon（`icons.js` 擴充約 60 個＋`CATEGORY_ICON_NAMES`）與色盤（`CATEGORY_COLORS`）；刪除 `deleteCategoryReassign` 把交易改歸未分類、保護系統退路分類；分類色套用於 CategoryPicker/TransactionRow/FlowReport）⑥ 自訂排序（帳戶與分類皆上下箭頭鈕交換 sortOrder，`repo.setSortOrders`／`ReorderBtns` 共用）。詳見 docs/09「後續調整」第二批。
+
 **待辦**：docs/09 批次 1–6 登入實機驗收（搜尋結果、範本存取、別名解析與排行、日曆/趨勢帶資料、快照寫入）＋批次 7 Web Push；CSV 發票匯入（延後待財政部真實 CSV 樣本）；**部署**——尚未部署過任何版本：GitHub 上無 AtomCoins repo、`hfuhsu108.github.io/AtomCoins/` 404（2026-07-19 查證；早期「線上為舊 Dexie build」的記載有誤），屆時建 public repo＋Pages，並補真機驗證 PWA 捷徑／iOS 安裝／通知列色。

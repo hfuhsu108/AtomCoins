@@ -247,9 +247,9 @@ export function categoryStatsRange(txns, categories, kind, from, to) {
   // categoryId → 母分類（取 id/name/icon）；查無退回「未分類」防呆（seed 保證存在）
   const rollup = (categoryId) => {
     const cat = byId.get(categoryId)
-    if (!cat) return { id: categoryId ?? '__uncat', name: '未分類', icon: 'circle-question' }
+    if (!cat) return { id: categoryId ?? '__uncat', name: '未分類', icon: 'circle-question', color: null }
     const parent = (cat.parentId ? byId.get(cat.parentId) : cat) ?? cat
-    return { id: parent.id, name: parent.name, icon: parent.icon }
+    return { id: parent.id, name: parent.name, icon: parent.icon, color: parent.color ?? null }
   }
 
   const buckets = new Map() // 母分類id → { id, name, icon, amount }

@@ -16,9 +16,9 @@
 
 ## 3.2 Category 分類
 
-`id` / `kind` enum(`expense` `income`)（**支出/收入兩套分開**） / `parentId` ref→Category?（null=母分類、有值=子分類，**只兩層**） / `name` / `icon`(FA6 名稱) / `color` / `sortOrder` / `isSystem` bool(內建來自 MOZE 分類樹 / 自訂) / `isArchived` / `createdAt` / `updatedAt`。
+`id` / `kind` enum(`expense` `income`)（**支出/收入兩套分開**） / `parentId` ref→Category?（null=母分類、有值=子分類，**只兩層**） / `name` / `icon`(FA6 名稱，子分類可為 null＝沿用母分類圖示) / `color`(hex，來自色盤 `CATEGORY_COLORS`，null=中性色) / `sortOrder` / `isSystem` bool(內建來自 MOZE 分類樹 / 自訂) / `isArchived` / `createdAt` / `updatedAt`。
 
-> 內建分類樹採 **MOZE 結構**，初始化時種入。智慧建議類別用歷史於執行期算，無需欄位（後續階段）。
+> 內建分類樹採 **MOZE 結構**，初始化時種入。**分類管理**（docs/09 後續調整）：設定頁「分類管理」可新增/編輯/刪除/排序大小分類、選 `icon`（`CATEGORY_ICON_NAMES` 約 60 個 FA6）與 `color`。刪除走 `deleteCategoryReassign`（母分類連同子分類刪、引用的拆帳列 `categoryId` 與轉帳 `feeCategoryId` 改歸「未分類」）；系統退路分類（`未分類`／`金融手續費`）不可刪。`color` 套用於分類選擇器、帳本明細列 icon 底色與報表圓餅/排行。排序用上下箭頭與相鄰項交換 `sortOrder`（`setSortOrders`）。
 
 ## 3.3 Tag 標籤
 
