@@ -66,7 +66,7 @@
 
 ## 3.9 StockTransaction 股票交易
 
-`id` / `securitiesAccountId` ref→Account / `symbol`(代號如 2330) / `name`(股名，自快取帶入) / `instrumentType` enum(`stock` `etf`)(決定證交稅率) / `side` enum(`buy` `sell`) / `shares` int(含零股) / `price` decimal(成交價) / `fee` int(自動算可覆寫) / `tax` int(僅賣出，自動算) / `brokerId` ref→Broker / `settlementBankId` ref→Account(交割銀行，預設=證券戶 defaultSettlementBankId，可改) / `tradeDate` date(成交日) / `settlementDate` date(交割日=成交日+2 交易日，**跳週末，可手動改**) / `realizedPnl?` int(僅賣出) / `note?` / `createdAt` / `updatedAt`。
+`id` / `securitiesAccountId` ref→Account / `symbol`(代號如 2330) / `name`(股名，自快取帶入) / `instrumentType` enum(`stock` `etf`)(決定證交稅率) / `side` enum(`buy` `sell`) / `shares` int(含零股) / `price` decimal(成交價) / `fee` int(自動算可覆寫) / `tax` int(僅賣出，自動算) / `brokerId` ref→Broker / `settlementBankId` ref→Account(交割銀行，預設=證券戶 defaultSettlementBankId，可改) / `tradeDate` date(成交日) / `settlementDate` date(交割日=成交日+2 交易日，**跳週末，可手動改**) / `isOpening?` bool(**期初持股**，docs/09 需求4：新增證券帳戶時填的已持有部位，`stockPostings` 對其回空、不扣交割銀行現金；仍以 `side='buy'`、`price`=平均成本計入持股市值與成本) / `realizedPnl?` int(僅賣出) / `note?` / `createdAt` / `updatedAt`。
 
 衍生金額：
 - 買進交割金額 = `shares×price + fee`（交割日從交割銀行扣）

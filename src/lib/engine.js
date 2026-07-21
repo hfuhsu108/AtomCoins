@@ -43,7 +43,9 @@ export function transactionPostings(tx) {
 
 // 把單筆股票交易攤成 postings：交割金額於 settlementDate 影響「交割銀行」（docs/02 §4.1）。
 // 買進 −(round(gross)+fee)、賣出 +(round(gross)−fee−tax)。本金不進收支統計。
+// 期初持股（isOpening）：追蹤前即已持有，只計入持股市值/成本，不影響交割銀行現金（docs/09 需求4）。
 export function stockPostings(stx) {
+  if (stx.isOpening) return []
   const gross = Math.round(stx.shares * stx.price)
   const amount =
     stx.side === 'buy'

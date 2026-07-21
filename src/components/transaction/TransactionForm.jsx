@@ -95,14 +95,23 @@ function stateFromTx(tx) {
   return base
 }
 
+// 發票品項明細 → 備註摘要（歸帳時帶入，docs/09 需求1）：「品名×數量、品名…」
+function invoiceItemsSummary(invoice) {
+  const items = invoice.lineItems ?? []
+  return items
+    .map((it) => (it.qty > 1 ? `${it.name}×${it.qty}` : it.name))
+    .filter(Boolean)
+    .join('、')
+}
+
 // 從發票歸帳預填：一律支出、記錄日=發票日、商家=別名解析後名稱（原始名永遠保留在 invoice.merchant）、
-// 備註留空（不再帶商家名）、單列拆帳帶入總額（分類待選）。
+// 備註=品項明細摘要、單列拆帳帶入總額（分類待選）。
 function stateFromInvoice(invoice, aliases) {
   return {
     type: 'expense',
     tradeDate: invoice.invoiceDate,
     postingDate: null,
-    note: '',
+    note: invoiceItemsSummary(invoice),
     merchant: resolveMerchant(invoice.merchant, aliases) ?? '',
     splits: [{ key: newId(), categoryId: null, expr: String(invoice.totalAmount ?? ''), advanceCounterpartyId: null }],
     activeSplit: 0,

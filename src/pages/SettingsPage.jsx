@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faChevronRight, faTrashCan, faRepeat, faPercent, faCopy, faFileArrowDown, faBookmark, faStore } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faChevronRight, faChevronLeft, faTrashCan, faRepeat, faPercent, faCopy, faFileArrowDown, faBookmark, faStore, faWallet, faCloud } from '@fortawesome/free-solid-svg-icons'
 import { faGoogle } from '@fortawesome/free-brands-svg-icons'
 import { useCollection, useAllCollections } from '../db/DataProvider'
 import { buildJsonBackup, buildTransactionsCsv, downloadFile } from '../lib/backup'
@@ -63,6 +63,18 @@ const GROUPS = [
   { type: 'securities', label: '證券' },
 ]
 
+// 設定二層選單（docs/09 需求2，仿 CoTravel）：點列進入子區塊，避免主頁越加越長
+const MENU = [
+  { key: 'accounts', label: '帳戶管理', sub: '新增、編輯、刪除帳戶', icon: faWallet },
+  { key: 'brokers', label: '券商設定', sub: '手續費折數與最低手續費', icon: faPercent },
+  { key: 'recurring', label: '週期性收支', sub: '自動記帳與提醒規則', icon: faRepeat },
+  { key: 'templates', label: '範本', sub: '快速記帳範本', icon: faBookmark },
+  { key: 'aliases', label: '商家別名', sub: '載具公司名對應店名', icon: faStore },
+  { key: 'cloud', label: '帳號與雲端同步', sub: '登入、多裝置同步', icon: faCloud },
+  { key: 'backup', label: '備份匯出', sub: 'JSON／CSV 下載', icon: faFileArrowDown },
+]
+const TITLES = Object.fromEntries(MENU.map((m) => [m.key, m.label]))
+
 export default function SettingsPage() {
   const accounts = useCollection('accounts')
   const txns = useCollection('transactions')
@@ -74,6 +86,8 @@ export default function SettingsPage() {
   const counterparties = useCollection('counterparties')
   const merchantAliases = useCollection('merchantAliases')
 
+  // 二層導覽：'menu' 或某子區塊 key
+  const [section, setSection] = useState('menu')
   // editing: undefined=關閉、null=新增、帳戶物件=編輯
   const [editing, setEditing] = useState(undefined)
   const [editingBroker, setEditingBroker] = useState(undefined)
@@ -142,11 +156,46 @@ export default function SettingsPage() {
 
   return (
     <div className="px-4 pt-4 pb-4 lg:px-7 lg:pt-6 max-w-3xl mx-auto">
-      <h1 className="text-xl font-semibold mb-4">設定</h1>
+      {section === 'menu' ? (
+        <h1 className="text-xl font-semibold mb-4">設定</h1>
+      ) : (
+        <div className="flex items-center gap-2 mb-4">
+          <button
+            onClick={() => setSection('menu')}
+            aria-label="返回設定"
+            className="w-9 h-9 flex-none rounded-chip bg-surface border border-line text-text-secondary flex items-center justify-center"
+          >
+            <FontAwesomeIcon icon={faChevronLeft} className="text-sm" />
+          </button>
+          <h1 className="text-xl font-semibold">{TITLES[section]}</h1>
+        </div>
+      )}
+
+      {/* 選單（僅主頁） */}
+      {section === 'menu' && (
+        <div className="bg-surface border border-line rounded-card shadow-card px-3.5">
+          {MENU.map((m, i) => (
+            <button
+              key={m.key}
+              onClick={() => setSection(m.key)}
+              className={`flex items-center gap-3 w-full py-3.5 text-left ${i > 0 ? 'border-t border-line-light' : ''}`}
+            >
+              <span className="w-10 h-10 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
+                <FontAwesomeIcon icon={m.icon} />
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-[15px] font-medium">{m.label}</span>
+                <span className="block text-xs text-text-tertiary">{m.sub}</span>
+              </span>
+              <FontAwesomeIcon icon={faChevronRight} className="text-text-tertiary text-[11px]" />
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* 帳戶管理 */}
-      <div className="flex items-center justify-between px-0.5 mb-2">
-        <span className="text-[15px] font-semibold">帳戶管理</span>
+      {section === 'accounts' && (<>
+      <div className="flex justify-end mb-2">
         <button
           onClick={() => setEditing(null)}
           className="flex items-center gap-1.5 h-[34px] px-3 rounded-chip bg-brand text-white text-[13px] font-semibold"
@@ -200,10 +249,11 @@ export default function SettingsPage() {
           )
         })}
       </div>
+      </>)}
 
       {/* 券商設定 */}
-      <div className="flex items-center justify-between px-0.5 mt-6 mb-2">
-        <span className="text-[15px] font-semibold">券商設定</span>
+      {section === 'brokers' && (<>
+      <div className="flex justify-end mb-2">
         <button
           onClick={() => setEditingBroker(null)}
           className="flex items-center gap-1.5 h-[34px] px-3 rounded-chip bg-brand text-white text-[13px] font-semibold"
@@ -239,12 +289,17 @@ export default function SettingsPage() {
           ))
         )}
       </div>
+      </>)}
 
       {/* 週期性收支 */}
-      {rules.length > 0 && (
+      {section === 'recurring' && (
         <>
-          <div className="px-0.5 mt-6 mb-2 text-[15px] font-semibold">週期性收支</div>
           <div className="bg-surface border border-line rounded-card shadow-card px-3.5 divide-y divide-line-light">
+            {rules.length === 0 && (
+              <div className="py-6 text-center text-text-tertiary text-sm">
+                尚無週期性收支（於記帳表單「進階 → 設為週期性」建立）
+              </div>
+            )}
             {rules
               .slice()
               .sort((a, b) => (a.nextDate < b.nextDate ? -1 : 1))
@@ -282,10 +337,14 @@ export default function SettingsPage() {
       )}
 
       {/* 範本（docs/09 批次 2）：改名、刪除；建立入口在記帳表單 */}
-      {templates.length > 0 && (
+      {section === 'templates' && (
         <>
-          <div className="px-0.5 mt-6 mb-2 text-[15px] font-semibold">範本</div>
           <div className="bg-surface border border-line rounded-card shadow-card px-3.5 divide-y divide-line-light">
+            {templates.length === 0 && (
+              <div className="py-6 text-center text-text-tertiary text-sm">
+                尚無範本（於記帳表單「存為範本」建立）
+              </div>
+            )}
             {templates
               .slice()
               .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
@@ -321,8 +380,8 @@ export default function SettingsPage() {
       )}
 
       {/* 商家別名（docs/09 批次 3）：把載具冗長公司名對應到店名，影響顯示與統計 */}
-      <div className="flex items-center justify-between px-0.5 mt-6 mb-2">
-        <span className="text-[15px] font-semibold">商家別名</span>
+      {section === 'aliases' && (<>
+      <div className="flex justify-end mb-2">
         <button
           onClick={() => setEditingAlias(null)}
           className="flex items-center gap-1.5 h-[34px] px-3 rounded-chip bg-brand text-white text-[13px] font-semibold"
@@ -360,9 +419,10 @@ export default function SettingsPage() {
         )}
         {aliasError && <div className="py-2 text-[13px] text-error">{aliasError}</div>}
       </div>
+      </>)}
 
       {/* 帳號與雲端同步（docs/07 M0：登入＋rules 連線驗證；資料遷移為 M1–M3） */}
-      <div className="px-0.5 mt-6 mb-2 text-[15px] font-semibold">帳號與雲端同步</div>
+      {section === 'cloud' && (<>
       <div className="bg-surface border border-line rounded-card shadow-card px-3.5 py-3">
         {user === undefined ? (
           <div className="text-sm text-text-tertiary py-1">確認登入狀態中…</div>
@@ -402,8 +462,10 @@ export default function SettingsPage() {
         )}
         {authError && <div className="text-xs text-error mt-2">登入失敗：{authError}</div>}
       </div>
+      </>)}
 
-      {/* 偏好（階段 7）：主題三段切換，localStorage per-device */}
+      {/* 偏好（階段 7）：主題三段切換，localStorage per-device。留在主頁（小、常用） */}
+      {section === 'menu' && (<>
       <div className="px-0.5 mt-6 mb-2 text-[15px] font-semibold">偏好</div>
       <div className="bg-surface border border-line rounded-card shadow-card px-3.5 py-3">
         <div className="flex items-center justify-between gap-3">
@@ -486,8 +548,10 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      </>)}
+
       {/* 備份匯出（階段 7）：只匯出、不做還原——Firestore 即雲端源 */}
-      <div className="px-0.5 mt-6 mb-2 text-[15px] font-semibold">備份匯出</div>
+      {section === 'backup' && (<>
       <div className="bg-surface border border-line rounded-card shadow-card px-3.5 py-3">
         <div className="text-xs text-text-tertiary mb-2.5">
           交易 {allData.transactions.length} 筆・股票 {allData.stockTransactions.length} 筆・發票 {allData.invoices.length} 張
@@ -512,10 +576,7 @@ export default function SettingsPage() {
           JSON 為全部資料的完整備份；CSV 為交易明細（拆帳逐列展開），可用 Excel 開啟。
         </p>
       </div>
-
-      <p className="text-text-tertiary text-xs mt-6 px-0.5">
-        分類、標籤、偏好等其餘設定將於後續階段實作。
-      </p>
+      </>)}
 
       <AccountEditSheet
         open={editing !== undefined}

@@ -23,7 +23,8 @@ export default function InvoicePanel({ hidden }) {
   const merchantAliases = useCollection('merchantAliases')
   const status = useScraperStatus()
   const [sub, setSub] = useState('inbox') // inbox | processed
-  const [sheetOpen, setSheetOpen] = useState(false)
+  // 發票編輯 sheet：undefined=關閉、null=手動新增、發票物件=編輯
+  const [editTarget, setEditTarget] = useState(undefined)
 
   const { inbox, processed } = useMemo(() => {
     const inbox = invoices.filter((i) => i.status === 'inbox').sort(byDateDesc)
@@ -63,7 +64,7 @@ export default function InvoicePanel({ hidden }) {
   return (
     <>
       {/* 爬蟲同步狀態條 */}
-      <SyncBar status={status} onAdd={() => setSheetOpen(true)} />
+      <SyncBar status={status} onAdd={() => setEditTarget(null)} />
 
       {error && (
         <div className="mb-3 px-4 py-2.5 bg-error-bg text-error text-[13px] rounded-card">{error}</div>
@@ -101,12 +102,17 @@ export default function InvoicePanel({ hidden }) {
               onRestore={() => onRestore(inv)}
               onUnrecord={() => onUnrecord(inv)}
               onOpenTx={() => inv.transactionId && navigate(`/add?id=${inv.transactionId}`)}
+              onEdit={setEditTarget}
             />
           ))}
         </div>
       )}
 
-      <InvoiceEditSheet open={sheetOpen} invoice={null} onClose={() => setSheetOpen(false)} />
+      <InvoiceEditSheet
+        open={editTarget !== undefined}
+        invoice={editTarget ?? null}
+        onClose={() => setEditTarget(undefined)}
+      />
       {confirmElement}
     </>
   )

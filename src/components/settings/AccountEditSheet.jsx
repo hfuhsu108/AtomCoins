@@ -1,8 +1,11 @@
 import { useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faCheck, faXmark, faChevronDown, faBoxArchive, faBoxOpen, faPercent } from '@fortawesome/free-solid-svg-icons'
-import { createAccount, updateAccount } from '../../db/repo'
+import { faCheck, faXmark, faChevronDown, faBoxArchive, faBoxOpen, faPercent, faPlus, faTrashCan } from '@fortawesome/free-solid-svg-icons'
+import { createAccount, updateAccount, createStockTransaction, deleteAccountCascade } from '../../db/repo'
 import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
+import { useCollection } from '../../db/DataProvider'
+import { useConfirm } from '../ConfirmSheet'
+import { newId } from '../../lib/id'
 import { todayStr } from '../../lib/date'
 import Sheet from '../Sheet'
 import AccountPicker from '../transaction/AccountPicker'
@@ -33,6 +36,8 @@ function initState(account) {
     linkedDebitAccountId: account?.linkedDebitAccountId ?? null,
     defaultSettlementBankId: account?.defaultSettlementBankId ?? null,
     defaultBrokerId: account?.defaultBrokerId ?? null,
+    // 期初持股（僅新增證券帳戶時填）：[{ symbol, name, shares, avgCost }]，成本不扣現金
+    openingHoldings: [],
   }
 }
 
@@ -59,11 +64,40 @@ export default function AccountEditSheet({ open, account, accounts, brokers = []
   const brokerObj = brokers.find((b) => b.id === s.defaultBrokerId)
 
   const { run, busy, error } = useAsyncAction()
+  const { confirm, confirmElement } = useConfirm()
+
+  // 刪除時會一併清掉的關聯記錄數（交易／股票／帳單）
+  const txns = useCollection('transactions')
+  const stockTxns = useCollection('stockTransactions')
+  const statements = useCollection('creditCardStatements')
+  const refCount = account
+    ? txns.filter((t) =>
+        t.accountId === account.id || t.fromAccountId === account.id || t.toAccountId === account.id ||
+        (t.repayments ?? []).some((r) => r.accountId === account.id),
+      ).length +
+      stockTxns.filter((t) => t.securitiesAccountId === account.id || t.settlementBankId === account.id).length +
+      statements.filter((st) => st.accountId === account.id).length
+    : 0
+
+  const handleDelete = async () => {
+    if (!account) return
+    const msg = refCount > 0
+      ? `此帳戶有 ${refCount} 筆關聯記錄（交易／股票／帳單），刪除會一併刪除它們，且無法復原。確定刪除？`
+      : '確定刪除此帳戶？此動作無法復原。'
+    if (!(await confirm({ title: '刪除帳戶', message: msg, danger: true }))) return
+    run(async () => {
+      await settle(deleteAccountCascade(account.id))
+      onClose()
+    })
+  }
 
   const save = () => {
     if (!canSave) return
     const nextSort = accounts.length ? Math.max(...accounts.map((a) => a.sortOrder ?? 0)) + 1 : 0
+    // 期初持股需在建帳戶前先取得 id（離線時 settle 回 undefined，不依賴回傳值）
+    const acctId = account?.id ?? newId()
     const data = {
+      ...(account ? {} : { id: acctId }),
       name: s.name.trim(),
       type: s.type,
       icon: account?.icon ?? null,
@@ -84,9 +118,40 @@ export default function AccountEditSheet({ open, account, accounts, brokers = []
     }
     run(async () => {
       await settle(account ? updateAccount(account.id, data) : createAccount(data))
+      // 期初持股（僅新增證券帳戶）：建 isOpening buy 交易，只計持股不扣現金
+      if (!account && isSecurities) {
+        for (const h of s.openingHoldings) {
+          const shares = toInt(h.shares)
+          const price = parseFloat(h.avgCost) || 0
+          if (!h.symbol.trim() || shares <= 0 || price <= 0) continue
+          await settle(createStockTransaction({
+            side: 'buy',
+            isOpening: true,
+            securitiesAccountId: acctId,
+            symbol: h.symbol.trim(),
+            name: h.name.trim() || h.symbol.trim(),
+            instrumentType: 'stock',
+            shares,
+            price,
+            fee: 0,
+            tax: 0,
+            brokerId: s.defaultBrokerId ?? null,
+            settlementBankId: s.defaultSettlementBankId ?? null,
+            tradeDate: s.openingDate,
+            settlementDate: s.openingDate,
+          }))
+        }
+      }
       onClose()
     })
   }
+
+  // 期初持股列操作
+  const addHolding = () =>
+    set({ openingHoldings: [...s.openingHoldings, { symbol: '', name: '', shares: '', avgCost: '' }] })
+  const setHolding = (i, patch) =>
+    set({ openingHoldings: s.openingHoldings.map((h, j) => (j === i ? { ...h, ...patch } : h)) })
+  const removeHolding = (i) => set({ openingHoldings: s.openingHoldings.filter((_, j) => j !== i) })
 
   const toggleArchive = () => {
     if (!account) return
@@ -272,6 +337,64 @@ export default function AccountEditSheet({ open, account, accounts, brokers = []
                 </span>
               </button>
             </Field>
+
+            {/* 期初持股（僅新增證券帳戶）：追蹤前已持有，只建持股不扣交割銀行現金 */}
+            {!account && (
+              <div>
+                <div className="text-[13px] text-text-secondary mb-1.5">已持有證券（選填）</div>
+                <div className="flex flex-col gap-2">
+                  {s.openingHoldings.map((h, i) => (
+                    <div key={i} className="bg-surface border border-line rounded-modal p-2.5 flex flex-col gap-2">
+                      <div className="flex gap-2">
+                        <input
+                          value={h.symbol}
+                          onChange={(e) => setHolding(i, { symbol: e.target.value.replace(/\s/g, '') })}
+                          placeholder="代號 2330"
+                          className="w-[92px] flex-none text-[15px] tabular-nums outline-none bg-surface-alt rounded-btn px-2.5 h-9 placeholder:text-text-tertiary"
+                        />
+                        <input
+                          value={h.name}
+                          onChange={(e) => setHolding(i, { name: e.target.value })}
+                          placeholder="股名（選填）"
+                          className="flex-1 min-w-0 text-[15px] outline-none bg-surface-alt rounded-btn px-2.5 h-9 placeholder:text-text-tertiary"
+                        />
+                        <button
+                          onClick={() => removeHolding(i)}
+                          className="w-9 h-9 flex-none flex items-center justify-center text-text-tertiary"
+                        >
+                          <FontAwesomeIcon icon={faTrashCan} className="text-xs" />
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          inputMode="numeric"
+                          value={h.shares}
+                          onChange={(e) => setHolding(i, { shares: e.target.value.replace(/[^0-9]/g, '') })}
+                          placeholder="股數"
+                          className="flex-1 min-w-0 text-[15px] tabular-nums outline-none bg-surface-alt rounded-btn px-2.5 h-9 placeholder:text-text-tertiary"
+                        />
+                        <input
+                          inputMode="decimal"
+                          value={h.avgCost}
+                          onChange={(e) => setHolding(i, { avgCost: e.target.value.replace(/[^0-9.]/g, '') })}
+                          placeholder="平均成本"
+                          className="flex-1 min-w-0 text-[15px] tabular-nums outline-none bg-surface-alt rounded-btn px-2.5 h-9 placeholder:text-text-tertiary"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  <button
+                    onClick={addHolding}
+                    className="flex items-center justify-center gap-1.5 h-10 rounded-btn border border-dashed border-line text-[13px] font-medium text-text-secondary"
+                  >
+                    <FontAwesomeIcon icon={faPlus} className="text-xs" /> 新增一檔
+                  </button>
+                </div>
+                <p className="text-[11px] text-text-tertiary mt-1.5 px-1">
+                  期初持股只計入持股市值與成本，不扣交割銀行現金（現金請填在期初餘額）。
+                </p>
+              </div>
+            )}
           </>
         )}
 
@@ -279,14 +402,24 @@ export default function AccountEditSheet({ open, account, accounts, brokers = []
         {error && <div className="text-[13px] text-error px-1">{error}</div>}
         <div className="flex items-center gap-2 mt-1">
           {account && (
-            <button
-              onClick={toggleArchive}
-              disabled={busy}
-              className="flex items-center gap-1.5 h-[42px] px-3.5 rounded-btn bg-surface border border-line text-[13px] font-medium text-text-secondary disabled:opacity-40"
-            >
-              <FontAwesomeIcon icon={account.isArchived ? faBoxOpen : faBoxArchive} className="text-xs" />
-              {account.isArchived ? '取消封存' : '封存'}
-            </button>
+            <>
+              <button
+                onClick={handleDelete}
+                disabled={busy}
+                className="flex items-center justify-center h-[42px] w-[42px] flex-none rounded-btn bg-surface border border-line text-error disabled:opacity-40"
+                title="刪除帳戶"
+              >
+                <FontAwesomeIcon icon={faTrashCan} className="text-sm" />
+              </button>
+              <button
+                onClick={toggleArchive}
+                disabled={busy}
+                className="flex items-center gap-1.5 h-[42px] px-3.5 rounded-btn bg-surface border border-line text-[13px] font-medium text-text-secondary disabled:opacity-40"
+              >
+                <FontAwesomeIcon icon={account.isArchived ? faBoxOpen : faBoxArchive} className="text-xs" />
+                {account.isArchived ? '取消封存' : '封存'}
+              </button>
+            </>
           )}
           <button
             onClick={save}
@@ -297,6 +430,7 @@ export default function AccountEditSheet({ open, account, accounts, brokers = []
           </button>
         </div>
       </div>
+      {confirmElement}
 
       <AccountPicker
         open={pickerTarget === 'debit' || pickerTarget === 'settlementBank'}

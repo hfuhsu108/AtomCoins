@@ -186,6 +186,57 @@ export async function updateAccount(id, patch) {
   await patchDoc('accounts', id, patch)
 }
 
+// 刪除帳戶（連同所有引用它的交易/股票/帳單/分期一起刪，清其他帳戶的參照，docs/09 需求3）。
+// 使用者已確認 cascade 語義；資料量小，逐 collection 撈進記憶體比對後分批提交（batch 上限 500）。
+export async function deleteAccountCascade(accountId) {
+  const [txSnap, stxSnap, stmtSnap, planSnap, acctSnap] = await Promise.all([
+    getDocs(col('transactions')),
+    getDocs(col('stockTransactions')),
+    getDocs(col('creditCardStatements')),
+    getDocs(col('installmentPlans')),
+    getDocs(col('accounts')),
+  ])
+  const ops = [] // { type:'delete'|'update', ref, data? }
+  txSnap.docs.forEach((d) => {
+    const t = d.data()
+    const hit =
+      t.accountId === accountId || t.fromAccountId === accountId || t.toAccountId === accountId ||
+      (t.repayments ?? []).some((r) => r.accountId === accountId)
+    if (hit) ops.push({ type: 'delete', ref: d.ref })
+  })
+  stxSnap.docs.forEach((d) => {
+    const t = d.data()
+    if (t.securitiesAccountId === accountId || t.settlementBankId === accountId) ops.push({ type: 'delete', ref: d.ref })
+  })
+  stmtSnap.docs.forEach((d) => {
+    if (d.data().accountId === accountId) ops.push({ type: 'delete', ref: d.ref })
+  })
+  planSnap.docs.forEach((d) => {
+    const p = d.data()
+    if (p.accountId === accountId || p.fundingAccountId === accountId) ops.push({ type: 'delete', ref: d.ref })
+  })
+  acctSnap.docs.forEach((d) => {
+    const a = d.data()
+    if (a.id === accountId) {
+      ops.push({ type: 'delete', ref: d.ref })
+      return
+    }
+    // 其他帳戶把被刪帳戶當自動扣繳/交割銀行 → 清為 null，避免懸空參照
+    const patch = {}
+    if (a.linkedDebitAccountId === accountId) patch.linkedDebitAccountId = null
+    if (a.defaultSettlementBankId === accountId) patch.defaultSettlementBankId = null
+    if (Object.keys(patch).length) ops.push({ type: 'update', ref: d.ref, data: { ...patch, updatedAt: now() } })
+  })
+  for (let i = 0; i < ops.length; i += 450) {
+    const batch = writeBatch(firestore)
+    for (const op of ops.slice(i, i + 450)) {
+      if (op.type === 'delete') batch.delete(op.ref)
+      else batch.update(op.ref, stripUndefined(op.data))
+    }
+    await batch.commit()
+  }
+}
+
 // ── Category ─────────────────────────────────────────────────
 export async function createCategory(data) {
   return createDoc('categories', buildRecord({ isSystem: false, isArchived: false, ...data }))

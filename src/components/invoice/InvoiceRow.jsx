@@ -7,25 +7,26 @@ import {
   faReceipt,
   faChevronDown,
   faChevronUp,
+  faPen,
 } from '@fortawesome/free-solid-svg-icons'
 import { formatAmount, formatNumber } from '../../lib/format'
 import { formatMd } from '../../lib/date'
 import { resolveMerchant } from '../../lib/merchant'
 
 // 單張發票列。動作按鈕依 status 而異（inbox 歸帳/略過、recorded 取消歸帳、ignored 復原）。
-// 有 lineItems 時可點列展開唯讀明細，供歸帳拆帳時對照。
+// 有 lineItems 時可點列展開唯讀明細（含已歸帳）；手動新增的發票可編輯/刪除（誤加時用）。
 // 顯示名稱套用商家別名（原始名 invoice.merchant 永不改寫）。
-export default function InvoiceRow({ invoice, aliases, hidden, onRecord, onIgnore, onRestore, onUnrecord, onOpenTx }) {
+export default function InvoiceRow({ invoice, aliases, hidden, onRecord, onIgnore, onRestore, onUnrecord, onOpenTx, onEdit }) {
   const [open, setOpen] = useState(false)
   const displayName = resolveMerchant(invoice.merchant, aliases)
   const items = invoice.lineItems ?? []
   const hasItems = items.length > 0
   const status = invoice.status
 
-  // 已歸帳點列跳對應交易；否則有明細才展開
+  // 有明細一律可展開（含已歸帳）；無明細的已歸帳點列跳對應交易
   const onRowClick = () => {
-    if (status === 'recorded') onOpenTx?.()
-    else if (hasItems) setOpen((v) => !v)
+    if (hasItems) setOpen((v) => !v)
+    else if (status === 'recorded') onOpenTx?.()
   }
 
   return (
@@ -55,12 +56,22 @@ export default function InvoiceRow({ invoice, aliases, hidden, onRecord, onIgnor
           <span className="text-[15px] font-semibold tabular-nums whitespace-nowrap text-text-primary">
             {formatAmount(invoice.totalAmount, { hidden })}
           </span>
-          {status === 'recorded' && hasItems ? null : hasItems ? (
+          {hasItems ? (
             <FontAwesomeIcon icon={open ? faChevronUp : faChevronDown} className="text-text-tertiary text-[11px]" />
           ) : null}
         </button>
 
         <div className="flex items-center gap-1.5 flex-none">
+          {/* 手動新增的發票可編輯/刪除（誤加時用）；已歸帳需先取消歸帳 */}
+          {onEdit && invoice.source === 'manual' && status !== 'recorded' && (
+            <button
+              onClick={() => onEdit(invoice)}
+              title="編輯／刪除"
+              className="w-8 h-8 rounded-chip bg-surface-alt text-text-secondary flex items-center justify-center"
+            >
+              <FontAwesomeIcon icon={faPen} className="text-xs" />
+            </button>
+          )}
           {status === 'inbox' && (
             <>
               <button
@@ -120,6 +131,14 @@ export default function InvoiceRow({ invoice, aliases, hidden, onRecord, onIgnor
               <span className="tabular-nums flex-none ml-2">{formatNumber(it.amount ?? 0)}</span>
             </div>
           ))}
+          {status === 'recorded' && (
+            <button
+              onClick={onOpenTx}
+              className="self-start mt-1.5 text-[13px] font-semibold text-brand"
+            >
+              查看記帳 →
+            </button>
+          )}
         </div>
       )}
     </div>
