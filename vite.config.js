@@ -35,6 +35,11 @@ export default defineConfig({
     VitePWA({
       // prompt：偵測到新版時不靜默重載，由頂部橫幅／設定頁「檢查更新」讓使用者手動套用
       registerType: 'prompt',
+      // Web Push（批次 7）：generateSW 模式下無法直接寫 SW，改用 importScripts 掛自訂 push handler。
+      // push-handler.js 放 public/，build 後位於站台根 /AtomCoins/push-handler.js。
+      workbox: {
+        importScripts: ['push-handler.js'],
+      },
       manifest: {
         name: '原子記帳 AtomCoins',
         short_name: '原子記帳',

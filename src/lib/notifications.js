@@ -1,5 +1,5 @@
-// 通知聚合（階段 7）：信用卡繳費到期＋T+2 交割缺口。皆為純查詢，
-// 供首頁鈴鐺通知區顯示；不做系統推播（iOS PWA 限制多且需 push server）。
+// 通知聚合：信用卡繳費到期＋T+2 交割缺口＋週期提醒／扣款預告。皆為純查詢，
+// 供首頁鈴鐺通知區顯示，並被 Cloud Functions（Web Push 推播）複製共用同一套口徑。
 import { statementPeriods, availableForSettlement } from './engine'
 import { todayStr, addDays } from './date'
 
@@ -48,4 +48,26 @@ export function settlementShortfalls(accounts, txns, stockTxns, asOf = todayStr(
     if (avail < 0) out.push({ bank: accById[bankId], date, shortfall: -avail })
   }
   return out.sort((a, b) => (a.date < b.date ? -1 : 1))
+}
+
+// 到期的提醒（reminder 模式且 nextDate ≤ asOf）。供通知區與推播列出。
+// 原置於 recurring.js，因該檔有 firebase 相依、無法整檔複製到 Cloud Functions，
+// 故將此純函式移入本檔（純檔）共用；recurring.js re-export 保持既有 caller 相容。
+export function dueReminders(rules, asOf = todayStr()) {
+  return (rules ?? []).filter(
+    (r) => r.isActive && r.postingMode === 'reminder' && r.nextDate && r.nextDate <= asOf,
+  )
+}
+
+// 明天將自動入帳的週期規則（immediate／deferred 且 nextDate == 明天）。
+// 供推播情境 F「明天將自動入帳」預告；已結束（超過 endDate）的規則不列。
+export function dueRecurringPostings(rules, asOf = todayStr()) {
+  const tomorrow = addDays(asOf, 1)
+  return (rules ?? []).filter(
+    (r) =>
+      r.isActive &&
+      (r.postingMode === 'immediate' || r.postingMode === 'deferred') &&
+      r.nextDate === tomorrow &&
+      !(r.endDate && tomorrow > r.endDate),
+  )
 }

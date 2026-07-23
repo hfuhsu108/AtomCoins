@@ -514,3 +514,18 @@ export async function getSettings() {
 export async function updateSettings(patch) {
   await updateDoc(ref('settings', SETTINGS_ID), stripUndefined(patch))
 }
+
+// ── Push 訂閱（Web Push，批次 7）──────────────────────────
+// docId 由 push.js 以 endpoint 雜湊產生 → 同裝置同 endpoint 覆寫而非新增（天然去重）。
+// 訂閱含裝置憑證（endpoint/keys），刻意不進 DataProvider 即時訂閱、不進備份匯出。
+export async function upsertPushSubscription(record) {
+  await setDoc(
+    ref('pushSubscriptions', record.id),
+    stripUndefined({ ...record, updatedAt: new Date().toISOString() }),
+    { merge: true },
+  )
+}
+
+export async function deletePushSubscription(id) {
+  await deleteDoc(ref('pushSubscriptions', id))
+}

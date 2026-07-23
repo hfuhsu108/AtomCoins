@@ -8,6 +8,7 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
 } from 'firebase/firestore'
+import { getFunctions } from 'firebase/functions'
 
 const firebaseConfig = {
   apiKey: 'AIzaSyC1Y7fbkvZtHylQ6wT_tmE34eIbiNNVgI8',
@@ -26,6 +27,9 @@ export const auth = getAuth(app)
 export const firestore = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 })
+
+// Cloud Functions（批次 7 Web Push 的 callable）；region 對齊 functions 部署的 asia-east1
+export const functions = getFunctions(app, 'asia-east1')
 
 const googleProvider = new GoogleAuthProvider()
 

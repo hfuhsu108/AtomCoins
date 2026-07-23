@@ -31,6 +31,7 @@ export function PwaProvider({ children }) {
   } = useRegisterSW({
     onRegisteredSW(_swUrl, reg) {
       regRef.current = reg
+      setSwReg(reg ?? null) // 供 context 暴露（ref 變動不 re-render，另存 state 讓消費端拿得到）
       // 開啟 App 即主動檢查一次新版：抓到新版 → needRefresh 轉 true → 頂部橫幅浮現。
       // 離線或暫時失敗會 reject，吞掉即可（不影響設定頁手動檢查）。
       reg?.update().catch(() => {})
@@ -40,6 +41,7 @@ export function PwaProvider({ children }) {
   // idle / checking / latest / available / error
   const [checkResult, setCheckResult] = useState('idle')
   const [deferredPrompt, setDeferredPrompt] = useState(null)
+  const [swReg, setSwReg] = useState(null) // SW registration（批次 7 Web Push 訂閱判斷用）
   const [installed, setInstalled] = useState(detectStandalone)
   const isIOS = detectIOS()
 
@@ -107,6 +109,9 @@ export function PwaProvider({ children }) {
     installed,
     isIOS,
     promptInstall,
+    // SW registration（批次 7 Web Push 用）：dev 模式無 SW 時為 null，
+    // 訂閱側據此判斷是否可訂閱。push.js 實際訂閱另用 navigator.serviceWorker.ready 保證 active。
+    swRegistration: swReg,
   }
 
   return <PwaContext.Provider value={value}>{children}</PwaContext.Provider>

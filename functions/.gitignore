@@ -1,0 +1,4 @@
+node_modules/
+# shared/ 是 copy-shared.mjs 從 src/lib 複製的產物，deploy 時 predeploy 自動重生，不進版控
+shared/
+*.log

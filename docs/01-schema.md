@@ -108,6 +108,19 @@
 
 > 解析 `resolveMerchant(raw, aliases)`（`src/lib/merchant.js`）：raw 空回 null；命中者取 **match 最長**的一條回其 alias；無命中回 raw 原樣。contains 比對讓一條「統一超商股份有限公司」吃下所有分公司；要對特定分店給店名，設更長 match 自然勝出。**invoice.merchant 原始名永不改寫**，別名只影響顯示層與交易 `merchant` 欄位。商家統計 `merchantStats`（日期區間版）對 `tx.merchant ?? invoiceById[tx.invoiceId]?.merchant` 做 fallback，歷史歸帳交易免遷移即納入。
 
+## 3.15 PushSubscription 推播訂閱（docs/09 批次 7）
+
+`users/{uid}/pushSubscriptions/{id}`。`id`（=endpoint 的 djb2 雜湊 `sub_xxx`，同裝置同 endpoint 覆寫、天然去重）/ `endpoint`（推播服務 URL）/ `keys: { p256dh, auth }`（加密金鑰）/ `userAgent` / `createdAt` / `updatedAt`。
+
+> 由 `src/lib/push.js` 的 `subscribeToPush()` 寫入（`repo.upsertPushSubscription`）、`unsubscribeFromPush()` 刪除。**刻意不進 `DataProvider` 即時訂閱、不進備份匯出**（含裝置憑證、與帳務無關）。後端 Cloud Functions 發送遇 410/404 判定訂閱失效即刪除該 doc。
+
+## 3.16 pushLog／pushPrefs（docs/09 批次 7）
+
+- **pushLog**：`users/{uid}/meta/pushLog` 單文件 map `{ [dedupeKey]: sentAtISO }`。發送前查、發送後 `set(merge)`。key 規則：信用卡 `card|{accountId}|{periodEnd}|{stage}`（stage∈d7/d1/overdue，一次性）；週期扣款 `recur|{ruleId}|{nextDate}`（一次性）；爬蟲健康 `scraper|health`（≥72h 才再發）。交割缺口／週期提醒每日掃一次天然去重、不記 log。
+- **pushPrefs**：存於 `settings/singleton` 的 `pushPrefs` 欄位 `{ daily, invoice, card, settlement, recurring, scraperHealth }`（前五預設 true、scraperHealth 預設 false）。前端 `SettingsPage` 情境開關寫入，後端 Functions 發送前逐情境檢查。前後端各有一份 `DEFAULT_PREFS`（不同 bundle 無法共用，須同步）。
+
+> **scraperStatus.newCount**（爬蟲寫入 `meta/scraperStatus`）：本次同步全新入匣（inbox）張數（=`created`）。Cloud Functions 的 `onScraperStatus` trigger 見 `newCount>0` 即推「N 張新發票待歸帳」（情境 B）。
+
 ## 列舉值總表
 
 | 列舉 | 值 |

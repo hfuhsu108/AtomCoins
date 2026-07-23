@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faChevronRight, faChevronLeft, faTrashCan, faRepeat, faPercent, faCopy, faFileArrowDown, faBookmark, faStore, faWallet, faCloud, faTag } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faChevronRight, faChevronLeft, faTrashCan, faRepeat, faPercent, faCopy, faFileArrowDown, faBookmark, faStore, faWallet, faCloud, faTag, faBell } from '@fortawesome/free-solid-svg-icons'
 import { faGoogle } from '@fortawesome/free-brands-svg-icons'
-import { useCollection, useAllCollections } from '../db/DataProvider'
+import { httpsCallable } from 'firebase/functions'
+import { useCollection, useAllCollections, useSettings } from '../db/DataProvider'
 import { buildJsonBackup, buildTransactionsCsv, downloadFile } from '../lib/backup'
 import { getTheme, setTheme } from '../lib/theme'
 import { usePwa } from '../components/PwaProvider'
-import { signInWithGoogle, signOutUser } from '../lib/firebase'
+import { signInWithGoogle, signOutUser, functions } from '../lib/firebase'
+import { getSubscriptionState, subscribeToPush, unsubscribeFromPush, getPushEnv } from '../lib/push'
 import { useAuth } from '../hooks/useAuth'
 import { accountBalances } from '../lib/engine'
-import { updateRecurringRule, deleteRecurringRule, updateTemplate, deleteTemplate, deleteMerchantAlias, setSortOrders } from '../db/repo'
+import { updateRecurringRule, deleteRecurringRule, updateTemplate, deleteTemplate, deleteMerchantAlias, setSortOrders, updateSettings } from '../db/repo'
 import { useAsyncAction, settle } from '../hooks/useAsyncAction'
 import { useConfirm } from '../components/ConfirmSheet'
 import { formatBalance, formatAmount } from '../lib/format'
@@ -72,6 +74,7 @@ const MENU = [
   { key: 'recurring', label: '週期性收支', sub: '自動記帳與提醒規則', icon: faRepeat },
   { key: 'templates', label: '範本', sub: '快速記帳範本', icon: faBookmark },
   { key: 'aliases', label: '商家別名', sub: '載具公司名對應店名', icon: faStore },
+  { key: 'push', label: '推播通知', sub: '記帳提醒、卡費、交割、發票', icon: faBell },
   { key: 'cloud', label: '帳號與雲端同步', sub: '登入、多裝置同步', icon: faCloud },
   { key: 'backup', label: '備份匯出', sub: 'JSON／CSV 下載', icon: faFileArrowDown },
 ]
@@ -604,6 +607,8 @@ export default function SettingsPage() {
       </div>
       </>)}
 
+      {section === 'push' && <PushSettings />}
+
       <AccountEditSheet
         open={editing !== undefined}
         account={editing ?? null}
@@ -664,5 +669,177 @@ function TemplateRenameSheet({ template, onClose, onSave }) {
         儲存
       </button>
     </Sheet>
+  )
+}
+
+// 推播通知情境開關（批次 7）。前後端各存一份預設，須與 functions/index.js 的 DEFAULT_PREFS 一致。
+const DEFAULT_PUSH_PREFS = {
+  daily: true,
+  invoice: true,
+  card: true,
+  settlement: true,
+  recurring: true,
+  scraperHealth: false,
+}
+
+const PUSH_SCENARIOS = [
+  { key: 'daily', label: '每日記帳提醒', desc: '晚上 9 點，當天還沒記帳時提醒' },
+  { key: 'invoice', label: '新發票待歸帳', desc: '載具同步到新發票時' },
+  { key: 'card', label: '信用卡繳費', desc: '繳款日前 7 天、前 1 天、逾期' },
+  { key: 'settlement', label: '交割款不足', desc: '股票交割日餘額不足時（每日）' },
+  { key: 'recurring', label: '週期收支提醒', desc: '待確認提醒、明日自動扣款預告' },
+  { key: 'scraperHealth', label: '發票同步異常', desc: '爬蟲逾 48 小時沒成功（預設關）' },
+]
+
+// 圓角開關（無既有共用元件，就地實作）
+function Toggle({ checked, disabled, onChange, label }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative h-6 w-11 flex-none rounded-full transition-colors disabled:opacity-40 ${
+        checked ? 'bg-brand' : 'bg-surface-alt border border-line'
+      }`}
+    >
+      <span
+        className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+          checked ? 'left-[22px]' : 'left-0.5'
+        }`}
+      />
+    </button>
+  )
+}
+
+function PushSettings() {
+  const settings = useSettings()
+  const [env] = useState(getPushEnv) // 平台資訊初始化一次
+  const [state, setState] = useState('unknown') // unknown/on/off/blocked/ios-install/unsupported
+  const [busy, setBusy] = useState(false)
+  const [testMsg, setTestMsg] = useState(null)
+  const { run: runPref, error: prefError } = useAsyncAction()
+
+  useEffect(() => {
+    getSubscriptionState()
+      .then(setState)
+      .catch(() => setState('unsupported'))
+  }, [])
+
+  const prefs = { ...DEFAULT_PUSH_PREFS, ...(settings?.pushPrefs ?? {}) }
+  const isToggle = state === 'on' || state === 'off'
+
+  const SUBTITLE = {
+    unknown: '檢查中…',
+    on: '本裝置已開啟，提醒到期時會推播',
+    off: '開啟後 App 關閉也能收到提醒',
+    blocked: '通知已被瀏覽器封鎖，請到網站設定開啟',
+    'ios-install': 'iOS 需 16.4+ 並先「加入主畫面」才能訂閱',
+    unsupported: '此裝置／瀏覽器不支援推播',
+  }
+
+  // 訂閱／退訂必須在點擊 handler 內呼叫（權限請求需 user gesture）
+  async function toggleSubscription() {
+    if (busy) return
+    setBusy(true)
+    setTestMsg(null)
+    try {
+      if (state === 'on') {
+        await unsubscribeFromPush()
+        setState('off')
+      } else {
+        const ok = await subscribeToPush()
+        setState(ok ? 'on' : Notification.permission === 'denied' ? 'blocked' : 'off')
+      }
+    } catch (e) {
+      setTestMsg(`訂閱失敗：${e.message ?? e}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function setPref(key, value) {
+    runPref(async () => {
+      await settle(updateSettings({ pushPrefs: { ...prefs, [key]: value } }))
+    })
+  }
+
+  async function sendTest() {
+    setTestMsg('sending')
+    try {
+      const res = await httpsCallable(functions, 'sendTestPush')()
+      setTestMsg(`已發送到 ${res.data?.sent ?? 0} 個裝置，請留意通知`)
+    } catch (e) {
+      setTestMsg(`發送失敗：${e.message ?? e}`)
+    }
+  }
+
+  return (
+    <>
+      {/* 總開關 */}
+      <div className="bg-surface border border-line rounded-card shadow-card px-3.5 py-3">
+        <div className="flex items-center gap-3">
+          <span className="w-10 h-10 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
+            <FontAwesomeIcon icon={faBell} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[15px] font-medium">推播通知</div>
+            <div className="text-xs text-text-tertiary mt-0.5">
+              {busy ? '設定中…' : SUBTITLE[state]}
+            </div>
+          </div>
+          {isToggle && (
+            <Toggle
+              checked={state === 'on'}
+              disabled={busy}
+              onChange={toggleSubscription}
+              label="推播通知開關"
+            />
+          )}
+        </div>
+      </div>
+
+      {/* 情境開關：訂閱後才顯示 */}
+      {state === 'on' && (
+        <div className="bg-surface border border-line rounded-card shadow-card px-3.5 mt-4 divide-y divide-line-light">
+          {PUSH_SCENARIOS.map((s) => (
+            <div key={s.key} className="flex items-center gap-3 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-[15px] font-medium">{s.label}</div>
+                <div className="text-xs text-text-tertiary mt-0.5">{s.desc}</div>
+              </div>
+              <Toggle checked={!!prefs[s.key]} onChange={(v) => setPref(s.key, v)} label={s.label} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {prefError && <p className="text-[13px] text-error mt-3">偏好儲存失敗，請重試</p>}
+
+      {/* 測試通知：驗證全鏈路 */}
+      {state === 'on' && (
+        <div className="mt-4">
+          <button
+            onClick={sendTest}
+            disabled={testMsg === 'sending'}
+            className="w-full h-[42px] rounded-btn border border-line bg-surface-alt text-[14px] font-semibold disabled:opacity-40"
+          >
+            {testMsg === 'sending' ? '發送中…' : '發送測試通知'}
+          </button>
+          {testMsg && testMsg !== 'sending' && (
+            <p className="text-xs text-text-tertiary mt-2 text-center">{testMsg}</p>
+          )}
+        </div>
+      )}
+
+      {/* iOS 提示（主力裝置 Android，iOS 完整引導列為選配） */}
+      {env.isIOS && !env.isStandalone && (
+        <p className="text-xs text-text-tertiary mt-4 leading-relaxed">
+          iPhone／iPad：需 iOS 16.4 以上，並先用 Safari「加入主畫面」以 App 形式開啟，才能開啟推播。
+        </p>
+      )}
+    </>
   )
 }

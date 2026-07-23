@@ -61,12 +61,8 @@ export async function processRecurringRules(asOf = todayStr()) {
   return created
 }
 
-// 到期的提醒（reminder 模式且 nextDate ≤ 今天）。供通知區列出。
-export function dueReminders(rules, asOf = todayStr()) {
-  return (rules ?? []).filter(
-    (r) => r.isActive && r.postingMode === 'reminder' && r.nextDate && r.nextDate <= asOf,
-  )
-}
+// dueReminders 已移至 notifications.js（純檔，供 Cloud Functions 推播共用），此處 re-export 保持相容。
+export { dueReminders } from './notifications'
 
 // 使用者確認某提醒 → 建立該期交易並推進 nextDate（落後多期僅補當前一期）
 export async function fireReminder(rule, asOf = todayStr()) {
