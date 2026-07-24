@@ -30,7 +30,7 @@ import { addDays } from './shared/date.js'
 // VAPID 公鑰＝公開值，同前端 src/lib/push.js 寫死（CLAUDE.md 機密分層，同 GAS proxy 先例）。
 // ⚠ 待使用者以 `npx web-push generate-vapid-keys` 產生後，把 Public Key 同步填到這裡與 src/lib/push.js。
 // 私鑰只進 Secret Manager（下方 defineSecret），絕不寫進原始碼。
-const VAPID_PUBLIC_KEY = 'BP4hdYIO03LcyDWQsUYwNTZTdS-fgbyU1WV_fmQd1mD-Z5EBSKJWEreETWXUyb6l_Ux0lrzohRLLS3LqzQM4TgA'
+const VAPID_PUBLIC_KEY = 'BAbj7oqk3xprNUmk9kRYilYY6TFEFxcF6EK7V3HFgOsvCG7N3BetSsiNWhyuLkAwkMkX0WQ-4KSKiB3EwblZNwc'
 const VAPID_PRIVATE_KEY = defineSecret('VAPID_PRIVATE_KEY')
 const VAPID_SUBJECT = 'mailto:hfuhsu108@gmail.com'
 

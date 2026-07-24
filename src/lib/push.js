@@ -4,7 +4,7 @@
 import { upsertPushSubscription, deletePushSubscription } from '../db/repo'
 
 // ⚠ 待使用者 `npx web-push generate-vapid-keys` 產生後填入，並同步 functions/index.js 的同名常數。
-const VAPID_PUBLIC_KEY = 'BP4hdYIO03LcyDWQsUYwNTZTdS-fgbyU1WV_fmQd1mD-Z5EBSKJWEreETWXUyb6l_Ux0lrzohRLLS3LqzQM4TgA'
+const VAPID_PUBLIC_KEY = 'BAbj7oqk3xprNUmk9kRYilYY6TFEFxcF6EK7V3HFgOsvCG7N3BetSsiNWhyuLkAwkMkX0WQ-4KSKiB3EwblZNwc'
 
 function isKeyReady() {
   return !!VAPID_PUBLIC_KEY && VAPID_PUBLIC_KEY !== 'REPLACE_WITH_VAPID_PUBLIC_KEY'
