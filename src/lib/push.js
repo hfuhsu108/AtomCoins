@@ -3,8 +3,8 @@
 // VAPID 公鑰＝公開值（CLAUDE.md 機密分層，同 GAS proxy 先例），私鑰只進 Secret Manager。
 import { upsertPushSubscription, deletePushSubscription } from '../db/repo'
 
-// ⚠ 待使用者 `npx web-push generate-vapid-keys` 產生後填入，並同步 functions/index.js 的同名常數。
-const VAPID_PUBLIC_KEY = 'BAbj7oqk3xprNUmk9kRYilYY6TFEFxcF6EK7V3HFgOsvCG7N3BetSsiNWhyuLkAwkMkX0WQ-4KSKiB3EwblZNwc'
+// 換金鑰時須與 functions/index.js 的同名常數同步（成對產生，不配對會 403）。
+const VAPID_PUBLIC_KEY ='BAbj7oqk3xprNUmk9kRYilYY6TFEFxcF6EK7V3HFgOsvCG7N3BetSsiNWhyuLkAwkMkX0WQ-4KSKiB3EwblZNwc'
 
 function isKeyReady() {
   return !!VAPID_PUBLIC_KEY && VAPID_PUBLIC_KEY !== 'REPLACE_WITH_VAPID_PUBLIC_KEY'

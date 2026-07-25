@@ -39,6 +39,11 @@ export default defineConfig({
       // push-handler.js 放 public/，build 後位於站台根 /AtomCoins/push-handler.js。
       workbox: {
         importScripts: ['push-handler.js'],
+        // 必須內聯 workbox runtime：預設會把 runtime 拆成獨立檔，sw.js 變成 AMD define()，
+        // 於是 importScripts 與 fetch handler 全被推遲到 Promise 微任務才執行 —— importScripts
+        // 在 SW 初始腳本執行後呼叫違反規範（InvalidStateError），且 Chrome 判定可安裝性時
+        // 看不到 fetch handler，PWA 會退化成「加入主畫面」捷徑（2026-07-24 真機事故）。
+        inlineWorkboxRuntime: true,
       },
       manifest: {
         name: '原子記帳 AtomCoins',
