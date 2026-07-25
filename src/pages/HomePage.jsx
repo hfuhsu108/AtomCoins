@@ -193,9 +193,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* 借貸卡（沒有未結清借還款時自己隱藏）*/}
-        <LoanCard txns={txns} accounts={accounts} asOf={asOf} opt={opt} />
-
         {/* 帳戶列表 */}
         <div className="flex items-center justify-between px-0.5 pt-1">
           <span className="text-[15px] font-semibold">帳戶</span>
@@ -261,6 +258,9 @@ export default function HomePage() {
             )
           })}
         </div>
+
+        {/* 借貸卡（沒有未結清借還款時自己隱藏）*/}
+        <LoanCard txns={txns} accounts={accounts} asOf={asOf} opt={opt} />
       </div>
 
       <NotificationsSheet
