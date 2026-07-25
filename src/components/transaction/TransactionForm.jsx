@@ -37,6 +37,7 @@ import {
   UNCATEGORIZED_INCOME_ID,
 } from '../../db/seed'
 import { newId } from '../../lib/id'
+import { settlementStatus } from '../../lib/engine'
 import { resolveMerchant, merchantSuggestions } from '../../lib/merchant'
 import { todayStr, formatMd, advanceDate } from '../../lib/date'
 import { formatNumber } from '../../lib/format'
@@ -47,6 +48,7 @@ import CategoryPicker from './CategoryPicker'
 import AccountPicker from './AccountPicker'
 import CounterpartyPicker from './CounterpartyPicker'
 import MerchantAliasSheet from '../settings/MerchantAliasSheet'
+import { STATUS } from './TransactionRow'
 import StockFields, { initStockState, stockCanSave, buildStockRecord } from './StockFields'
 
 const TYPES = [
@@ -78,8 +80,9 @@ function stateFromTx(tx) {
     feeExpr: tx.fee ? String(tx.fee) : '',
     counterpartyId: tx.counterpartyId ?? null,
     reconciled: tx.isReconciled ?? false,
-    installment: null, // 編輯既有交易不重新設定分期/週期
+    installment: null, // 編輯既有交易不重新設定分期/週期/代墊
     recurring: null,
+    advancedBy: null,
   }
   if (tx.type === 'expense' || tx.type === 'income') {
     base.splits = (tx.splits ?? []).map((s) => ({
@@ -124,6 +127,7 @@ function stateFromInvoice(invoice, aliases) {
     reconciled: false,
     installment: null,
     recurring: null,
+    advancedBy: null,
   }
 }
 
@@ -148,6 +152,7 @@ function stateFromTemplate(template) {
     reconciled: false,
     installment: null,
     recurring: null,
+    advancedBy: null,
   }
   if (p.type === 'expense' || p.type === 'income') {
     const splits = (p.splits ?? []).map((s) => ({
@@ -197,6 +202,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           reconciled: false,
           installment: null, // { periods, startDate, fundingAccountId }
           recurring: null, // { unit, interval, mode }
+          advancedBy: null, // 由他人代墊：對象 id
         },
   )
   // 開啟中的選擇器：{ kind:'category'|'account'|'counterparty', target }
@@ -224,6 +230,15 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
   const isTransfer = type === 'transfer'
   const isLoanLike = type === 'receivable' || type === 'payable'
   const isStock = type === 'stock'
+
+  // 編輯既有借還款且型別未變：儲存時完全不寫 repayments（見 buildList）。
+  // 應收↔應付互換也算型別改變——還款的現金流方向會反轉，不能沿用。
+  const editingSameLoanType = !!initialTx && isLoanLike && initialTx.type === type
+  // 借還款狀態唯讀顯示：還款只在借貸明細登錄，本表單不編輯它
+  const loanRepaid = editingSameLoanType
+    ? (initialTx.repayments ?? []).reduce((sum, r) => sum + r.amount, 0)
+    : 0
+  const loanStatus = STATUS[editingSameLoanType ? settlementStatus(initialTx) : 'unpaid']
 
   // 是否以多列拆帳呈現：有多列或任一列標記代墊
   const hasAdvance = state.splits.some((s) => s.advanceCounterpartyId)
@@ -293,6 +308,11 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
       return { ...s, splits }
     })
   }
+  // 由他人代墊：開啟＝直接選對象（選完才設值），因此不會出現「開著但沒選人」的半殘狀態
+  const toggleAdvancedBy = () => {
+    if (state.advancedBy) set({ advancedBy: null })
+    else setPicker({ kind: 'counterparty', target: 'advancedBy' })
+  }
 
   // ── 分期 / 週期 切換 ───────────────────────────────────────
   const toggleInstallment = () => {
@@ -341,6 +361,8 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
     } else if (p.kind === 'counterparty') {
       if (p.target === 'main') {
         set({ counterpartyId: id })
+      } else if (p.target === 'advancedBy') {
+        set({ advancedBy: id })
       } else {
         // 代墊：把該拆帳列綁對象
         setState((s) => {
@@ -381,7 +403,8 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
         }))
         .filter((s) => s.amount > 0)
       const fallback = type === 'expense' ? UNCATEGORIZED_EXPENSE_ID : UNCATEGORIZED_INCOME_ID
-      const normal = evaluated.filter((s) => !s.advance)
+      // 代墊只對支出成立；非支出時忽略 advance 標記，否則該列會兩邊都不入而金額憑空消失
+      const normal = type === 'expense' ? evaluated.filter((s) => !s.advance) : evaluated
       const advances = type === 'expense' ? evaluated.filter((s) => s.advance) : []
 
       const merchant = state.merchant.trim() || null
@@ -411,6 +434,23 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           accountId,
           amount: adv.amount,
           counterpartyId: adv.advance,
+          tradeDate,
+          postingDate,
+          note,
+          tagIds: [],
+          projectId: null,
+          repayments: [],
+          isReconciled: false,
+        })
+      }
+      // 由他人代墊：同額同帳戶的應付與這筆支出相抵 → 現金淨變動 0，但支出照算、欠款掛著。
+      // 金額取主筆而非 total：與代墊拆帳列互斥時兩者相等，寫成主筆日後放寬互斥也不會算錯。
+      if (type === 'expense' && state.advancedBy && list.length > 0) {
+        list.push({
+          type: 'payable',
+          accountId,
+          amount: list[0].amount,
+          counterpartyId: state.advancedBy,
           tradeDate,
           postingDate,
           note,
@@ -453,7 +493,10 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
         note,
         tagIds: [],
         projectId: null,
-        repayments: [],
+        // 編輯既有借還款時給 undefined：stripUndefined 會剝掉這個 key，而 updateTransaction
+        // 走 updateDoc（patch 語義）→ 已登錄的還款原樣保留。刻意不從表單 state 讀回再寫回，
+        // 否則表單開著時他裝置新增的還款會被這份陳舊快照覆寫。
+        repayments: editingSameLoanType ? undefined : [],
         isReconciled: state.reconciled,
       },
     ]
@@ -514,6 +557,16 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
       const list = buildList()
       if (list.length === 0) return
       if (initialTx) {
+        // 改掉借還款的型別（含應收↔應付互換）會讓已登錄的還款失去意義而被清除，先明示筆數
+        const oldRepayments = initialTx.repayments ?? []
+        if (
+          oldRepayments.length > 0 && !editingSameLoanType &&
+          !(await confirm({
+            title: '清除還款記錄',
+            message: `這筆已登錄 ${oldRepayments.length} 筆還款。改變交易型別會一併刪除這些還款記錄，且無法復原。繼續？`,
+            danger: true,
+          }))
+        ) return
         // 編輯：單筆直接更新；變多筆則原子重建整組（發票 ref 跟著移到新主筆）。
         // 群組成員的編輯不做連動（語義複雜，單人 app 用刪除重建較安全，docs/08 批次 1-3），
         // 只警告＋允許讓使用者知情。
@@ -530,7 +583,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           }
           if (
             initialTx.linkGroupId &&
-            !(await confirm({ title: '重建群組', message: '將重建整組關聯交易，關聯應收筆上已記錄的還款會被清除。繼續？', danger: true }))
+            !(await confirm({ title: '重建群組', message: '將重建整組關聯交易，關聯應收／應付筆上已記錄的還款會被清除。繼續？', danger: true }))
           ) return
           await settle(replaceTransactionGroup(initialTx, list))
         }
@@ -562,7 +615,8 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
   const showTemplateChips = !initialTx && !initialInvoice && !isStock && templates.length > 0
   const applyTemplate = (t) => setState(stateFromTemplate(t))
 
-  // 存為範本可用性：股票／分期／週期／代墊拆帳不可存；且需有實質內容
+  // 存為範本可用性：股票／分期／週期／代墊（雙向）不可存；且需有實質內容
+  // 代墊類的 payload 只描述得了主筆，存了會靜默丟失關聯的應收／應付
   const templateHasContent = isExpenseLike
     ? state.splits.some((s) => s.categoryId || (toAmount(s.expr) ?? 0) > 0)
     : isTransfer
@@ -570,7 +624,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
       : isLoanLike
         ? !!state.counterpartyId
         : false
-  const templateBlocked = isStock || !!state.installment || !!state.recurring || hasAdvance
+  const templateBlocked = isStock || !!state.installment || !!state.recurring || hasAdvance || !!state.advancedBy
   const canSaveTemplate = !templateBlocked && templateHasContent
 
   // 以目前表單狀態組 payload（不含 id／日期／戳記，剝殼仿 recurring occurrenceFromRule）
@@ -779,6 +833,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
                 onClearAdvance={clearAdvance}
                 onRemove={removeSplit}
                 onMarkAdvance={markAdvance}
+                canAdvance={type === 'expense' && !state.advancedBy}
                 onAddSplit={addSplit}
                 total={total}
                 targetTotal={initialInvoice?.totalAmount ?? 0}
@@ -792,6 +847,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
                 <ActionBtn
                   icon={faHandHoldingDollar}
                   label="代墊"
+                  disabled={!!state.advancedBy}
                   onClick={() => markAdvance(state.activeSplit)}
                 />
               )}
@@ -802,6 +858,19 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
                 onClick={() => setAdvOpen((v) => !v)}
               />
             </div>
+
+            {/* 由他人代墊（僅支出、僅新增；與分期／週期互斥，故它們開著時不出現）*/}
+            {type === 'expense' && !initialTx && !state.installment && !state.recurring && (
+              <div className="mt-2.5">
+                <AdvancedByBox
+                  counterparty={lookups.cp[state.advancedBy]}
+                  blocked={hasAdvance}
+                  total={total}
+                  onToggle={toggleAdvancedBy}
+                  onPick={() => setPicker({ kind: 'counterparty', target: 'advancedBy' })}
+                />
+              </div>
+            )}
 
             {/* 備註常駐可見（不再摺進進階），入帳日等其餘設定維持在進階 */}
             <div className="mt-2.5">
@@ -829,8 +898,9 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
                   onToggle={() => set({ reconciled: !state.reconciled })}
                 />
 
-                {/* 分期付款（僅支出＋信用卡帳戶；新增時可設定；歸帳不提供）*/}
-                {type === 'expense' && !initialTx && !initialInvoice && (
+                {/* 分期付款（僅支出＋信用卡帳戶；新增時可設定；歸帳不提供）
+                    與「由他人代墊」互斥：分期只寫 expense＋N 筆轉帳，會靜默丟掉應付那筆 */}
+                {type === 'expense' && !initialTx && !initialInvoice && !state.advancedBy && (
                   <InstallmentBox
                     enabled={isCardAccount}
                     installment={state.installment}
@@ -842,8 +912,9 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
                   />
                 )}
 
-                {/* 週期性收支（新增、非分期時可設定；歸帳不提供）*/}
-                {!initialTx && !initialInvoice && !state.installment && (
+                {/* 週期性收支（新增、非分期時可設定；歸帳不提供）
+                    與「由他人代墊」互斥：規則 payload 只留主筆，每期都會漏記應付 */}
+                {!initialTx && !initialInvoice && !state.installment && !state.advancedBy && (
                   <RecurringBox recurring={state.recurring} onToggle={toggleRecurring} onSet={setRecurring} />
                 )}
               </div>
@@ -888,9 +959,15 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
             />
             <div className="flex items-center gap-2 px-1">
               <span className="text-xs text-text-tertiary">狀態</span>
-              <span className="text-xs font-semibold text-warning-text bg-warning-bg rounded-pill px-2.5 py-1">
-                未結清
+              <span className={`text-xs font-semibold rounded-pill px-2.5 py-1 ${loanStatus.cls}`}>
+                {loanStatus.label}
               </span>
+              {/* 還款只能在借貸明細登錄；這裡唯讀顯示，避免使用者以為改金額會連動還款 */}
+              {loanRepaid > 0 && (
+                <span className="text-xs text-text-tertiary tabular-nums">
+                  已還 NT$ {formatNumber(loanRepaid)}
+                </span>
+              )}
             </div>
             <PostingDateRow
               tradeDate={state.tradeDate}
@@ -918,7 +995,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
             </button>
             {templateBlocked && (
               <p className="text-[11px] text-text-tertiary text-center mt-1.5">
-                股票／分期／週期／代墊拆帳不可存範本
+                股票／分期／週期／代墊不可存範本
               </p>
             )}
           </div>
@@ -1108,6 +1185,7 @@ function SplitRows({
   onAddSplit,
   total,
   targetTotal = 0,
+  canAdvance = false,
 }) {
   const diff = targetTotal - total
   return (
@@ -1167,29 +1245,32 @@ function SplitRows({
                   <FontAwesomeIcon icon={faChevronDown} className="text-text-tertiary text-[10px] ml-1.5" />
                 </button>
               )}
-              <div className="flex gap-2 mt-1">
-                {advance ? (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onClearAdvance(i)
-                    }}
-                    className="text-[11px] text-text-tertiary"
-                  >
-                    取消代墊
-                  </button>
-                ) : (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onMarkAdvance(i)
-                    }}
-                    className="text-[11px] text-text-tertiary"
-                  >
-                    標記代墊
-                  </button>
-                )}
-              </div>
+              {/* 代墊只對支出成立；非支出不給標記，但已標記的仍可取消（清掉切換型別留下的舊值）*/}
+              {(advance || canAdvance) && (
+                <div className="flex gap-2 mt-1">
+                  {advance ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onClearAdvance(i)
+                      }}
+                      className="text-[11px] text-text-tertiary"
+                    >
+                      取消代墊
+                    </button>
+                  ) : (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onMarkAdvance(i)
+                      }}
+                      className="text-[11px] text-text-tertiary"
+                    >
+                      標記代墊
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             <span className={`text-[15px] font-semibold tabular-nums ${active ? 'text-brand' : ''}`}>
               {formatNumber(amount)}
@@ -1218,11 +1299,12 @@ function SplitRows({
   )
 }
 
-function ActionBtn({ icon, label, trailing, onClick }) {
+function ActionBtn({ icon, label, trailing, onClick, disabled = false }) {
   return (
     <button
       onClick={onClick}
-      className="flex-1 flex items-center justify-center gap-1.5 h-[42px] rounded-btn bg-surface border border-line text-[13px] font-medium"
+      disabled={disabled}
+      className="flex-1 flex items-center justify-center gap-1.5 h-[42px] rounded-btn bg-surface border border-line text-[13px] font-medium disabled:opacity-40"
     >
       <FontAwesomeIcon icon={icon} className="text-text-secondary text-xs" /> {label}
       {trailing && <FontAwesomeIcon icon={trailing} className="text-text-tertiary text-[9px]" />}
@@ -1345,6 +1427,39 @@ function ToggleRow({ label, on, onToggle }) {
     <div className="flex items-center justify-between px-4 py-3 bg-surface border border-line rounded-modal">
       <span className="text-sm text-text-secondary">{label}</span>
       <Switch on={on} onToggle={onToggle} />
+    </div>
+  )
+}
+
+// 由他人代墊（docs/03 §F 反向）：別人幫我付掉這筆消費。
+// 儲存時另記一筆同額同帳戶的應付 → 現金淨變動 0、支出照算、欠款進借貸卡。
+// 與「代墊拆帳列（我墊別人）」互斥：兩者同時成立會變成 expense＋receivable＋payable
+// 三筆同群組，而應付該記全額還是只記我自己那份沒有唯一正解，寧可拆成兩次記。
+function AdvancedByBox({ counterparty, blocked, total, onToggle, onPick }) {
+  const on = !!counterparty
+  return (
+    <div className="bg-surface border border-line rounded-modal p-3 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <span className="text-sm text-text-secondary">由他人代墊</span>
+          {blocked && <span className="block text-[11px] text-text-tertiary mt-0.5">已有代墊拆帳列，兩者不可並用</span>}
+        </div>
+        <Switch on={on} disabled={blocked} onToggle={blocked ? undefined : onToggle} />
+      </div>
+      {on && (
+        <>
+          <div className="flex items-center justify-between text-[13px]">
+            <span className="text-text-secondary">代墊者</span>
+            <button onClick={onPick} className="font-semibold flex items-center gap-1.5">
+              {counterparty.name}
+              <FontAwesomeIcon icon={faChevronDown} className="text-text-tertiary text-[10px]" />
+            </button>
+          </div>
+          <div className="text-[11px] text-text-tertiary tabular-nums border-t border-line-light pt-2">
+            另記一筆應付 NT$ {formatNumber(total)}（同帳戶，現金不變動）
+          </div>
+        </>
+      )}
     </div>
   )
 }

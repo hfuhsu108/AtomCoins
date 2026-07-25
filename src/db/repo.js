@@ -287,8 +287,61 @@ export async function setSortOrders(name, updates) {
 
 // ── Counterparty / Project / Tag（借還款與標記用，建立即用）────
 export async function createCounterparty(data) {
-  const record = { ...data, id: data.id ?? newId(), createdAt: now() }
+  const record = { ...data, id: data.id ?? newId(), sortOrder: data.sortOrder ?? Date.now(), createdAt: now() }
   return createDoc('counterparties', record)
+}
+
+export async function updateCounterparty(id, patch) {
+  await patchDoc('counterparties', id, patch)
+}
+
+// 刪除對象：有借還款引用就擋下（丟出可直接顯示的訊息）。
+// 不做 cascade——刪帳戶時那些交易本來就無處可歸，刪對象只是失去標籤，
+// 連同應收應付一起刪等於抹掉真實債權債務；也不仿 deleteCategoryReassign 改歸退路，
+// 因為分類有 seed 保證的「未分類」，對象沒有對應概念。
+export async function deleteCounterparty(id) {
+  const snap = await getDocs(query(col('transactions'), where('counterpartyId', '==', id)))
+  if (!snap.empty) {
+    throw new Error(`此對象仍有 ${snap.size} 筆借還款記錄，請先刪除或改指其他對象`)
+  }
+  await deleteDoc(ref('counterparties', id))
+}
+
+// ── 借還款的還款記錄（docs/01 §3.6）───────────────────────────
+// 一律先讀最新 repayments 再 append，禁止用 arrayUnion：它對結構相同的物件會去重，
+// 而「同一天、同金額、同帳戶還兩次」是真實情境，會被靜默吃掉一筆。
+async function appendRepayment(txId, repayment) {
+  const snap = await getDoc(ref('transactions', txId))
+  if (!snap.exists()) throw new Error('找不到這筆借還款記錄')
+  return [...(snap.data().repayments ?? []), repayment]
+}
+
+export async function addRepayment(txId, repayment) {
+  await patchDoc('transactions', txId, { repayments: await appendRepayment(txId, repayment) })
+}
+
+// 以值比對刪除（date+amount+accountId），不用畫面 index——多裝置同步下兩者可能不一致
+export async function removeRepayment(txId, repayment) {
+  const snap = await getDoc(ref('transactions', txId))
+  if (!snap.exists()) throw new Error('找不到這筆借還款記錄')
+  const list = snap.data().repayments ?? []
+  const idx = list.findIndex(
+    (r) => r.date === repayment.date && r.amount === repayment.amount && r.accountId === repayment.accountId,
+  )
+  if (idx < 0) throw new Error('找不到這筆還款記錄，可能已在其他裝置刪除')
+  await patchDoc('transactions', txId, { repayments: list.filter((_, i) => i !== idx) })
+}
+
+// 淨額結清：對同一對象的多筆借還款各補一筆全額還款，整批原子寫入。
+// 單一對象的未結清筆數遠低於 writeBatch 的 500 上限，不做分批。
+export async function addRepaymentsBatch(entries) {
+  const lists = await Promise.all(entries.map((e) => appendRepayment(e.txId, e.repayment)))
+  const batch = writeBatch(firestore)
+  const ts = now()
+  entries.forEach((e, i) => {
+    batch.update(ref('transactions', e.txId), stripUndefined({ repayments: lists[i], updatedAt: ts }))
+  })
+  await batch.commit()
 }
 
 export async function createProject(data) {

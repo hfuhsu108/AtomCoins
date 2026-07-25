@@ -1,18 +1,19 @@
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { useCollection } from '../db/DataProvider'
 import { deleteTransaction, deleteTransactionGroup, deleteInstallmentPlan, deleteStockTransaction, unrecordInvoice } from '../db/repo'
 import { useAsyncAction, settle } from '../hooks/useAsyncAction'
+import useCloseView from '../hooks/useCloseView'
 import { useConfirm } from '../components/ConfirmSheet'
 import TransactionForm from '../components/transaction/TransactionForm'
 
 // 記帳頁：無 id=新增；帶 ?id= 進入編輯（畫面2）；帶 ?stxId= 編輯股票交易；帶 ?invoiceId= 從發票歸帳。
 export default function AddTransactionPage() {
-  const navigate = useNavigate()
   const [params] = useSearchParams()
   const id = params.get('id')
   const stxId = params.get('stxId')
   const invoiceId = params.get('invoiceId')
-  const close = () => navigate(-1)
+  // 從 PWA 捷徑／推播冷啟動時本頁是第一筆 history，回不去就落回首頁（見 useCloseView）
+  const close = useCloseView()
 
   const txns = useCollection('transactions')
   const stockTxns = useCollection('stockTransactions')

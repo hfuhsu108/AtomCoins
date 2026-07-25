@@ -324,6 +324,38 @@ VAPID 公鑰＝公開值，寫死前端（同 GAS proxy 先例，CLAUDE.md 機�
 5. **分類管理**：設定頁新增「分類管理」子區塊（`CategoryManager`＋`CategoryEditSheet`）——支出/收入切換、母子清單、上下箭頭排序、新增/編輯/刪除大小分類，可選 `icon`（`icons.js` 擴充約 60 個 FA6＋`CATEGORY_ICON_NAMES`）與 `color`（`CATEGORY_COLORS` 15 色盤）。刪除 `repo.deleteCategoryReassign`（母連子刪、引用交易改歸未分類、保護系統退路分類）。`engine.categoryStatsRange` rollup 帶 `color`；分類色套用於 `CategoryPicker`（母子 icon）、`TransactionRow`（明細列 icon）、`FlowReport`（圓餅/排行，未設色退回圖表色盤）。
 6. **自訂排序**：帳戶（設定頁帳戶列，同型別內）與分類皆用上下箭頭鈕與相鄰項交換 `sortOrder`（`repo.setSortOrders` 批次；`ReorderBtns` 共用元件）。
 
+---
+
+## 後續調整（2026-07-25，第三批：借貸功能補完＋捷徑鎖死修復）
+
+使用者回報三個問題：① 沒有查詢欠款／還款狀態的入口，也要能編輯對象 ② 互相代墊、最後淨額結清一筆該怎麼記 ③ PWA 捷徑「記一筆」按儲存不跳出、左上叉叉沒反應。
+
+查證後發現對象（`counterparties`）的資料層本來就完整（collection、`counterpartyId`、`outstanding`／`settlementStatus`、淨資產已納入），缺的是整個 UI；而且**「登錄還款」從未實作**（`repayments` 全 codebase 都硬寫 `[]`），所以結清狀態永遠停在「未結清」。
+
+**三個拍板決策**：① 借貸總覽入口＝**首頁獨立卡片**（無未結清時整張卡隱藏）② 記帳表單加「**由他人代墊**」快捷（自動產 `expense`＋`payable` 綁 `linkGroupId`）③ 淨額結清＝**兩邊各記全額還款到同一帳戶**（引擎不用改）。
+
+### 階段 A：Bug 修復
+
+1. **編輯借還款會清空還款記錄**（尚未爆發的資料遺失路徑）：`buildList()` 對 receivable/payable 無條件回 `repayments: []`，編輯即整包覆寫。修法＝編輯同型別時**完全不放這個 key**（`patchDoc` 走 `updateDoc`，patch 語義原樣保留），改型別才寫 `[]` 且先 confirm 筆數。刻意不「讀回 state 再寫回」——表單開著時他裝置新增的還款會被陳舊快照覆寫。應收↔應付互換也算改型別（還款現金流方向會反轉）。順帶把 loan 區塊硬寫的「未結清」badge 改成真實狀態＋已還金額（唯讀）。
+2. **捷徑／推播冷啟動被鎖死**：捷徑 URL 是 `/AtomCoins/#/add`，冷啟動時 session history 只有一筆，`navigate(-1)` → `history.go(-1)` 超出範圍是**靜默 no-op**；`/add` 又在 `AppLayout` 之外（無底部導覽）且 `fixed inset-0`，於是完全出不去，儲存成功也只是畫面不動。新增 `hooks/useCloseView.js`：`window.history.state?.idx > 0` 才 `navigate(-1)`，否則 `navigate('/', { replace: true })`（用 replace 讓系統返回鍵直接離開 App）。套用於 `AddTransactionPage` 與 `CardDetailPage`（後者在推播深連結下有同樣問題）。不用 `useNavigationType()`——冷啟動與按上一頁回本頁都是 `POP`，區分不了。
+3. **收入拆帳列標記代墊會靜默丟掉金額**（探索中發現）：`SplitRows` 的「標記代墊」沒有型別守衛，但 `buildList` 的 `advances` 只在支出時取，該列兩邊都不入而金額消失，畫面 `total` 卻仍算進去。修：`canAdvance` prop＋`normal` 過濾兜底。
+
+### 階段 B：借貸總覽＋還款登錄＋一次結清
+
+- `engine`：`loanTotals` / `counterpartyLoanStats` / `netSettlementPlan`（見 docs/02 §4.3.1，含「Σ 對象列＝全域合計」不變式）；`HomePage` 的 inline reduce 改用 `loanTotals` 統一口徑。
+- `repo`：`updateCounterparty` / `deleteCounterparty`（有引用即 throw）/ `addRepayment` / `removeRepayment` / `addRepaymentsBatch`；`createCounterparty` 補 `sortOrder`。**禁用 `arrayUnion`**（同日同額同帳戶會被去重）。
+- `components/loan/`：`LoanCard`（首頁，空則隱藏；明細開著時不連同 Sheet 一起卸載）、`CounterpartyLoanSheet`（未結清/全部切換、逐筆展開還款、編輯這筆）、`RepaymentSheet`（金額硬上限＝未結清餘額）、`NetSettleSheet`（淨額與方向白話、批次寫入）。三態 badge 由 `TransactionRow` export `STATUS` 共用。
+
+### 階段 C：對象管理＋反向代墊
+
+- `CounterpartyManager`＋`CounterpartyEditSheet`（設定頁「借貸對象」子區塊單行掛載）；`CounterpartyPicker` 每列加鉛筆鈕改名（不放刪除）、依 `sortOrder` 排序。編輯 Sheet 自己訂閱 `transactions`，讓從 Picker 開啟時刪除守衛照樣有效。
+- `TransactionForm` 加 `advancedBy`＋`AdvancedByBox`：開關打開即開對象選擇器（選完才設值，不會有半殘狀態），`buildList` 追加同額同帳戶的 `payable`。**互斥**：代墊拆帳列、分期、週期、存範本（後三者只保留主筆，會靜默丟掉應付）、編輯既有交易。歸帳允許使用（`recordInvoice` 本就支援多筆）。
+- `TransactionRow` 的群組筆標籤分方向：應收＝「代墊」、應付＝「代付」。
+
+### 進度
+
+階段 A–D 已實作完成（lint 乾淨、build 綠燈），**待真機驗收**——尤其捷徑冷啟動必須在已安裝的 PWA 上測，本機 dev 的 origin／SW scope 驗不準。
+
 ## 保留／明確不做（本輪拍板）
 
 - 自訂起訖區間報表：批次 4 只做年視角，自訂區間保留。

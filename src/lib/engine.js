@@ -190,6 +190,66 @@ export function settlementStatus(tx) {
   return 'partial'
 }
 
+// ── 借貸聚合（docs/02 §4.4）───────────────────────────────────
+// 以下三個函式一律以 outstandingAsOf 為唯一口徑，不得自行 reduce repayments，
+// 這是它們與 netWorth 永遠不會漂移的保證。
+
+const isLoan = (tx) => tx.type === 'receivable' || tx.type === 'payable'
+
+// 全域未結清合計。net > 0 表示別人淨欠你。
+export function loanTotals(txns, asOf = null) {
+  let receivable = 0
+  let payable = 0
+  for (const tx of txns) {
+    if (!isLoan(tx)) continue
+    const left = outstandingAsOf(tx, asOf)
+    if (left <= 0) continue
+    if (tx.type === 'receivable') receivable += left
+    else payable += left
+  }
+  return { receivable, payable, net: receivable - payable }
+}
+
+// 依對象彙總未結清借還款，依淨額絕對值由大到小排序。
+// counterpartyId 可能為 null（未指定對象）——這一桶不可丟掉，否則各列合計會與
+// loanTotals 對不起來（首頁借貸卡與淨資產卡就會出現兩個數字）。
+export function counterpartyLoanStats(txns, asOf = null) {
+  const map = new Map()
+  for (const tx of txns) {
+    if (!isLoan(tx)) continue
+    const left = outstandingAsOf(tx, asOf)
+    if (left <= 0) continue
+    const key = tx.counterpartyId ?? null
+    const row = map.get(key) ?? { counterpartyId: key, receivable: 0, payable: 0, net: 0, count: 0 }
+    if (tx.type === 'receivable') row.receivable += left
+    else row.payable += left
+    row.count += 1
+    map.set(key, row)
+  }
+  const rows = [...map.values()]
+  for (const r of rows) r.net = r.receivable - r.payable
+  return rows.sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
+}
+
+// 淨額結清方案（docs/03 §D）：對某對象所有未結清的借還款各補一筆「全額還款」，
+// 全部指向同一帳戶同一天 → 應收 +、應付 − 相抵，帳戶淨變動剛好等於 net，
+// 不需要另記一筆轉帳。asOf 固定用當下口徑（結清是此刻的動作）。
+export function netSettlementPlan(txns, counterpartyId) {
+  const entries = []
+  let recvTotal = 0
+  let payTotal = 0
+  for (const tx of txns) {
+    if (!isLoan(tx)) continue
+    if ((tx.counterpartyId ?? null) !== (counterpartyId ?? null)) continue
+    const left = outstanding(tx)
+    if (left <= 0) continue
+    entries.push({ txId: tx.id, type: tx.type, amount: left })
+    if (tx.type === 'receivable') recvTotal += left
+    else payTotal += left
+  }
+  return { entries, recvTotal, payTotal, net: recvTotal - payTotal }
+}
+
 // 淨資產（docs/02 §4.3）。holdingsValue=持股市值（成交日基準，由 computeHoldings 算）。
 // stockTxns 讓銀行餘額反映「已交割」買賣；pendingStockNet 補上「未交割」買賣的未來現金影響，
 // 抵銷成交日基準持股造成的雙算（T+2 期間：現金未動 + 持股已計 → 加未交割淨額還原）。

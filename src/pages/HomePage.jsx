@@ -17,7 +17,7 @@ import {
   accountBalances,
   netWorth,
   monthlySummary,
-  outstandingAsOf,
+  loanTotals,
   pendingByAccount,
 } from '../lib/engine'
 import { dueReminders, fireReminder } from '../lib/recurring'
@@ -27,6 +27,7 @@ import { todayStr, parseDate, monthLabel, formatMd } from '../lib/date'
 import { getIcon, ACCOUNT_TYPE_ICON } from '../lib/icons'
 import useNetWorth from '../hooks/useNetWorth'
 import Sheet from '../components/Sheet'
+import LoanCard from '../components/loan/LoanCard'
 
 const GROUPS = [
   { type: 'cash', label: '現金' },
@@ -92,13 +93,15 @@ export default function HomePage() {
   // 淨資產組成（與 nw 同口徑：asOf=今天）
   const live = accounts.filter((a) => !a.isArchived)
   const sumType = (t) => live.filter((a) => a.type === t).reduce((s, a) => s + balances[a.id], 0)
+  // 借貸合計與下方借貸卡共用同一函式，兩處數字才不會各算各的
+  const loans = loanTotals(txns, asOf)
   const comp = {
     cash: sumType('cash'),
     bank: sumType('bank'),
     invest: holdingsValue,
-    recv: txns.filter((t) => t.type === 'receivable').reduce((s, t) => s + outstandingAsOf(t, asOf), 0),
+    recv: loans.receivable,
     card: sumType('credit_card'),
-    pay: txns.filter((t) => t.type === 'payable').reduce((s, t) => s + outstandingAsOf(t, asOf), 0),
+    pay: loans.payable,
   }
 
   const opt = { hidden }
@@ -189,6 +192,9 @@ export default function HomePage() {
             </span>
           </div>
         </div>
+
+        {/* 借貸卡（沒有未結清借還款時自己隱藏）*/}
+        <LoanCard txns={txns} accounts={accounts} asOf={asOf} opt={opt} />
 
         {/* 帳戶列表 */}
         <div className="flex items-center justify-between px-0.5 pt-1">

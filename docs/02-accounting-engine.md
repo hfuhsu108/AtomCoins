@@ -41,6 +41,18 @@ postings 來源（同一引擎讀兩種來源：Transaction 與 StockTransaction
        − Σ 應付未結清
 ```
 
+### 4.3.1 借貸聚合
+
+```
+loanTotals(txns, asOf)              → { receivable, payable, net }
+counterpartyLoanStats(txns, asOf)   → [{ counterpartyId, receivable, payable, net, count }]
+netSettlementPlan(txns, cpId)       → { entries:[{txId,type,amount}], recvTotal, payTotal, net }
+```
+
+- 三者一律以 `outstandingAsOf(tx, asOf)` 為唯一口徑，**不得自行 reduce `repayments`**——這是它們與 `netWorth` 不會漂移的保證。首頁淨資產卡的「應收／應付」與借貸卡都吃 `loanTotals`。
+- **不變式**：`Σ counterpartyLoanStats(...).receivable === loanTotals(...).receivable`（payable 同）。因此 `counterpartyId` 為 null 的那一桶不可丟掉，UI 顯示為「未指定對象」。
+- **一次結清（淨額）**：對某對象所有未結清的應收應付各補一筆「全額還款」，全部指向同一帳戶同一天。應收還款 `+`、應付還款 `−` 在該帳戶相抵，淨變動剛好等於 `net`，**因此不需要也不該另記一筆轉帳**。
+
 ## 4.4 報表聚合範圍
 
 - **收支統計**：只取 type∈{expense, income} 的拆帳列，依 類別/標籤/專案/對象/帳戶/時間 聚合。

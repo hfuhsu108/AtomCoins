@@ -6,6 +6,7 @@ import { useCollection, useSettings } from '../db/DataProvider'
 import { accountBalances, statementPeriods } from '../lib/engine'
 import { payCreditCardStatement } from '../db/repo'
 import { useAsyncAction, settle } from '../hooks/useAsyncAction'
+import useCloseView from '../hooks/useCloseView'
 import { formatAmount, formatBalance, formatNumber } from '../lib/format'
 import { todayStr, formatMd } from '../lib/date'
 import { accountIcon } from '../lib/icons'
@@ -16,6 +17,8 @@ import Sheet from '../components/Sheet'
 export default function CardDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  // 推播深連結可能讓本頁成為第一筆 history，此時 navigate(-1) 無效（見 useCloseView）
+  const close = useCloseView()
   const accounts = useCollection('accounts')
   const txns = useCollection('transactions')
   const categories = useCollection('categories')
@@ -53,7 +56,7 @@ export default function CardDetailPage() {
       <div className="max-w-3xl mx-auto px-4 pt-4 pb-10 lg:px-7 lg:pt-6">
         <header className="flex items-center gap-3 mb-4">
           <button
-            onClick={() => navigate(-1)}
+            onClick={close}
             className="w-[38px] h-[38px] rounded-chip bg-surface border border-line text-text-secondary flex items-center justify-center"
           >
             <FontAwesomeIcon icon={faChevronLeft} />

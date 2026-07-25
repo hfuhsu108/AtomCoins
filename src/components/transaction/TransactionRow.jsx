@@ -10,7 +10,8 @@ import { formatNumber } from '../../lib/format'
 import { formatMd } from '../../lib/date'
 import { settlementStatus, outstanding, isPending } from '../../lib/engine'
 
-const STATUS = {
+// 借還款三態 badge：export 供記帳表單與借貸明細共用，避免各寫一份導致配色漂移
+export const STATUS = {
   unpaid: { label: '未結清', cls: 'text-warning-text bg-warning-bg' },
   partial: { label: '部分結清', cls: 'text-warning-text bg-warning-bg' },
   settled: { label: '已結清', cls: 'text-success bg-success-bg' },
@@ -66,7 +67,8 @@ function describe(tx, lookups) {
   // receivable / payable
   const cp = lookups.cp[tx.counterpartyId]
   const isRecv = tx.type === 'receivable'
-  const lent = tx.linkGroupId ? '代墊' : isRecv ? '借出' : '借入'
+  // 群組筆分兩個方向：應收＝我幫人墊、應付＝別人幫我墊（docs/03 §F）
+  const lent = tx.linkGroupId ? (isRecv ? '代墊' : '代付') : isRecv ? '借出' : '借入'
   const st = STATUS[settlementStatus(tx)]
   const left = outstanding(tx)
   return {

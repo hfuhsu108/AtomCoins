@@ -86,6 +86,8 @@
 
 **批次 7（Web Push 推播）已於 2026-07-25 完成並真機驗收通過**：`functions/`（Cloud Functions v2，region `asia-east1`，VAPID web-push 非 FCM）——`morningDigest` 09:00（卡費 D-7/D-1/逾期、交割缺口、週期提醒、明日扣款預告、爬蟲停擺）、`eveningNudge` 21:00（當天沒記帳）、`onScraperStatus` trigger（新發票即時推）、`sendTestPush` callable；`meta/pushLog` 去重、`settings.pushPrefs` 逐情境開關、410/404 清失效訂閱。情境判定**重用前端純函式**（`copy-shared.mjs` predeploy 把 `engine/date/notifications` 複製到 `functions/shared/` 並補 `.js` 副檔名，Node 20 純 ESM 必要），禁止手抄第二份口徑。前端 `lib/push.js`、`PwaProvider` 暴露 `swRegistration`、設定頁「推播通知」子區塊。新增 collection `pushSubscriptions`（刻意不進 `COLLECTIONS`／不進備份匯出）。**上線踩了四個獨立故障**（VAPID 未配對、runtime SA 缺 `roles/datastore.user`、workbox `importScripts` 被打包進非同步 factory 需 `inlineWorkboxRuntime`、Android 只給捷徑需重啟手機）——詳見 docs/09「部署與真機驗收」。
 
+**借貸功能補完＋捷徑鎖死修復（docs/09「後續調整」第三批，2026-07-25 實作完成、待真機驗收）**：① 修三個 bug——編輯借還款會靜默清空還款記錄（改為編輯同型別時不寫 `repayments` key，靠 patch 語義保留）、PWA 捷徑／推播冷啟動時 `navigate(-1)` 是 no-op 導致記帳頁鎖死（新增 `hooks/useCloseView.js`，回不去就 `replace` 到首頁；`CardDetailPage` 同修）、收入拆帳列標記代墊會靜默丟掉金額 ② 借貸總覽（首頁 `LoanCard`，無未結清即隱藏）＋**還款登錄**（`repayments` 過去從未有寫入 UI，結清狀態形同虛設）＋**一次結清**（淨額：兩邊各記全額還款到同一帳戶，帳戶淨變動＝實際匯款額，引擎不用改）③ 對象管理（設定頁「借貸對象」＋Picker 鉛筆鈕；有交易引用即擋刪，不 cascade）④ 反向代墊「由他人代墊」（自動產 `expense`＋`payable` 綁 `linkGroupId`，現金淨變動 0）。engine 新增 `loanTotals`／`counterpartyLoanStats`／`netSettlementPlan`（不變式：Σ 對象列＝全域合計）。
+
 **已部署**：2026-07-25 發布 **v1.1.1**（批次 7 Web Push），線上 `https://hfuhsu108.github.io/AtomCoins/`（GitHub Actions 自動部署，push master 觸發）。此前 2026-07-21 發布 v1.1.0（docs/09 批次 1–6＋兩批後續調整）。
 
 **待辦**：CSV 發票匯入（延後待財政部真實 CSV 樣本）。計畫內功能至此全數完成。

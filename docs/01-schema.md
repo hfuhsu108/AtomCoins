@@ -30,7 +30,11 @@
 
 ## 3.5 Counterparty 對象
 
-`id` / `name` / `note?` / `createdAt`。主要供借還款使用，並支援報表「依對象」多維統計。
+`id` / `name` / `note?`（**保留，未實作**） / `sortOrder` int / `createdAt` / `updatedAt`。主要供借還款使用，並支援報表「依對象」多維統計。
+
+管理入口：設定 →「借貸對象」（新增／改名／刪除／上下排序），記帳表單的對象選擇器也有鉛筆鈕可改名（Picker 內刻意不放刪除，記帳途中誤觸代價高）。`sortOrder` 決定選擇器與管理清單的順序。
+
+**刪除語義：只要還有交易引用就擋下**（`repo.deleteCounterparty` 直接 throw，UI 另有同樣守衛顯示筆數）。不做 cascade——刪帳戶時那些交易本來就無處可歸，刪對象只是失去標籤，連同應收應付一起刪等於抹掉真實的債權債務；也不仿分類的「改歸未分類」，因為對象沒有 seed 保證的退路可歸。
 
 ## 3.6 Transaction 帳本記錄（核心）
 
@@ -41,7 +45,7 @@
 - `note?`（**明細寫這裡**） / `merchant?`（商家，交易層、不入拆帳列，僅 expense/income 適用，docs/09 批次 3） / `tagIds: array<ref→Tag>` / `projectId` ref→Project?
 - `invoiceId` ref→Invoice?（自發票匣歸帳時帶入） / `templateId` ref→Template?
 - `isReconciled` bool（對帳用）
-- `linkGroupId` string?（**待決定，見 `06-open-questions.md`**；用於把同一筆消費拆出的「自己支出＋代墊應收」綁在一起）
+- `linkGroupId` string?（已拍板採用；把同一筆消費拆出的「自己支出＋代墊應收」或「支出＋他人代墊應付」綁在一起，刪除時整組刪）
 - `createdAt` / `updatedAt`
 
 型別專屬：
@@ -51,6 +55,9 @@
 - **transfer**：`fromAccountId` / `toAccountId` / `fee` int(預設0) / `feeCategoryId` ref→Category(預設=內建「金融手續費」類別，可改；**計入支出**)。本金無類別。
 - **receivable（借出）/ payable（借入）**：`accountId`(資金進出帳戶) / `counterpartyId` ref→Counterparty / `repayments: array<{date, amount, accountId}>`(還款/收款記錄) / `interestRate?` decimal(**保留，先無息**)。
   - 未結清 = amount − Σ repayments.amount；狀態（未結清/部分/已結清）由此推導。
+  - **還款登錄**在首頁借貸卡 → 對象明細（逐筆登錄／刪除，或「一次結清」批次寫入）。**記帳表單不編輯 `repayments`**：編輯既有借還款時 `buildList()` 刻意不放這個 key，靠 `updateDoc` 的 patch 語義原樣保留（若讀回 state 再寫回，表單開著時他裝置新增的還款會被陳舊快照覆寫）。改變型別會清除還款，儲存前有確認框告知筆數。
+  - **不得超額還款**（`Σ repayments.amount ≤ amount`）：`outstanding` 變負會讓淨資產算錯，UI 以未結清餘額為硬上限；多收的利息另記一筆 `income`。
+  - 寫入一律先讀最新陣列再 append，**禁止 `arrayUnion`**（它會把「同日同額同帳戶還兩次」去重掉一筆）。
 
 進階情境保留欄位（後續階段接邏輯，欄位先留）：`recurringRuleId` ref→RecurringRule? / `installmentPlanId` ref→InstallmentPlan? / `refundOfId` ref→Transaction?。
 
