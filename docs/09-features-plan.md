@@ -14,7 +14,7 @@
 | 4 | 年度報表（月／年視角切換） | M | — | ✅ 完成（2026-07-21，驗收通過） |
 | 5 | 日曆檢視＋年度消費熱力圖 | M | 批次 4（熱力圖掛年視角） | ✅ 完成（2026-07-21，驗收通過） |
 | 6 | 淨資產趨勢圖 UI | S | 6a 快照已上線且累積數日 | ✅ 完成（2026-07-21，驗收通過；趨勢資料自快照啟用日累積） |
-| 7 | Web Push 推播（Cloud Functions） | L | 批次 3（通知文案用商家別名，弱相依） | 🔶 程式碼完成（2026-07-23），**待部署＋真機驗證**（見批次 7「實作結果」） |
+| 7 | Web Push 推播（Cloud Functions） | L | 批次 3（通知文案用商家別名，弱相依） | ✅ 完成，**2026-07-25 真機驗收通過**（v1.1.1；上線踩坑見批次 7「部署與真機驗收」） |
 
 **建議順序**：1 → 2 → 3 → 4 → 5 → 6 → 7。**6a（快照寫入）併入批次 1 先上線**——趨勢圖資料自快照啟用日起累積，越早上線批次 6 可看的資料越多。
 
@@ -287,6 +287,17 @@ VAPID 公鑰＝公開值，寫死前端（同 GAS proxy 先例，CLAUDE.md 機�
 **踩坑**：`shared/*.js` 的 relative import 無副檔名，在 Vite 沒事但 Cloud Functions（Node 20 純 ESM）會 `ERR_MODULE_NOT_FOUND`；`copy-shared.mjs` 改為複製時 regex 補 `.js`。Functions runtime 為 UTC，純函式 `todayStr()` 會取到 UTC 日期，故一律用 `taipeiToday()`（`Intl.DateTimeFormat` en-CA）餵 asOf。
 
 **本機已驗**：`npm run build` 綠燈、`dist/sw.js` 含 `importScripts("push-handler.js")` 且入 precache；`functions/index.js`＋shared `node --check` 通過；`copy-shared.mjs` 產物 import 帶副檔名。**未驗（真機限定，judgment §5）**：實際收到推播、排程到點、深連結、退訂——交使用者部署後真機驗收。
+
+### 部署與真機驗收（2026-07-25，通過）
+
+手機成功安裝 standalone PWA 並實際收到推播。從 2026-07-23 commit 到可用中間卡了兩天，**四個獨立故障疊在一起**，逐一記錄以免重蹈：
+
+1. **VAPID 公私鑰不配對 → 403**。前端 `src/lib/push.js`、`functions/index.js`、Secret Manager 三處必須來自同一次 `generate-vapid-keys`。`firebase functions:secrets:set VAPID_PRIVATE_KEY` 是**互動式**輸入（只給名稱按 Enter，再於隱藏提示貼私鑰），設完要重 deploy functions；換金鑰後手機須關掉再打開推播開關重新訂閱。修正 commit `e0cf453`。
+2. **Cloud Functions runtime SA 缺 `roles/datastore.user` → `sendTestPush` 回 `INTERNAL`**（log 為 Firestore `PERMISSION_DENIED`）。runtime SA＝`881497798441-compute@developer.gserviceaccount.com`；`gcloud projects add-iam-policy-binding … --role="roles/datastore.user"` 即解，IAM 約 1–2 分鐘生效、**不必重 deploy**。組織政策禁下載 SA 金鑰，這類問題只能走 IAM 授權。
+3. **`workbox.importScripts` 的產物缺陷**：上方「本機已驗」只確認了 `dist/sw.js` **含有** `importScripts`，沒看它**落在哪裡**——它被打包進 AMD `define()` 的非同步 factory，連帶 fetch handler 也延到微任務才註冊。加 `inlineWorkboxRuntime: true` 解決（commit `855936e`）。教訓：驗產物要驗語意位置，不是驗字串存在。
+4. **Android Chrome 只給「加入主畫面」**（桌機能裝）：**與程式碼無關**，`chrome://webapks` 全空、`beforeinstallprompt` 沒觸發，**重啟手機**（Google Play 服務 WebAPK minting）即解，清網站資料無效。這是本專案第二次命中同一坑，排查順序見全域 `handbook/pitfalls-frontend.md` 第 7 條——症狀出現時應先照表跑①→⑤，不要先讀 code。
+
+完整踩坑與雲端設定事實見專案 memory `batch7-push-pitfalls`。
 
 ### 開場 prompt
 

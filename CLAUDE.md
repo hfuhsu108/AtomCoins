@@ -84,6 +84,8 @@
 
 **2026-07-21 再追加 2 項（已完成並實機驗收通過 2026-07-21）**：⑤ 分類管理（設定頁「分類管理」子區塊 `CategoryManager`＋`CategoryEditSheet`：支出/收入切換、母子清單、上下箭頭排序、新增/編輯/刪除、選 icon（`icons.js` 擴充約 60 個＋`CATEGORY_ICON_NAMES`）與色盤（`CATEGORY_COLORS`）；刪除 `deleteCategoryReassign` 把交易改歸未分類、保護系統退路分類；分類色套用於 CategoryPicker/TransactionRow/FlowReport）⑥ 自訂排序（帳戶與分類皆上下箭頭鈕交換 sortOrder，`repo.setSortOrders`／`ReorderBtns` 共用）。詳見 docs/09「後續調整」第二批。
 
-**已部署**：2026-07-21 發布 **v1.1.0**（tag＋GitHub Release），線上 `https://hfuhsu108.github.io/AtomCoins/`（GitHub Actions 自動部署，push master 觸發）。docs/09 批次 1–6＋兩批後續調整皆實機驗收通過。
+**批次 7（Web Push 推播）已於 2026-07-25 完成並真機驗收通過**：`functions/`（Cloud Functions v2，region `asia-east1`，VAPID web-push 非 FCM）——`morningDigest` 09:00（卡費 D-7/D-1/逾期、交割缺口、週期提醒、明日扣款預告、爬蟲停擺）、`eveningNudge` 21:00（當天沒記帳）、`onScraperStatus` trigger（新發票即時推）、`sendTestPush` callable；`meta/pushLog` 去重、`settings.pushPrefs` 逐情境開關、410/404 清失效訂閱。情境判定**重用前端純函式**（`copy-shared.mjs` predeploy 把 `engine/date/notifications` 複製到 `functions/shared/` 並補 `.js` 副檔名，Node 20 純 ESM 必要），禁止手抄第二份口徑。前端 `lib/push.js`、`PwaProvider` 暴露 `swRegistration`、設定頁「推播通知」子區塊。新增 collection `pushSubscriptions`（刻意不進 `COLLECTIONS`／不進備份匯出）。**上線踩了四個獨立故障**（VAPID 未配對、runtime SA 缺 `roles/datastore.user`、workbox `importScripts` 被打包進非同步 factory 需 `inlineWorkboxRuntime`、Android 只給捷徑需重啟手機）——詳見 docs/09「部署與真機驗收」。
 
-**待辦**：docs/09 批次 7 Web Push（Cloud Functions，另開 session，探勘結論存計畫檔）；CSV 發票匯入（延後待財政部真實 CSV 樣本）。
+**已部署**：2026-07-25 發布 **v1.1.1**（批次 7 Web Push），線上 `https://hfuhsu108.github.io/AtomCoins/`（GitHub Actions 自動部署，push master 觸發）。此前 2026-07-21 發布 v1.1.0（docs/09 批次 1–6＋兩批後續調整）。
+
+**待辦**：CSV 發票匯入（延後待財政部真實 CSV 樣本）。計畫內功能至此全數完成。
