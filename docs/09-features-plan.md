@@ -356,6 +356,48 @@ VAPID 公鑰＝公開值，寫死前端（同 GAS proxy 先例，CLAUDE.md 機�
 
 階段 A–D 全部完成，**2026-07-25 真機驗收通過**，發布 **v1.1.2**。驗收後依使用者要求把借貸卡從「本月收支下方」移到**帳戶列表下方**（首頁優先序：淨資產→本月收支→帳戶→借貸）。
 
+## 後續調整（2026-07-25，第四批：取消 CSV 匯入＋自訂圖示＋別名排序搜尋＋AI 發票分類）
+
+使用者四項要求：取消 CSV 發票匯入規劃、分類圖示要能自訂任意 Font Awesome、商家別名依名稱排序並支援搜尋、AI 輔助載具自動分類。
+
+### ① 取消 CSV 發票匯入
+
+爬蟲每日穩定運作，備援路徑無實際需求。CLAUDE.md／docs 00・05・07・08 與專案 memory 全部改記為「已取消」而非刪除，保留決策軌跡。docs/09 與 docs/05 提到的備份匯出 CSV 與此無關，不動。
+
+### ② 分類圖示開放全部 FA
+
+**策略**：主程式包不變，選圖器懶載入完整目錄，選定後把該圖示的向量資料存進分類文件，渲染端零成本。
+
+- `scripts/gen-icon-catalog.mjs` → `public/fa-icons.json`（1422 個 solid 圖示、800 KB，commit 進版控）。**不進 PWA 預快取**——`vite-plugin-pwa` 預設 globPatterns 不含 `.json`，故無需改 vite.config。
+- `lib/icons.js` `getIcon(value)` 擴充為同時吃內建名稱字串與 `{ n, w, h, p }` 物件（組回 FA definition，module Map 快取）。**維持同步，12 處呼叫端零改動**——含 `TransactionRow`／`FlowReport` 這兩處在資料整形階段就取 icon 物件的 eager 呼叫。
+- `IconPickerSheet`：fetch 目錄一次、搜尋比對英文名＋FA7 aliases（含 FA6 舊名）＋`ICON_KEYWORDS_ZH`（約 60 組中文橋接詞），一次最多畫 120 格；離線 fetch 失敗顯示退路提示。
+- 實測 bundle：主 chunk 1,280.81 → 1,285.90 kB（+5.09 kB），precache 1315.38 → 1320.51 KiB（+5.13 KiB），確認 800 KB 目錄沒被打包或預快取。
+- **注意**：專案實際依賴是 **Font Awesome 7.3.0**，docs 多處仍寫「FA6」（未一併更名，僅在此註記）。
+
+### ③ 商家別名排序＋搜尋
+
+`SettingsPage` 別名清單排序由「match 字串長度」改為 module-level `Intl.Collator('zh-Hant')` 依 alias 排（專案首次引入 Collator；中文實測為筆畫序），加搜尋列同時比對 alias 與 match、無結果顯示提示。`filter()` 先產生新陣列再 `sort()`，不動來源。不加 `sortOrder`、不接 `ReorderBtns`。
+
+### ④ AI 輔助發票自動分類
+
+兩層架構，建議寫入獨立 collection `invoiceSuggestions`（schema 與「為何不寫回 invoice」見 docs/01 §3.17）。
+
+- **第一層**（免費、即時）：`src/lib/autoCategory.js` `suggestFromHistory`，純函式經 `copy-shared.mjs` 與後端共用（`FILES` 加 `merchant.js`／`autoCategory.js`）。商家取值重用 `merchantStats` 的 `tx.merchant ?? invoiceById[tx.invoiceId]?.merchant` fallback，故舊歸帳交易免遷移即納入。
+- **第二層**（僅新商家）：`functions/index.js` `classifyInbox` → OpenAI `gpt-5-nano` ＋ structured outputs（`strict:true`），單次上限 30 張；`categoryId` 寫入前驗證仍存在。金鑰走 `defineSecret('OPENAI_API_KEY')`。
+- **觸發**：`onScraperStatus` 內（排在推播偏好判斷之前，分類不受推播開關影響；失敗只記 log 不擋推播）＋ 發票匣「分析」鈕（`suggestInvoiceCategories` callable）。已有建議者略過，重按不重複計費。
+- **前端**：`DERIVED_COLLECTIONS` 訂閱但不進 `COLLECTIONS`（backup.js 因此零改動）；`InvoiceRow` 未歸帳列顯示分類 chip＋來源標記；`stateFromInvoice` 預填分類（仍須按儲存）；`recordInvoice` 同批刪建議。
+
+### 驗收調整（2026-07-26）
+
+使用者實測後回饋兩項，皆屬**既有的不一致**（非本批次引入）：
+
+- **明細列改顯示子分類圖示**：`TransactionRow.categoryView` 原本寫死取母分類圖示，與 `CategoryPicker`（早就是 `c.icon ?? activeParent?.icon`）對不上，也不符 docs/01 §3.2「子 icon 為 null 才沿用母」的欄位語義。改為 `cat?.icon ?? parent?.icon`。**顏色仍取母分類**——顏色代表分類群組的識別，圖示代表具體項目；且 `color: null` 的語義是「中性色」而非「沿用母」，不可比照 icon 處理。
+- **CategoryPicker 選中態改吃分類自訂色**：母分類選中原本一律 `bg-brand`（藍底白 icon）；改為有自訂色時選中＝實心該色＋白 icon、未選＝同色淡底，沒設色才退回品牌藍。子分類列與「使用母分類」按鈕的選中背景／文字／勾勾同步改用 accent（`c.color ?? activeParent?.color`，兩者都沒設才用品牌藍）。
+
+### 進度
+
+四項程式碼與文件完成、build/lint 綠燈、邏輯以腳本驗證（Collator 排序、`suggestFromHistory` 五種情境）、dev server 冒煙通過。**使用者已實測確認**：新圖示在首頁交易列／分類選擇器／報表分類排行三處皆正確顯示，AI 分類流程 OK。上述驗收調整待再次實測。**AI 分類的線上行為仍待部署後驗收**（需先設 `OPENAI_API_KEY` secret）。
+
 ## 保留／明確不做（本輪拍板）
 
 - 自訂起訖區間報表：批次 4 只做年視角，自訂區間保留。

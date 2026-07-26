@@ -21,7 +21,7 @@
 | 股價來源 | TWSE 每日收盤，經 Google Apps Script web app 當 proxy 回避 CORS |
 | 雲端同步 | Firestore 原生即時同步（原 Google Drive `appDataFolder` 方案作廢，未曾實作） |
 | 登入 | Firebase Auth（Google 登入） |
-| 發票來源 | 本機 Python 爬蟲（財政部平台，驗證碼用 OpenAI Vision 辨識）＋ `firebase-admin` 每日寫入；官方 CSV 匯入為備援 |
+| 發票來源 | 本機 Python 爬蟲（財政部平台，驗證碼用 OpenAI Vision 辨識）＋ `firebase-admin` 每日寫入 |
 | 密碼鎖 | 不做 |
 | 幣別 | 僅 TWD；保留 `currency` 欄位，不做匯率 |
 | 投資範圍 | 僅台股、僅現股（無融資融券、當沖）；配息保留待後做 |
@@ -90,4 +90,6 @@
 
 **已部署**：2026-07-25 發布 **v1.1.2**（借貸功能補完＋捷徑鎖死修復，真機驗收通過），線上 `https://hfuhsu108.github.io/AtomCoins/`（GitHub Actions 自動部署，push master 觸發）。此前同日發布 v1.1.1（批次 7 Web Push）、2026-07-21 發布 v1.1.0（docs/09 批次 1–6＋兩批後續調整）。
 
-**待辦**：CSV 發票匯入（延後待財政部真實 CSV 樣本）。計畫內功能至此全數完成。
+**第四批後續調整（docs/09，2026-07-25，程式碼完成、待部署與真機驗收）**：① 取消 CSV 發票匯入規劃（文件全面回寫為「已取消」）② **分類圖示開放全部 Font Awesome**——`scripts/gen-icon-catalog.mjs` 產 `public/fa-icons.json`（1422 個圖示，不進 PWA 預快取），`getIcon` 擴充為同時吃內建名稱字串與 `{n,w,h,p}` 向量物件（維持同步，12 處呼叫端零改動），新增 `IconPickerSheet`（懶載入＋英文/FA6 舊名/中文關鍵字搜尋）；主 chunk 僅 +5 kB ③ 商家別名改依名稱排序（`Intl.Collator('zh-Hant')`，專案首次引入）＋搜尋列 ④ **AI 輔助發票自動分類**——兩層：`lib/autoCategory.js` 歷史比對（純函式，`copy-shared.mjs` 前後端共用）→ 沒命中才送 OpenAI `gpt-5-nano`（structured outputs，`defineSecret('OPENAI_API_KEY')`）；建議寫獨立 collection `invoiceSuggestions`（**不寫回 invoice**：爬蟲對 inbox 發票是整份覆寫會洗掉欄位），發票列顯示建議 chip、歸帳預填分類但仍須手動儲存。**部署前置**：使用者本人跑 `firebase functions:secrets:set OPENAI_API_KEY`。
+
+**待辦**：第四批的線上驗收（含 AI 分類實際呼叫）。原「CSV 發票匯入」已於 2026-07-25 決定**取消**（爬蟲穩定運作，備援路徑無實際需求）。

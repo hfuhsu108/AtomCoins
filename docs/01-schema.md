@@ -126,7 +126,19 @@
 - **pushLog**：`users/{uid}/meta/pushLog` 單文件 map `{ [dedupeKey]: sentAtISO }`。發送前查、發送後 `set(merge)`。key 規則：信用卡 `card|{accountId}|{periodEnd}|{stage}`（stage∈d7/d1/overdue，一次性）；週期扣款 `recur|{ruleId}|{nextDate}`（一次性）；爬蟲健康 `scraper|health`（≥72h 才再發）。交割缺口／週期提醒每日掃一次天然去重、不記 log。
 - **pushPrefs**：存於 `settings/singleton` 的 `pushPrefs` 欄位 `{ daily, invoice, card, settlement, recurring, scraperHealth }`（前五預設 true、scraperHealth 預設 false）。前端 `SettingsPage` 情境開關寫入，後端 Functions 發送前逐情境檢查。前後端各有一份 `DEFAULT_PREFS`（不同 bundle 無法共用，須同步）。
 
-> **scraperStatus.newCount**（爬蟲寫入 `meta/scraperStatus`）：本次同步全新入匣（inbox）張數（=`created`）。Cloud Functions 的 `onScraperStatus` trigger 見 `newCount>0` 即推「N 張新發票待歸帳」（情境 B）。
+> **scraperStatus.newCount**（爬蟲寫入 `meta/scraperStatus`）：本次同步全新入匣（inbox）張數（=`created`）。Cloud Functions 的 `onScraperStatus` trigger 見 `newCount>0` 即推「N 張新發票待歸帳」（情境 B），並順帶補跑自動分類（見 3.17）。
+
+## 3.17 InvoiceSuggestion 發票自動分類建議（2026-07-25）
+
+`users/{uid}/invoiceSuggestions/{invoiceId}`。`id`（=對應發票的 docId）/ `invoiceId` ref→Invoice / `categoryId` ref→Category / `source` enum(`history` `ai`) / `confidence` enum(`high` `medium` `low`) / `model?`（`source='ai'` 時記錄使用的 model）/ `createdAt`。
+
+> **為何獨立 collection 而非寫回 invoice**：爬蟲 `firestore_upload.py` 對 `status='inbox'` 的發票是整份 `set()` 覆寫（無 merge），任何掛在 invoice 文件上的欄位，隔天同步就會被洗掉。
+>
+> **產生方式**（`functions/index.js` `classifyInbox`）兩層：① 歷史比對——`suggestFromHistory`（`src/lib/autoCategory.js`，經 `copy-shared.mjs` 與前端共用同一份）依 `resolveMerchant` 後的商家找歷史 `expense` 交易，取最常用 `splits[].categoryId`，排除「未分類」；② 歷史沒命中的新商家才送 OpenAI（`gpt-5-nano` ＋ structured outputs `strict:true`，單次上限 30 張）。寫入前一律驗證 `categoryId` 仍存在於分類樹。
+>
+> **觸發**：爬蟲同步完（`onScraperStatus`，與推播偏好無關）自動跑；發票匣「分析」鈕呼叫 `suggestInvoiceCategories` callable 手動跑。已有建議的發票會被略過，重跑不重複計費。
+>
+> **消費端**：`InvoicePanel` 算出顯示用 view 傳給 `InvoiceRow`（未歸帳列顯示分類 chip 與來源標記）；歸帳時 `stateFromInvoice` 預填 `splits[0].categoryId`，**仍須使用者按儲存才成立**。`recordInvoice` 於同一 writeBatch 刪除該建議。**刻意不進 `COLLECTIONS`（改列 `DERIVED_COLLECTIONS`）**：需要即時訂閱但屬衍生資料，不應混入備份匯出。
 
 ## 列舉值總表
 

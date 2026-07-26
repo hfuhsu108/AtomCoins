@@ -108,15 +108,15 @@ function invoiceItemsSummary(invoice) {
 }
 
 // 從發票歸帳預填：一律支出、記錄日=發票日、商家=別名解析後名稱（原始名永遠保留在 invoice.merchant）、
-// 備註=品項明細摘要、單列拆帳帶入總額（分類待選）。
-function stateFromInvoice(invoice, aliases) {
+// 備註=品項明細摘要、單列拆帳帶入總額。分類若有自動分類建議就預填（仍需使用者按儲存才成立）。
+function stateFromInvoice(invoice, aliases, suggestion = null) {
   return {
     type: 'expense',
     tradeDate: invoice.invoiceDate,
     postingDate: null,
     note: invoiceItemsSummary(invoice),
     merchant: resolveMerchant(invoice.merchant, aliases) ?? '',
-    splits: [{ key: newId(), categoryId: null, expr: String(invoice.totalAmount ?? ''), advanceCounterpartyId: null }],
+    splits: [{ key: newId(), categoryId: suggestion?.categoryId ?? null, expr: String(invoice.totalAmount ?? ''), advanceCounterpartyId: null }],
     activeSplit: 0,
     amountExpr: '',
     accountId: null,
@@ -177,6 +177,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
   const templates = useCollection('templates')
   const merchantAliases = useCollection('merchantAliases')
   const txns = useCollection('transactions')
+  const invoiceSuggestions = useCollection('invoiceSuggestions')
 
   const [stockState, setStockState] = useState(() => initStockState(initialStock, accounts))
 
@@ -184,7 +185,11 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
     initialTx
       ? stateFromTx(initialTx)
       : initialInvoice
-        ? stateFromInvoice(initialInvoice, merchantAliases)
+        ? stateFromInvoice(
+          initialInvoice,
+          merchantAliases,
+          invoiceSuggestions.find((s) => s.invoiceId === initialInvoice.id) ?? null,
+        )
         : {
           type: initialStock ? 'stock' : 'expense',
           tradeDate: todayStr(),

@@ -15,7 +15,13 @@ export const COLLECTIONS = [
   'netWorthSnapshots', 'templates', 'merchantAliases',
 ]
 
-const EMPTY = Object.freeze(Object.fromEntries(COLLECTIONS.map((n) => [n, []])))
+// 衍生資料：需要即時訂閱，但不是使用者資料本體（可隨時由 Cloud Function 重算），
+// 故刻意不進 COLLECTIONS——backup.js 依 COLLECTIONS 匯出，放進去會混進備份檔。
+export const DERIVED_COLLECTIONS = ['invoiceSuggestions']
+
+const SUBSCRIBED = [...COLLECTIONS, ...DERIVED_COLLECTIONS]
+
+const EMPTY = Object.freeze(Object.fromEntries(SUBSCRIBED.map((n) => [n, []])))
 
 const DataContext = createContext(EMPTY)
 
@@ -43,7 +49,7 @@ export function DataProvider({ children }) {
       setData(EMPTY)
       return
     }
-    const unsubs = COLLECTIONS.map((name) =>
+    const unsubs = SUBSCRIBED.map((name) =>
       onSnapshot(
         collection(firestore, 'users', user.uid, name),
         (snap) => setData((prev) => ({ ...prev, [name]: snap.docs.map((d) => d.data()) })),

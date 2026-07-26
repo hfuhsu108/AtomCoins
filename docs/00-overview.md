@@ -21,7 +21,7 @@
 | 股價來源 | **TWSE 每日收盤**，經 **Google Apps Script (GAS) web app 當 proxy** 回避 CORS，回傳 JSON |
 | 雲端同步 | **Firestore 原生即時同步**（原 Google Drive `appDataFolder` 手動備份方案作廢，未曾實作） |
 | 登入 | **Firebase Auth**（Google 登入） |
-| 發票來源 | 本機 Python 爬蟲（財政部平台，驗證碼用 OpenAI Vision 辨識）＋ `firebase-admin` 每日寫入；官方 CSV 匯入為備援（見 `07-firebase-migration.md` §6B/§6C） |
+| 發票來源 | 本機 Python 爬蟲（財政部平台，驗證碼用 OpenAI Vision 辨識）＋ `firebase-admin` 每日寫入（見 `07-firebase-migration.md` §6B/§6C） |
 | 密碼鎖 | **不做** |
 | 幣別 | **僅 TWD**；保留 `currency` 欄位，不做匯率 |
 | 投資範圍 | **僅台股、僅現股**（無融資融券、當沖）；配息保留待後做 |

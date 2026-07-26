@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faChevronRight, faChevronLeft, faTrashCan, faRepeat, faPercent, faCopy, faFileArrowDown, faBookmark, faStore, faWallet, faCloud, faTag, faBell, faUserGroup } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faChevronRight, faChevronLeft, faTrashCan, faRepeat, faPercent, faCopy, faFileArrowDown, faBookmark, faStore, faWallet, faCloud, faTag, faBell, faUserGroup, faMagnifyingGlass, faXmark } from '@fortawesome/free-solid-svg-icons'
 import { faGoogle } from '@fortawesome/free-brands-svg-icons'
 import { httpsCallable } from 'firebase/functions'
 import { useCollection, useAllCollections, useSettings } from '../db/DataProvider'
@@ -31,6 +31,9 @@ function formatBuiltAt(iso) {
   const p = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
+
+// 別名依名稱排序用：中文直接比字串是 UTF-16 碼位序（等同亂序），需 Collator 才有筆畫／注音序
+const ALIAS_COLLATOR = new Intl.Collator('zh-Hant')
 
 const THEME_OPTIONS = [
   { value: 'light', label: '淺色' },
@@ -100,6 +103,7 @@ export default function SettingsPage() {
   const [editingBroker, setEditingBroker] = useState(undefined)
   const [renamingTemplate, setRenamingTemplate] = useState(null)
   const [editingAlias, setEditingAlias] = useState(undefined)
+  const [aliasQuery, setAliasQuery] = useState('')
 
   const user = useAuth()
   const allData = useAllCollections()
@@ -112,6 +116,17 @@ export default function SettingsPage() {
   const { run: runAlias, error: aliasError } = useAsyncAction()
   const { run: runOrder } = useAsyncAction()
   const { confirm, confirmElement } = useConfirm()
+
+  // 別名清單：依別名名稱排序，搜尋同時比對別名與比對字串（filter 已產生新陣列，sort 不會動到來源）
+  const aliasQ = aliasQuery.trim().toLowerCase()
+  const visibleAliases = merchantAliases
+    .filter(
+      (a) =>
+        !aliasQ ||
+        (a.alias ?? '').toLowerCase().includes(aliasQ) ||
+        (a.match ?? '').toLowerCase().includes(aliasQ),
+    )
+    .sort((a, b) => ALIAS_COLLATOR.compare(a.alias ?? '', b.alias ?? ''))
 
   // 帳戶排序：同型別群組內與相鄰帳戶交換 sortOrder（docs/09 後續調整）
   const moveAccount = (list, index, dir) => {
@@ -415,41 +430,54 @@ export default function SettingsPage() {
 
       {/* 商家別名（docs/09 批次 3）：把載具冗長公司名對應到店名，影響顯示與統計 */}
       {section === 'aliases' && (<>
-      <div className="flex justify-end mb-2">
+      <div className="flex items-center gap-2 mb-2">
+        <div className="flex-1 flex items-center gap-2 h-[34px] px-3 bg-surface border border-line rounded-modal">
+          <FontAwesomeIcon icon={faMagnifyingGlass} className="text-text-tertiary text-sm" />
+          <input
+            value={aliasQuery}
+            onChange={(e) => setAliasQuery(e.target.value)}
+            placeholder="搜尋別名或比對字串"
+            className="flex-1 min-w-0 bg-transparent text-[15px] outline-none placeholder:text-text-tertiary"
+          />
+          {aliasQuery && (
+            <button onClick={() => setAliasQuery('')} className="flex-none text-text-tertiary">
+              <FontAwesomeIcon icon={faXmark} className="text-sm" />
+            </button>
+          )}
+        </div>
         <button
           onClick={() => setEditingAlias(null)}
-          className="flex items-center gap-1.5 h-[34px] px-3 rounded-chip bg-brand text-white text-[13px] font-semibold"
+          className="flex items-center gap-1.5 h-[34px] px-3 flex-none rounded-chip bg-brand text-white text-[13px] font-semibold"
         >
-          <FontAwesomeIcon icon={faPlus} className="text-xs" /> 新增別名
+          <FontAwesomeIcon icon={faPlus} className="text-xs" /> 新增
         </button>
       </div>
       <div className="bg-surface border border-line rounded-card shadow-card px-3.5 divide-y divide-line-light">
         {merchantAliases.length === 0 ? (
           <div className="py-6 text-center text-text-tertiary text-sm">尚未建立別名</div>
+        ) : visibleAliases.length === 0 ? (
+          <div className="py-6 text-center text-text-tertiary text-sm">找不到符合的別名</div>
         ) : (
-          merchantAliases
-            .slice()
-            .sort((a, b) => (b.match?.length ?? 0) - (a.match?.length ?? 0))
-            .map((a) => (
-              <div key={a.id} className="flex items-center gap-3 py-3">
-                <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
-                  <FontAwesomeIcon icon={faStore} className="text-sm" />
-                </span>
-                <button onClick={() => setEditingAlias(a)} className="flex-1 min-w-0 text-left">
-                  <div className="text-[15px] font-medium truncate">{a.alias}</div>
-                  <div className="text-xs text-text-tertiary truncate">比對：{a.match}</div>
-                </button>
-                <button
-                  onClick={async () => {
-                    if (await confirm({ title: '刪除別名', message: `刪除別名「${a.alias}」？（不影響已記錄交易）`, danger: true }))
-                      runAlias(async () => { await settle(deleteMerchantAlias(a.id)) })
-                  }}
-                  className="w-8 h-8 flex items-center justify-center text-text-tertiary"
-                >
-                  <FontAwesomeIcon icon={faTrashCan} className="text-xs" />
-                </button>
-              </div>
-            ))
+          visibleAliases.map((a) => (
+            <div key={a.id} className="flex items-center gap-3 py-3">
+              <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
+                <FontAwesomeIcon icon={faStore} className="text-sm" />
+              </span>
+              <button onClick={() => setEditingAlias(a)} className="flex-1 min-w-0 text-left">
+                <div className="text-[15px] font-medium truncate">{a.alias}</div>
+                <div className="text-xs text-text-tertiary truncate">比對：{a.match}</div>
+              </button>
+              <button
+                onClick={async () => {
+                  if (await confirm({ title: '刪除別名', message: `刪除別名「${a.alias}」？（不影響已記錄交易）`, danger: true }))
+                    runAlias(async () => { await settle(deleteMerchantAlias(a.id)) })
+                }}
+                className="w-8 h-8 flex items-center justify-center text-text-tertiary"
+              >
+                <FontAwesomeIcon icon={faTrashCan} className="text-xs" />
+              </button>
+            </div>
+          ))
         )}
         {aliasError && <div className="py-2 text-[13px] text-error">{aliasError}</div>}
       </div>

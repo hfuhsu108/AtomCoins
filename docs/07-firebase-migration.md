@@ -78,7 +78,7 @@ service cloud.firestore {
 | **M2** | 讀寫切換（repo 切換＋57 處 useLiveQuery 分兩批換） | 報表口徑與切換前一致；CRUD 即時反映 |
 | **M3** | 去 Dexie 收尾＋離線／多裝置驗證＋docs 更新 | 斷網可記帳復網同步；兩裝置即時互通 |
 | **6B** | 發票爬蟲（本機 Python＋Admin SDK＋工作排程器） | 隔天開機自動補跑、Firestore 出現新發票 |
-| **6C** | 載具匣 UI（歸帳／略過／手動新增／CSV 匯入備援） | 爬到的發票能一鍵轉交易、報表口徑正確 |
+| **6C** | 載具匣 UI（歸帳／略過／手動新增） | 爬到的發票能一鍵轉交易、報表口徑正確 |
 
 ---
 
@@ -275,10 +275,9 @@ upsert 不得覆寫已歸帳發票的 status；頻率溫和（每日一次、區
 2. 歸帳流程：點發票 → 帶入 TransactionForm（金額=totalAmount、tradeDate=invoiceDate、商家、lineItems 對照供拆帳）→ 建立 expense 後回寫 `invoice.status='recorded'`、`invoice.transactionId`、`transaction.invoiceId`（雙向 ref，writeBatch 原子寫入）。
 3. 略過：左滑「略過」→ `status='ignored'`（可在已歸帳頁復原）。
 4. 手動新增發票（`source='manual'`）。
-5. CSV 匯入備援：解析官方平台匯出的載具明細 CSV → 同一套 upsert（docId=invoiceNumber），爬蟲壞掉時的降級路徑。
-6. Settings 或載具匣頁顯示 `scraperStatus`（上次同步時間）。
+5. Settings 或載具匣頁顯示 `scraperStatus`（上次同步時間）。
 
-**驗證**：完整走「爬到發票 → 歸帳 → 交易出現在帳本、報表口徑正確 → 發票移到已歸帳」；略過與復原；手動新增；匯入一份真實 CSV 不產生重複。
+**驗證**：完整走「爬到發票 → 歸帳 → 交易出現在帳本、報表口徑正確 → 發票移到已歸帳」；略過與復原；手動新增。
 
 **開場 prompt**
 
@@ -290,10 +289,10 @@ docs/04-ui.md 畫面 3、docs/02（收支口徑）。
 
 目標：TransactionsPage 第三分頁「發票載具」——inbox 列表、左滑歸帳/略過、
 未歸帳/已歸帳切換、歸帳帶入 TransactionForm（金額/日期/商家/lineItems 對照）、
-建立後雙向 ref（writeBatch）、手動新增、官方 CSV 匯入備援、顯示 scraperStatus。
+建立後雙向 ref（writeBatch）、手動新增、顯示 scraperStatus。
 
 注意：1 張發票→1 筆交易（docs/01）；歸帳生成的 expense 走正常收支口徑；
-CSV 匯入與爬蟲共用 upsert 語義（不得覆寫已歸帳 status）；UI 沿用現有元件風格（Sheet、TransactionRow）。
+UI 沿用現有元件風格（Sheet、TransactionRow）。
 
 先列子步驟給我確認再動手。
 ```
@@ -314,4 +313,4 @@ CSV 匯入與爬蟲共用 upsert 語義（不得覆寫已歸帳 status）；UI �
 
 **發票手動同步／每日排程**（爬蟲，repo 外）：App 純前端無後端、不能在 App 觸發本機 Python → 手動同步＝本機跑 `main.py`；已建 `atomcoins-scraper\同步發票.bat` 雙擊即跑；每日自動用 Windows 工作排程器 `Register-ScheduledTask`（`-StartWhenAvailable` 補跑、`-LogonType Interactive` 僅登入時執行，因 HEADLESS=false）。
 
-**待辦**：CSV 匯入（工作項 5）延後待財政部匯出真實明細 CSV 樣本；歸帳寫入 E2E 待真機（已登入）驗證；線上 GitHub Pages 仍為舊 Dexie build，新版尚未部署。
+**CSV 匯入備援已於 2026-07-25 決定取消**（爬蟲每日穩定運作，備援路徑無實際需求；原工作項 5 移除）。歸帳寫入 E2E 驗證與 GitHub Pages 部署皆已於後續完成，見 CLAUDE.md「現況」。

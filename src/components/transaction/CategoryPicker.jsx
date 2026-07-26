@@ -37,6 +37,9 @@ export default function CategoryPicker({ open, onClose, categories, value, onSel
   )
 
   const activeParent = parents.find((p) => p.id === activeParentId)
+  // 「使用母分類」那顆按鈕的選中態配色（與子分類列同一套邏輯）
+  const parentSelected = activeParent?.id === value
+  const parentAccent = activeParent?.color ?? null
 
   const commit = (id) => {
     onSelect(id)
@@ -59,13 +62,20 @@ export default function CategoryPicker({ open, onClose, categories, value, onSel
             >
               <span
                 className={`w-[30px] h-[30px] flex-none rounded-chip flex items-center justify-center text-[13px] border ${
-                  active
-                    ? 'bg-brand text-white border-brand'
-                    : p.color
-                      ? 'border-transparent'
+                  p.color
+                    ? 'border-transparent'
+                    : active
+                      ? 'bg-brand text-white border-brand'
                       : 'bg-surface text-text-secondary border-line'
                 }`}
-                style={!active && p.color ? { background: `color-mix(in srgb, ${p.color} 15%, transparent)`, color: p.color } : undefined}
+                // 有自訂色就吃自訂色：選中＝實心該色＋白 icon，未選＝同色淡底；沒設色才退回品牌藍
+                style={
+                  p.color
+                    ? active
+                      ? { background: p.color, color: '#fff', borderColor: p.color }
+                      : { background: `color-mix(in srgb, ${p.color} 15%, transparent)`, color: p.color }
+                    : undefined
+                }
               >
                 <FontAwesomeIcon icon={getIcon(p.icon)} />
               </span>
@@ -88,13 +98,16 @@ export default function CategoryPicker({ open, onClose, categories, value, onSel
         </div>
         {children.map((c) => {
           const active = c.id === value
+          // 選中態的強調色：子分類沒設色就沿用母分類的，兩者都沒設才退回品牌藍
+          const accent = c.color ?? activeParent?.color ?? null
           return (
             <button
               key={c.id}
               onClick={() => commit(c.id)}
               className={`flex items-center justify-between gap-2 w-full p-3 rounded-chip text-left ${
-                active ? 'bg-brand-light' : ''
+                active && !accent ? 'bg-brand-light' : ''
               }`}
+              style={active && accent ? { background: `color-mix(in srgb, ${accent} 12%, transparent)` } : undefined}
             >
               <span className="flex items-center gap-2.5 min-w-0">
                 <span
@@ -107,13 +120,20 @@ export default function CategoryPicker({ open, onClose, categories, value, onSel
                 </span>
                 <span
                   className={`text-sm truncate ${
-                    active ? 'font-semibold text-brand' : 'font-medium text-text-primary'
+                    active ? `font-semibold${accent ? '' : ' text-brand'}` : 'font-medium text-text-primary'
                   }`}
+                  style={active && accent ? { color: accent } : undefined}
                 >
                   {c.name}
                 </span>
               </span>
-              {active && <FontAwesomeIcon icon={faCheck} className="text-brand text-[13px] flex-none" />}
+              {active && (
+                <FontAwesomeIcon
+                  icon={faCheck}
+                  className={`text-[13px] flex-none${accent ? '' : ' text-brand'}`}
+                  style={accent ? { color: accent } : undefined}
+                />
+              )}
             </button>
           )
         })}
@@ -121,20 +141,30 @@ export default function CategoryPicker({ open, onClose, categories, value, onSel
           <button
             onClick={() => commit(activeParent.id)}
             className={`flex items-center justify-between w-full p-3 rounded-chip text-left ${
-              activeParent.id === value ? 'bg-brand-light' : ''
+              parentSelected && !parentAccent ? 'bg-brand-light' : ''
             }`}
+            style={
+              parentSelected && parentAccent
+                ? { background: `color-mix(in srgb, ${parentAccent} 12%, transparent)` }
+                : undefined
+            }
           >
             <span
               className={`text-sm ${
-                activeParent.id === value
-                  ? 'font-semibold text-brand'
+                parentSelected
+                  ? `font-semibold${parentAccent ? '' : ' text-brand'}`
                   : 'font-medium text-text-primary'
               }`}
+              style={parentSelected && parentAccent ? { color: parentAccent } : undefined}
             >
               使用「{activeParent.name}」
             </span>
-            {activeParent.id === value && (
-              <FontAwesomeIcon icon={faCheck} className="text-brand text-[13px]" />
+            {parentSelected && (
+              <FontAwesomeIcon
+                icon={faCheck}
+                className={`text-[13px]${parentAccent ? '' : ' text-brand'}`}
+                style={parentAccent ? { color: parentAccent } : undefined}
+              />
             )}
           </button>
         )}

@@ -23,12 +23,14 @@ function mergeMerchant(merchant, note) {
   return note ? `${merchant}・${note}` : merchant
 }
 
-// 由分類 id 取「母·子」（或母）名稱、母分類圖示與顏色
+// 由分類 id 取「母·子」（或母）名稱、圖示與顏色。
+// 圖示以子分類優先、子沒設才沿用母（同 CategoryPicker 慣例，也是 docs/01 §3.2 的欄位語義）；
+// 顏色一律取母分類，讓同群組的交易在列表上維持一致的識別色。
 function categoryView(categoryId, lookups) {
   const cat = lookups.cat[categoryId]
   const parent = cat?.parentId ? lookups.cat[cat.parentId] : cat
   return {
-    icon: getIcon(parent?.icon),
+    icon: getIcon(cat?.icon ?? parent?.icon),
     color: parent?.color ?? null,
     title: cat ? (cat.parentId ? `${parent.name}·${cat.name}` : parent.name) : '未分類',
   }

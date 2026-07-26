@@ -12,11 +12,13 @@ import {
 import { formatAmount, formatNumber } from '../../lib/format'
 import { formatMd } from '../../lib/date'
 import { resolveMerchant } from '../../lib/merchant'
+import { getIcon } from '../../lib/icons'
 
 // 單張發票列。動作按鈕依 status 而異（inbox 歸帳/略過、recorded 取消歸帳、ignored 復原）。
 // 有 lineItems 時可點列展開唯讀明細（含已歸帳）；手動新增的發票可編輯/刪除（誤加時用）。
 // 顯示名稱套用商家別名（原始名 invoice.merchant 永不改寫）。
-export default function InvoiceRow({ invoice, aliases, hidden, onRecord, onIgnore, onRestore, onUnrecord, onOpenTx, onEdit }) {
+// suggestion＝自動分類建議 { label, icon, color, source }，僅未歸帳列顯示，點歸帳時會預填。
+export default function InvoiceRow({ invoice, aliases, suggestion = null, hidden, onRecord, onIgnore, onRestore, onUnrecord, onOpenTx, onEdit }) {
   const [open, setOpen] = useState(false)
   const displayName = resolveMerchant(invoice.merchant, aliases)
   const items = invoice.lineItems ?? []
@@ -50,6 +52,23 @@ export default function InvoiceRow({ invoice, aliases, hidden, onRecord, onIgnor
             </div>
             <div className="flex items-center gap-2 mt-0.5 text-xs text-text-tertiary min-w-0">
               <span className="flex-none">{formatMd(invoice.invoiceDate)}</span>
+              {suggestion && (
+                <span
+                  className={`flex-none flex items-center gap-1 px-1.5 py-0.5 rounded-pill text-[11px] ${
+                    suggestion.color ? '' : 'bg-surface-alt text-text-secondary'
+                  }`}
+                  style={
+                    suggestion.color
+                      ? { background: `color-mix(in srgb, ${suggestion.color} 15%, transparent)`, color: suggestion.color }
+                      : undefined
+                  }
+                  title={suggestion.source === 'ai' ? 'AI 建議的分類，歸帳時可改' : '依你的歷史記錄建議，歸帳時可改'}
+                >
+                  <FontAwesomeIcon icon={getIcon(suggestion.icon)} />
+                  {suggestion.label}
+                  <span className="opacity-60">{suggestion.source === 'ai' ? 'AI' : '歷史'}</span>
+                </span>
+              )}
               {invoice.carrierId && <span className="truncate">{invoice.carrierId}</span>}
             </div>
           </div>

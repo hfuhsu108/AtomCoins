@@ -150,6 +150,8 @@ export async function recordInvoice(invoiceId, txList) {
     transactionId: records[0].id,
     updatedAt: now(),
   }))
+  // 自動分類建議只服務未歸帳發票，歸帳後即失效——同批刪除，避免無限累積
+  batch.delete(ref('invoiceSuggestions', invoiceId))
   await batch.commit()
   return records[0]
 }

@@ -11,7 +11,7 @@
 | **5+** | **保留**：進階報表（多維度/投資專屬/淨資產趨勢/自訂報表） | （純查詢） |
 | **6A** | **雲端化遷移**（Firebase Auth＋Firestore 取代 Dexie 與原 Drive 同步方案；細分 M0–M3，見 `07-firebase-migration.md`） | 全 entity |
 | **6B** | 發票爬蟲（repo 外本機 Python＋firebase-admin，每日自動抓載具發票；見 `07 §6B`） | Invoice |
-| **6C** | 發票載具匣 UI（歸帳/略過/手動新增/CSV 匯入備援、歸帳拆帳）＋ 範本（見 `07 §6C`） | Invoice、Template |
+| **6C** | 發票載具匣 UI（歸帳/略過/手動新增、歸帳拆帳）＋ 範本（見 `07 §6C`） | Invoice、Template |
 | **7** | 備份匯出（CSV/JSON）、PWA 安裝/捷徑、主題、通知（原 Google Drive 同步已由 6A Firestore 取代） | Settings 擴充 |
 | 保留 | 預算 | Budget |
 

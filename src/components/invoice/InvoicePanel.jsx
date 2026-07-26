@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faCircleCheck, faTriangleExclamation, faRotate, faRotateLeft } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faCircleCheck, faTriangleExclamation, faRotate, faRotateLeft, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons'
+import { httpsCallable } from 'firebase/functions'
+import { functions } from '../../lib/firebase'
 import { useCollection } from '../../db/DataProvider'
 import { useScraperStatus } from '../../hooks/useScraperStatus'
 import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
@@ -21,6 +23,8 @@ export default function InvoicePanel({ hidden }) {
   const navigate = useNavigate()
   const invoices = useCollection('invoices')
   const merchantAliases = useCollection('merchantAliases')
+  const categories = useCollection('categories')
+  const suggestions = useCollection('invoiceSuggestions')
   const status = useScraperStatus()
   const [sub, setSub] = useState('inbox') // inbox | processed
   // 發票編輯 sheet：undefined=關閉、null=手動新增、發票物件=編輯
@@ -34,13 +38,55 @@ export default function InvoicePanel({ hidden }) {
 
   const list = sub === 'inbox' ? inbox : processed
 
+  // 自動分類建議 → 顯示用資料：名稱走「母·子」、圖示與顏色沿用母分類（同 TransactionRow 口徑）
+  const suggestionView = useMemo(() => {
+    const byId = new Map(categories.map((c) => [c.id, c]))
+    const m = new Map()
+    for (const s of suggestions) {
+      const cat = byId.get(s.categoryId)
+      if (!cat) continue // 分類已被刪除，建議失效
+      const parent = cat.parentId ? byId.get(cat.parentId) : cat
+      m.set(s.invoiceId, {
+        label: cat.parentId ? `${parent?.name ?? ''}·${cat.name}` : cat.name,
+        icon: parent?.icon ?? null,
+        color: parent?.color ?? null,
+        source: s.source,
+      })
+    }
+    return m
+  }, [suggestions, categories])
+
   const { run, error } = useAsyncAction()
   const { confirm, confirmElement } = useConfirm()
 
   // 略過後的行內回饋（可復原）：略過是單一 × 動作、無提示，容易誤點
   const [ignoredNotice, setIgnoredNotice] = useState(null) // { id }
   const noticeTimer = useRef(null)
-  useEffect(() => () => clearTimeout(noticeTimer.current), [])
+  const aiTimer = useRef(null)
+  useEffect(
+    () => () => {
+      clearTimeout(noticeTimer.current)
+      clearTimeout(aiTimer.current)
+    },
+    [],
+  )
+
+  // 手動重新分析未歸帳發票：兩層（歷史比對＋LLM）都在 Cloud Function 內跑，
+  // 已有建議的發票會被略過，故重按不會重複計費。
+  const { run: runAi, busy: aiBusy, error: aiError } = useAsyncAction()
+  const [aiNotice, setAiNotice] = useState(null)
+  const analyze = () =>
+    runAi(async () => {
+      const res = await httpsCallable(functions, 'suggestInvoiceCategories')()
+      const { history = 0, ai = 0, pending = 0 } = res.data ?? {}
+      setAiNotice(
+        history + ai === 0
+          ? '沒有需要分類的發票'
+          : `已分類 ${history + ai} 張（歷史比對 ${history}、AI ${ai}）${pending > 0 ? `，另有 ${pending} 張待下次` : ''}`,
+      )
+      clearTimeout(aiTimer.current)
+      aiTimer.current = setTimeout(() => setAiNotice(null), 5000)
+    })
 
   const onRestore = (inv) => run(async () => { await settle(updateInvoice(inv.id, { status: 'inbox' })) })
   const onIgnore = (inv) =>
@@ -64,10 +110,21 @@ export default function InvoicePanel({ hidden }) {
   return (
     <>
       {/* 爬蟲同步狀態條 */}
-      <SyncBar status={status} onAdd={() => setEditTarget(null)} />
+      <SyncBar
+        status={status}
+        onAdd={() => setEditTarget(null)}
+        onAnalyze={sub === 'inbox' && inbox.length > 0 ? analyze : null}
+        analyzing={aiBusy}
+      />
 
-      {error && (
-        <div className="mb-3 px-4 py-2.5 bg-error-bg text-error text-[13px] rounded-card">{error}</div>
+      {(error || aiError) && (
+        <div className="mb-3 px-4 py-2.5 bg-error-bg text-error text-[13px] rounded-card">{error ?? aiError}</div>
+      )}
+
+      {aiNotice && (
+        <div className="mb-3 px-4 py-2.5 bg-surface border border-line rounded-card text-[13px] text-text-secondary">
+          {aiNotice}
+        </div>
       )}
 
       {ignoredNotice && (
@@ -96,6 +153,7 @@ export default function InvoicePanel({ hidden }) {
               key={inv.id}
               invoice={inv}
               aliases={merchantAliases}
+              suggestion={inv.status === 'inbox' ? (suggestionView.get(inv.id) ?? null) : null}
               hidden={hidden}
               onRecord={() => navigate(`/add?invoiceId=${inv.id}`)}
               onIgnore={() => onIgnore(inv)}
@@ -118,7 +176,7 @@ export default function InvoicePanel({ hidden }) {
   )
 }
 
-function SyncBar({ status, onAdd }) {
+function SyncBar({ status, onAdd, onAnalyze, analyzing }) {
   // status：undefined 載入中、null 尚未同步、物件 有紀錄
   let icon = faRotate
   let cls = 'text-text-tertiary'
@@ -138,6 +196,16 @@ function SyncBar({ status, onAdd }) {
     <div className="flex items-center gap-2 bg-surface border border-line rounded-card shadow-card px-4 py-2.5 mb-3">
       <FontAwesomeIcon icon={icon} className={`${cls} text-sm`} />
       <span className="flex-1 min-w-0 text-[13px] text-text-secondary truncate">{text}</span>
+      {onAnalyze && (
+        <button
+          onClick={onAnalyze}
+          disabled={analyzing}
+          title="重新分析未歸帳發票的分類"
+          className="flex items-center gap-1.5 h-8 px-3 rounded-chip bg-surface-alt text-text-primary text-[13px] font-semibold flex-none disabled:opacity-40"
+        >
+          <FontAwesomeIcon icon={faWandMagicSparkles} className="text-xs" /> {analyzing ? '分析中…' : '分析'}
+        </button>
+      )}
       <button
         onClick={onAdd}
         className="flex items-center gap-1.5 h-8 px-3 rounded-chip bg-surface-alt text-text-primary text-[13px] font-semibold flex-none"

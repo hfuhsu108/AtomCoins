@@ -7,6 +7,7 @@ import { useConfirm } from '../ConfirmSheet'
 import { getIcon, CATEGORY_ICON_NAMES, CATEGORY_COLORS } from '../../lib/icons'
 import { UNCATEGORIZED_EXPENSE_ID, UNCATEGORIZED_INCOME_ID, FEE_CATEGORY_ID } from '../../db/seed'
 import Sheet from '../Sheet'
+import IconPickerSheet from './IconPickerSheet'
 
 const PROTECTED = new Set([UNCATEGORIZED_EXPENSE_ID, UNCATEGORIZED_INCOME_ID, FEE_CATEGORY_ID])
 
@@ -19,6 +20,7 @@ export default function CategoryEditSheet({ open, category, kind, parentId = nul
   const [name, setName] = useState(category?.name ?? '')
   const [icon, setIcon] = useState(category?.icon ?? null)
   const [color, setColor] = useState(category?.color ?? null)
+  const [pickingIcon, setPickingIcon] = useState(false)
 
   // 切換編輯對象時重置
   const key = category?.id ?? `new-${parentId ?? 'root'}`
@@ -32,6 +34,9 @@ export default function CategoryEditSheet({ open, category, kind, parentId = nul
 
   const { run, busy, error } = useAsyncAction()
   const { confirm, confirmElement } = useConfirm()
+
+  // 從完整 FA 目錄挑的圖示以 { n, w, h, p } 物件存放（內建的仍是名稱字串），單獨呈現在格線首格
+  const isCustom = icon != null && typeof icon === 'object'
 
   const childIds = category ? categories.filter((c) => c.parentId === category.id).map((c) => c.id) : []
   const deletable = category && !PROTECTED.has(category.id) && !childIds.some((id) => PROTECTED.has(id))
@@ -87,16 +92,31 @@ export default function CategoryEditSheet({ open, category, kind, parentId = nul
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[13px] text-text-secondary">圖示</span>
-            {isChild && (
-              <button
-                onClick={() => setIcon(null)}
-                className={`text-[12px] font-medium ${icon == null ? 'text-brand' : 'text-text-tertiary'}`}
-              >
-                沿用母分類
+            <div className="flex items-center gap-3">
+              <button onClick={() => setPickingIcon(true)} className="text-[12px] font-medium text-brand">
+                更多圖示…
               </button>
-            )}
+              {isChild && (
+                <button
+                  onClick={() => setIcon(null)}
+                  className={`text-[12px] font-medium ${icon == null ? 'text-brand' : 'text-text-tertiary'}`}
+                >
+                  沿用母分類
+                </button>
+              )}
+            </div>
           </div>
           <div className="grid grid-cols-8 gap-1.5 max-h-[180px] overflow-y-auto p-1 bg-surface border border-line rounded-modal">
+            {isCustom && (
+              <button
+                title={`${icon.n}（點擊可換一個）`}
+                onClick={() => setPickingIcon(true)}
+                style={color ? { background: color, color: '#fff' } : undefined}
+                className={`aspect-square rounded-btn flex items-center justify-center text-[15px] ${color ? '' : 'bg-brand text-white'}`}
+              >
+                <FontAwesomeIcon icon={getIcon(icon)} />
+              </button>
+            )}
             {CATEGORY_ICON_NAMES.map((n) => {
               const active = icon === n
               return (
@@ -173,6 +193,7 @@ export default function CategoryEditSheet({ open, category, kind, parentId = nul
         </div>
       </div>
       {confirmElement}
+      <IconPickerSheet open={pickingIcon} onClose={() => setPickingIcon(false)} onPick={setIcon} />
     </Sheet>
   )
 }
