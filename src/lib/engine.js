@@ -114,12 +114,20 @@ export function pendingByAccount(accounts, txns, asOf = todayStr(), stockTxns = 
   return map
 }
 
-// 信用卡帳單分期（docs/02 §4.1）。依 statementDay 切期，回傳近 months 期，
-// 最新（含未出帳的本期）在前。每期：
-//   { periodStart, periodEnd, statementDate, dueDate, total, charges, isOpen }
+// 信用卡帳單分期（docs/02 §4.1.1）。依 statementDay 切期，回傳近 months 期，
+// 最新在前。每期：
+//   { periodStart, periodEnd, statementDate, dueDate, total, charges, isOpen, isFuture }
 // total＝該期內「卡帳消費」淨額（expense 加、income 減；轉帳/繳款不算消費）。
 // 繳款狀態由呼叫端比對 creditCardStatements（periodEnd）另行判定。
-export function statementPeriods(account, txns, { months = 6, asOf = todayStr() } = {}) {
+//
+// 納入依據是**入帳日**（postingDate，未設則等同 tradeDate）而非消費日：店家尚未向銀行
+// 請款時該筆不會出現在銀行帳單上，把它的入帳日往後挪就能讓 App 帳單與銀行帳單對齊
+// （卡片餘額本來就走 postingDate，兩者因此同口徑）。收支報表歸月仍一律用 tradeDate。
+//
+// future＝額外往前產生幾期尚未開始的帳單（卡片頁的期別導航要能翻到下一期，看見剛延後
+// 的消費落在哪）。預設 0 → 既有呼叫端行為不變。注意 isOpen（asOf <= periodEnd）對未來期
+// 同樣為真，要區分「累計中的本期」與「還沒開始的未來期」一律看 isFuture。
+export function statementPeriods(account, txns, { months = 6, asOf = todayStr(), future = 0 } = {}) {
   const S = account.statementDay
   if (!S) return []
   const P = account.paymentDueDay ?? S
@@ -130,7 +138,7 @@ export function statementPeriods(account, txns, { months = 6, asOf = todayStr() 
   if (asOf > dayOfMonth(cur.year, cur.month, S)) cur = addMonth(cur, 1)
 
   const periods = []
-  for (let i = 0; i < months; i++) {
+  for (let i = -future; i < months; i++) {
     const ym = addMonth(cur, -i)
     const periodEnd = dayOfMonth(ym.year, ym.month, S)
     const prev = addMonth(ym, -1)
@@ -143,7 +151,8 @@ export function statementPeriods(account, txns, { months = 6, asOf = todayStr() 
     const charges = []
     for (const tx of txns) {
       if (tx.accountId !== account.id) continue
-      if (tx.tradeDate < periodStart || tx.tradeDate > periodEnd) continue
+      const postedOn = tx.postingDate || tx.tradeDate
+      if (postedOn < periodStart || postedOn > periodEnd) continue
       if (tx.type === 'expense') {
         total += tx.amount
         charges.push(tx)
@@ -160,9 +169,40 @@ export function statementPeriods(account, txns, { months = 6, asOf = todayStr() 
       total,
       charges,
       isOpen: asOf <= periodEnd,
+      isFuture: asOf < periodStart,
     })
   }
   return periods
+}
+
+// 已延後至下期的卡帳消費：入帳日被挪到 afterDate（通常是本期結帳日）之後，
+// 因此不落在 statementPeriods 回傳的任何一期裡，光看帳單列表會「消失」。
+// 卡片頁另闢一區列出它們，讓使用者能反悔收回。依消費日新到舊。
+export function deferredCharges(account, txns, afterDate) {
+  if (!afterDate) return []
+  return txns
+    .filter(
+      (tx) =>
+        tx.accountId === account.id &&
+        (tx.type === 'expense' || tx.type === 'income') &&
+        (tx.postingDate || tx.tradeDate) > afterDate,
+    )
+    .sort((a, b) => (a.tradeDate < b.tradeDate ? 1 : -1))
+}
+
+// 已繳帳單索引，key = `${accountId}|${periodEnd}`（卡片頁與推播共用同一口徑）。
+// paymentTransactionId 指向的繳費轉帳若已被刪除，該快照視為未繳：否則使用者刪掉繳費
+// 記錄後，帳單會永遠顯示「已繳」、推播也不再提醒該期繳費。
+export function paidStatementSet(statements, txns) {
+  const txIds = new Set(txns.map((t) => t.id))
+  const out = new Set()
+  for (const s of statements) {
+    if (!s.isPaid) continue
+    // 沒有 paymentTransactionId 的快照（手動標記/舊資料）不做存在性檢查，維持原樣
+    if (s.paymentTransactionId && !txIds.has(s.paymentTransactionId)) continue
+    out.add(`${s.accountId}|${s.periodEnd}`)
+  }
+  return out
 }
 
 // 應收/應付未結清 = amount − Σ 還款
@@ -231,16 +271,19 @@ export function counterpartyLoanStats(txns, asOf = null) {
   return rows.sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
 }
 
-// 淨額結清方案（docs/03 §D）：對某對象所有未結清的借還款各補一筆「全額還款」，
+// 淨額結清方案（docs/03 §D）：對某對象未結清的借還款各補一筆「全額還款」，
 // 全部指向同一帳戶同一天 → 應收 +、應付 − 相抵，帳戶淨變動剛好等於 net，
 // 不需要另記一筆轉帳。asOf 固定用當下口徑（結清是此刻的動作）。
-export function netSettlementPlan(txns, counterpartyId) {
+// txIds 為 null 時涵蓋該對象全部未結清；給定時只納入其中的交易（分批結清）。
+export function netSettlementPlan(txns, counterpartyId, txIds = null) {
+  const only = txIds ? new Set(txIds) : null
   const entries = []
   let recvTotal = 0
   let payTotal = 0
   for (const tx of txns) {
     if (!isLoan(tx)) continue
     if ((tx.counterpartyId ?? null) !== (counterpartyId ?? null)) continue
+    if (only && !only.has(tx.id)) continue
     const left = outstanding(tx)
     if (left <= 0) continue
     entries.push({ txId: tx.id, type: tx.type, amount: left })

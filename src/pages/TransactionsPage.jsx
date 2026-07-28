@@ -37,7 +37,14 @@ export default function TransactionsPage() {
   }
   const [ym, setYm] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 })
   const [hidden, setHidden] = useState(false)
-  const [searching, setSearching] = useState(false)
+  // 首頁點帳戶會帶 ?accountId= 進來：直接開搜尋面板並預填帳戶篩選
+  const [initialAccountId] = useState(searchParams.get('accountId'))
+  const [searching, setSearching] = useState(!!initialAccountId)
+  // 關閉搜尋時一併清掉 URL 參數，否則本頁重掛時又會被帶回篩選狀態
+  const closeSearch = () => {
+    setSearching(false)
+    if (searchParams.get('accountId')) setSearchParams({}, { replace: true })
+  }
   const [ledgerView, setLedgerView] = useState('list') // list | calendar
 
   const lookups = useMemo(() => {
@@ -104,7 +111,8 @@ export default function TransactionsPage() {
           accounts={accounts}
           lookups={lookups}
           hidden={hidden}
-          onClose={() => setSearching(false)}
+          initialAccountId={initialAccountId}
+          onClose={closeSearch}
         />
       ) : (
         <>

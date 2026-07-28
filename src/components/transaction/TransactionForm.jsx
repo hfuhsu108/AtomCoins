@@ -7,6 +7,7 @@ import {
   faChevronUp,
   faScissors,
   faHandHoldingDollar,
+  faHandHoldingHand,
   faSliders,
   faCalendarDays,
   faArrowDown,
@@ -101,11 +102,17 @@ function stateFromTx(tx) {
   return base
 }
 
-// 發票品項明細 → 備註摘要（歸帳時帶入，docs/09 需求1）：「品名×數量、品名…」
+// 發票品項明細 → 備註摘要（歸帳時帶入，docs/09 需求1）：「品名×數量 $金額、品名 $金額…」
+// 數量 1 不贅述；金額缺值時只留品名，不印 $0——爬蟲偶有品項沒帶 amount，印 0 會誤導對帳。
 function invoiceItemsSummary(invoice) {
   const items = invoice.lineItems ?? []
   return items
-    .map((it) => (it.qty > 1 ? `${it.name}×${it.qty}` : it.name))
+    .map((it) => {
+      if (!it.name) return null
+      const qty = it.qty > 1 ? `×${it.qty}` : ''
+      const amount = it.amount == null ? '' : ` $${formatNumber(it.amount)}`
+      return `${it.name}${qty}${amount}`
+    })
     .filter(Boolean)
     .join('、')
 }
@@ -254,6 +261,10 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
   // 是否以多列拆帳呈現：有多列或任一列標記代墊
   const hasAdvance = state.splits.some((s) => s.advanceCounterpartyId)
   const multiRow = state.splits.length > 1 || hasAdvance
+  // 「應付（由他人代墊）」可用的情境：僅支出、僅新增，且與分期／週期互斥。
+  // 切換型別不會清掉 state.advancedBy，所以按鈕與資訊框都要看這個旗標，
+  // 否則切到收入後框還在、buildList 卻不會產生那筆應付（顯示與行為不一致）。
+  const canAdvancedBy = type === 'expense' && !initialTx && !state.installment && !state.recurring
 
   // 目前鍵盤編輯的運算式
   const activeExpr = isExpenseLike ? state.splits[state.activeSplit]?.expr ?? '' : state.amountExpr
@@ -877,15 +888,26 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
               />
             )}
 
-            {/* 動作列 */}
-            <div className="flex gap-2 mt-3">
+            {/* 動作列：拆帳／應收（我墊別人）／應付（別人墊我）／進階。
+                應收與應付互斥，各自 active 時的高亮是移除 toggle 後唯一的開關狀態指示。*/}
+            <div className="flex gap-1.5 mt-3">
               <ActionBtn icon={faScissors} label="拆帳" onClick={addSplit} />
               {type === 'expense' && (
                 <ActionBtn
                   icon={faHandHoldingDollar}
-                  label="代墊"
+                  label="應收"
+                  active={hasAdvance}
                   disabled={!!state.advancedBy}
                   onClick={() => markAdvance(state.activeSplit)}
+                />
+              )}
+              {canAdvancedBy && (
+                <ActionBtn
+                  icon={faHandHoldingHand}
+                  label="應付"
+                  active={!!state.advancedBy}
+                  disabled={hasAdvance}
+                  onClick={toggleAdvancedBy}
                 />
               )}
               <ActionBtn
@@ -896,14 +918,12 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
               />
             </div>
 
-            {/* 由他人代墊（僅支出、僅新增；與分期／週期互斥，故它們開著時不出現）*/}
-            {type === 'expense' && !initialTx && !state.installment && !state.recurring && (
+            {/* 應付資訊框：選定代墊者後才出現（未選時「應付」鈕本身就是入口）*/}
+            {canAdvancedBy && state.advancedBy && (
               <div className="mt-2.5">
                 <AdvancedByBox
                   counterparty={lookups.cp[state.advancedBy]}
-                  blocked={hasAdvance}
                   total={total}
-                  onToggle={toggleAdvancedBy}
                   onPick={() => setPicker({ kind: 'counterparty', target: 'advancedBy' })}
                 />
               </div>
@@ -1224,6 +1244,9 @@ function SingleCategoryChip({ split, lookups, onOpen }) {
   const cat = lookups.cat[split.categoryId]
   const parent = cat?.parentId ? lookups.cat[cat.parentId] : cat
   const hasCat = !!cat
+  // 顏色一律取母分類（同 TransactionRow 慣例，讓同群組交易維持一致識別色）。
+  // color:null＝中性色，不比照 icon 的「沿用母」——兩者語義相反（docs/01 §3.2）
+  const color = parent?.color ?? null
   return (
     <>
       <div className="text-[13px] font-semibold text-text-secondary mb-3 px-1">分類</div>
@@ -1233,10 +1256,13 @@ function SingleCategoryChip({ split, lookups, onOpen }) {
       >
         <span
           className={`w-10 h-10 flex-none rounded-btn flex items-center justify-center text-base ${
-            hasCat ? 'bg-brand text-white' : 'bg-surface-alt text-text-tertiary'
+            color ? '' : hasCat ? 'bg-brand text-white' : 'bg-surface-alt text-text-tertiary'
           }`}
+          // 有設色就吃分類色（實心，同 CategoryPicker 選中態）；沒設色才退回品牌藍，
+          // 否則 seed 分類（color 全為 null）會與「未選分類」的中性底無從分辨
+          style={color ? { background: color, color: '#fff' } : undefined}
         >
-          <FontAwesomeIcon icon={getIcon(parent?.icon)} />
+          <FontAwesomeIcon icon={getIcon(cat?.icon ?? parent?.icon)} />
         </span>
         <span className="flex-1 min-w-0">
           <span className={`block text-[15px] font-semibold ${hasCat ? 'text-text-primary' : 'text-text-tertiary'}`}>
@@ -1294,6 +1320,8 @@ function SplitRows({
         const advance = s.advanceCounterpartyId
         const cp = lookups.cp[advance]
         const amount = toAmount(s.expr) ?? 0
+        // 代墊列的 icon 表示的是代墊、不是分類，所以維持中性色
+        const color = advance ? null : (parent?.color ?? null)
         return (
           <div
             key={s.key}
@@ -1302,8 +1330,13 @@ function SplitRows({
               active ? 'bg-brand-light/50' : ''
             }`}
           >
-            <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
-              <FontAwesomeIcon icon={getIcon(advance ? 'money-bill-transfer' : parent?.icon)} />
+            <span
+              className={`w-9 h-9 flex-none rounded-btn flex items-center justify-center ${
+                color ? '' : 'bg-surface-alt text-text-secondary'
+              }`}
+              style={color ? { background: `color-mix(in srgb, ${color} 15%, transparent)`, color } : undefined}
+            >
+              <FontAwesomeIcon icon={getIcon(advance ? 'money-bill-transfer' : (cat?.icon ?? parent?.icon))} />
             </span>
             <div className="flex-1 min-w-0">
               {advance ? (
@@ -1390,14 +1423,16 @@ function SplitRows({
   )
 }
 
-function ActionBtn({ icon, label, trailing, onClick, disabled = false }) {
+function ActionBtn({ icon, label, trailing, onClick, disabled = false, active = false }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      className="flex-1 flex items-center justify-center gap-1.5 h-[42px] rounded-btn bg-surface border border-line text-[13px] font-medium disabled:opacity-40"
+      className={`flex-1 flex items-center justify-center gap-1.5 h-[42px] rounded-btn border text-[13px] font-medium disabled:opacity-40 ${
+        active ? 'bg-brand-light border-brand text-brand' : 'bg-surface border-line'
+      }`}
     >
-      <FontAwesomeIcon icon={icon} className="text-text-secondary text-xs" /> {label}
+      <FontAwesomeIcon icon={icon} className={`text-xs ${active ? '' : 'text-text-secondary'}`} /> {label}
       {trailing && <FontAwesomeIcon icon={trailing} className="text-text-tertiary text-[9px]" />}
     </button>
   )
@@ -1522,35 +1557,25 @@ function ToggleRow({ label, on, onToggle }) {
   )
 }
 
-// 由他人代墊（docs/03 §F 反向）：別人幫我付掉這筆消費。
+// 應付／由他人代墊（docs/03 §F 反向）：別人幫我付掉這筆消費。
 // 儲存時另記一筆同額同帳戶的應付 → 現金淨變動 0、支出照算、欠款進借貸卡。
-// 與「代墊拆帳列（我墊別人）」互斥：兩者同時成立會變成 expense＋receivable＋payable
+// 與「應收（代墊拆帳列，我墊別人）」互斥：兩者同時成立會變成 expense＋receivable＋payable
 // 三筆同群組，而應付該記全額還是只記我自己那份沒有唯一正解，寧可拆成兩次記。
-function AdvancedByBox({ counterparty, blocked, total, onToggle, onPick }) {
-  const on = !!counterparty
+// 開關由動作列的「應付」鈕負責（含互斥時的 disabled），本框只在選定對象後顯示。
+function AdvancedByBox({ counterparty, total, onPick }) {
+  if (!counterparty) return null
   return (
-    <div className="bg-surface border border-line rounded-modal p-3 flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <span className="text-sm text-text-secondary">由他人代墊</span>
-          {blocked && <span className="block text-[11px] text-text-tertiary mt-0.5">已有代墊拆帳列，兩者不可並用</span>}
-        </div>
-        <Switch on={on} disabled={blocked} onToggle={blocked ? undefined : onToggle} />
+    <div className="bg-surface border border-line rounded-modal p-3 flex flex-col gap-2">
+      <div className="flex items-center justify-between text-[13px]">
+        <span className="text-text-secondary">由他人代墊</span>
+        <button onClick={onPick} className="font-semibold flex items-center gap-1.5">
+          {counterparty.name}
+          <FontAwesomeIcon icon={faChevronDown} className="text-text-tertiary text-[10px]" />
+        </button>
       </div>
-      {on && (
-        <>
-          <div className="flex items-center justify-between text-[13px]">
-            <span className="text-text-secondary">代墊者</span>
-            <button onClick={onPick} className="font-semibold flex items-center gap-1.5">
-              {counterparty.name}
-              <FontAwesomeIcon icon={faChevronDown} className="text-text-tertiary text-[10px]" />
-            </button>
-          </div>
-          <div className="text-[11px] text-text-tertiary tabular-nums border-t border-line-light pt-2">
-            另記一筆應付 NT$ {formatNumber(total)}（同帳戶，現金不變動）
-          </div>
-        </>
-      )}
+      <div className="text-[11px] text-text-tertiary tabular-nums border-t border-line-light pt-2">
+        另記一筆應付 NT$ {formatNumber(total)}（同帳戶，現金不變動）
+      </div>
     </div>
   )
 }

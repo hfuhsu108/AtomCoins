@@ -1,18 +1,28 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faChevronLeft, faChevronDown, faCheck } from '@fortawesome/free-solid-svg-icons'
+import { faChevronLeft, faChevronRight, faChevronDown, faCheck, faClockRotateLeft, faRotateLeft } from '@fortawesome/free-solid-svg-icons'
 import { useCollection, useSettings } from '../db/DataProvider'
-import { accountBalances, statementPeriods } from '../lib/engine'
-import { payCreditCardStatement } from '../db/repo'
+import { accountBalances, statementPeriods, deferredCharges, paidStatementSet } from '../lib/engine'
+import { payCreditCardStatement, setPostingDates } from '../db/repo'
 import { useAsyncAction, settle } from '../hooks/useAsyncAction'
 import useCloseView from '../hooks/useCloseView'
 import { formatAmount, formatBalance, formatNumber } from '../lib/format'
-import { todayStr, formatMd } from '../lib/date'
+import { todayStr, formatMd, addDays, monthLabel } from '../lib/date'
 import { accountIcon } from '../lib/icons'
 import TransactionRow from '../components/transaction/TransactionRow'
 import AccountPicker from '../components/transaction/AccountPicker'
 import Sheet from '../components/Sheet'
+
+const FUTURE = 1 // 額外產生的未來期數：能翻到下一期，看見剛延後的消費落在哪
+const MONTHS = 12 // 往回可翻的期數
+// periods[FUTURE] 恆為「本期」（累計中的那期）
+
+// 帳單以結帳日所在月份命名（信用卡慣例：結帳日 7/15 → 「7 月帳單」）
+function periodLabel(period) {
+  const [y, m] = period.periodEnd.split('-').map(Number)
+  return `${monthLabel(y, m)}帳單`
+}
 
 export default function CardDetailPage() {
   const { id } = useParams()
@@ -29,18 +39,24 @@ export default function CardDetailPage() {
   const statements = id ? allStatements.filter((s) => s.accountId === id) : []
 
   const [paying, setPaying] = useState(null) // 繳費中的 period 物件
+  const [deferring, setDeferring] = useState(null) // 延後入帳：{ preselectId } 或 null
+  const [idx, setIdx] = useState(FUTURE) // 目前瀏覽的期別索引；idx-- 往未來、idx++ 往過去
+  const { run: runUndefer } = useAsyncAction()
 
   const card = accounts.find((a) => a.id === id)
+  const asOf = todayStr()
+  const periods = useMemo(
+    () => (card ? statementPeriods(card, txns, { months: MONTHS, asOf, future: FUTURE }) : []),
+    [card, txns, asOf],
+  )
   if (!card) return null
 
-  const asOf = todayStr()
   const balance = accountBalances(accounts, txns, asOf)[card.id] ?? 0
   const used = -balance
   const limit = card.creditLimit ?? 0
   const pct = limit > 0 ? Math.min(100, Math.max(0, (used / limit) * 100)) : 0
-  const periods = statementPeriods(card, txns, { months: 6, asOf })
-  const paidByEnd = {}
-  for (const s of statements) if (s.isPaid) paidByEnd[s.periodEnd] = s
+  // 繳費轉帳被刪掉的快照不算已繳（見 engine.paidStatementSet）
+  const paidSet = paidStatementSet(statements, txns)
 
   const lookups = (() => {
     const cat = {}, acc = {}, cp = {}, tag = {}
@@ -51,7 +67,20 @@ export default function CardDetailPage() {
     return { cat, acc, cp, tag }
   })()
 
-  const openPeriod = periods.find((p) => p.isOpen)
+  const period = periods[idx] ?? null // 沒設 statementDay 時 periods 為空
+  const current = periods[FUTURE] ?? null // 本期（累計中）
+  const viewingCurrent = idx === FUTURE
+  const isPaid = period ? paidSet.has(`${card.id}|${period.periodEnd}`) : false
+  const charges = period ? period.charges.slice().sort((a, b) => (a.tradeDate < b.tradeDate ? 1 : -1)) : []
+
+  // 入帳日被挪到本期結帳日之後的消費：不屬於任何一期，另闢一區才不會憑空消失。
+  // 只在瀏覽本期時列出——它的用途是對帳時看「我把哪幾筆挪走了」，其他期沒有意義。
+  const deferred = viewingCurrent && current ? deferredCharges(card, txns, current.periodEnd) : []
+  const deferredTotal = deferred.reduce((s, t) => s + (t.type === 'expense' ? t.amount : -t.amount), 0)
+  // 收回＝入帳日設回消費日
+  const undefer = (tx) => runUndefer(async () => {
+    await settle(setPostingDates([{ id: tx.id, postingDate: tx.tradeDate }]))
+  })
 
   return (
     <div className="fixed inset-0 z-40 bg-app-bg overflow-y-auto">
@@ -88,71 +117,129 @@ export default function CardDetailPage() {
           )}
         </div>
 
-        {/* 帳單列表 */}
-        <div className="px-0.5 mb-2 text-[15px] font-semibold">帳單</div>
-        <div className="bg-surface border border-line rounded-card shadow-card divide-y divide-line-light">
-          {periods.map((p) => {
-            const paid = paidByEnd[p.periodEnd]
-            return (
-              <div key={p.periodEnd} className="flex items-center gap-3 px-4 py-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[15px] font-medium tabular-nums">
-                      {formatMd(p.periodStart)} – {formatMd(p.periodEnd)}
-                    </span>
-                    {p.isOpen ? (
-                      <span className="text-[11px] font-medium text-text-secondary bg-surface-alt rounded-pill px-2 py-0.5">
-                        本期累計
-                      </span>
-                    ) : paid ? (
-                      <span className="text-[11px] font-medium text-success bg-success-bg rounded-pill px-2 py-0.5">
-                        已繳
-                      </span>
-                    ) : p.total > 0 ? (
-                      <span className="text-[11px] font-medium text-warning-text bg-warning-bg rounded-pill px-2 py-0.5">
-                        未繳
-                      </span>
-                    ) : (
-                      <span className="text-[11px] font-medium text-text-tertiary bg-surface-alt rounded-pill px-2 py-0.5">
-                        無消費
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-text-tertiary tabular-nums mt-0.5">
-                    {p.isOpen ? `出帳 ${formatMd(p.statementDate)}` : `繳款截止 ${formatMd(p.dueDate)}`}
-                  </div>
+        {/* 期別導航（版面比照明細頁的月份摘要卡）*/}
+        {period ? (
+          <div className="bg-surface border border-line rounded-card shadow-card p-4">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setIdx((i) => i + 1)}
+                disabled={idx >= periods.length - 1}
+                className="w-7 h-7 flex-none rounded-chip bg-surface-alt text-text-secondary flex items-center justify-center disabled:opacity-30"
+              >
+                <FontAwesomeIcon icon={faChevronLeft} className="text-xs" />
+              </button>
+              <div className="text-center min-w-0">
+                <div className="text-[15px] font-semibold">{periodLabel(period)}</div>
+                <div className="text-[11px] text-text-tertiary tabular-nums mt-0.5">
+                  {formatMd(period.periodStart)} – {formatMd(period.periodEnd)}
                 </div>
-                <span className="text-[15px] font-semibold tabular-nums">{formatAmount(p.total)}</span>
-                {!p.isOpen && !paid && p.total > 0 && (
-                  <button
-                    onClick={() => setPaying(p)}
-                    className="h-[34px] px-3 rounded-btn bg-brand text-white text-[13px] font-semibold"
-                  >
-                    繳費
-                  </button>
-                )}
               </div>
-            )
-          })}
-        </div>
-
-        {/* 本期明細 */}
-        {openPeriod && openPeriod.charges.length > 0 && (
-          <>
-            <div className="px-0.5 mt-4 mb-2 text-[15px] font-semibold">本期明細</div>
-            <div className="bg-surface border border-line rounded-card shadow-card px-4 divide-y divide-line-light">
-              {openPeriod.charges
-                .slice()
-                .sort((a, b) => (a.tradeDate < b.tradeDate ? 1 : -1))
-                .map((t) => (
-                  <TransactionRow
-                    key={t.id}
-                    tx={t}
-                    lookups={lookups}
-                    onClick={() => navigate(`/add?id=${t.id}`)}
-                  />
-                ))}
+              <button
+                onClick={() => setIdx((i) => i - 1)}
+                disabled={idx <= 0}
+                className="w-7 h-7 flex-none rounded-chip bg-surface-alt text-text-secondary flex items-center justify-center disabled:opacity-30"
+              >
+                <FontAwesomeIcon icon={faChevronRight} className="text-xs" />
+              </button>
             </div>
+            <div className="mt-3 pt-3 border-t border-line-light flex items-end justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[13px] text-text-secondary">
+                    {period.isFuture || period.isOpen ? '累計金額' : '應繳金額'}
+                  </span>
+                  <StatusBadge period={period} paid={isPaid} />
+                </div>
+                <div className="text-[26px] font-bold leading-tight tabular-nums mt-0.5">
+                  {formatAmount(period.total)}
+                </div>
+                <div className="text-xs text-text-tertiary tabular-nums mt-0.5">
+                  {period.isOpen
+                    ? `出帳 ${formatMd(period.statementDate)}`
+                    : `繳款截止 ${formatMd(period.dueDate)}`}
+                </div>
+              </div>
+              {!period.isOpen && !isPaid && period.total > 0 && (
+                <button
+                  onClick={() => setPaying(period)}
+                  className="flex-none h-[34px] px-3 rounded-btn bg-brand text-white text-[13px] font-semibold"
+                >
+                  繳費
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="bg-surface border border-line rounded-card shadow-card p-4 text-[13px] text-text-tertiary text-center">
+            尚未設定結帳日，無法產生帳單
+          </div>
+        )}
+
+        {/* 該期明細。延後入帳在每一期都提供——對帳時發現銀行沒收的那筆，多半正是
+            已出帳期別裡的消費。已延後的列改顯示「收回」，不必回到本期才收得回來。*/}
+        {period && (
+          <>
+            <div className="px-0.5 mt-4 mb-2 flex items-center justify-between">
+              <span className="text-[15px] font-semibold">明細</span>
+              {charges.length > 0 && (
+                <button
+                  onClick={() => setDeferring({ preselectId: null })}
+                  className="flex items-center gap-1.5 h-[30px] px-2.5 rounded-chip bg-surface border border-line text-[12px] font-medium text-text-secondary"
+                >
+                  <FontAwesomeIcon icon={faClockRotateLeft} className="text-[10px]" /> 延後入帳
+                </button>
+              )}
+            </div>
+            {charges.length === 0 ? (
+              <div className="py-16 text-center text-text-tertiary text-sm">這期尚無消費</div>
+            ) : (
+              <div className="bg-surface border border-line rounded-card shadow-card px-4 divide-y divide-line-light">
+                {charges.map((t) => {
+                  const isDeferred = !!t.postingDate && t.postingDate > t.tradeDate
+                  return (
+                    <div key={t.id} className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <TransactionRow tx={t} lookups={lookups} onClick={() => navigate(`/add?id=${t.id}`)} />
+                      </div>
+                      <button
+                        onClick={() => (isDeferred ? undefer(t) : setDeferring({ preselectId: t.id }))}
+                        className="flex-none h-[28px] px-2.5 rounded-chip bg-surface-alt text-[12px] text-text-secondary"
+                      >
+                        {isDeferred ? '收回' : '延後'}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* 已延後至下期：店家尚未請款而手動挪走入帳日的消費，可隨時收回 */}
+        {deferred.length > 0 && (
+          <>
+            <div className="px-0.5 mt-4 mb-2 flex items-center justify-between">
+              <span className="text-[15px] font-semibold">已延後至下期</span>
+              <span className="text-[13px] text-text-secondary tabular-nums">{formatAmount(deferredTotal)}</span>
+            </div>
+            <div className="bg-surface border border-line rounded-card shadow-card px-4 divide-y divide-line-light">
+              {deferred.map((t) => (
+                <div key={t.id} className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <TransactionRow tx={t} lookups={lookups} onClick={() => navigate(`/add?id=${t.id}`)} />
+                  </div>
+                  <button
+                    onClick={() => undefer(t)}
+                    className="flex-none flex items-center gap-1 h-[28px] px-2.5 rounded-chip bg-surface-alt text-[12px] text-text-secondary"
+                  >
+                    <FontAwesomeIcon icon={faRotateLeft} className="text-[10px]" /> 收回
+                  </button>
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-text-tertiary mt-2 px-1">
+              這些消費不計入本期帳單與已用額度，會落在下一期。
+            </p>
           </>
         )}
       </div>
@@ -164,7 +251,150 @@ export default function CardDetailPage() {
         accounts={accounts}
         onClose={() => setPaying(null)}
       />
+
+      <DeferSheet
+        request={deferring}
+        charges={period?.charges ?? []}
+        paid={isPaid}
+        lookups={lookups}
+        // 該期結帳日的隔天＝最早能落到下一期的入帳日
+        defaultDate={period ? addDays(period.periodEnd, 1) : todayStr()}
+        onClose={() => setDeferring(null)}
+      />
     </div>
+  )
+}
+
+// 期別狀態。isOpen 對未來期同樣為真，故必須先判 isFuture（見 engine.statementPeriods）
+function StatusBadge({ period, paid }) {
+  const s = period.isFuture
+    ? { label: '未開始', cls: 'text-text-tertiary bg-surface-alt' }
+    : period.isOpen
+      ? { label: '本期累計', cls: 'text-text-secondary bg-surface-alt' }
+      : paid
+        ? { label: '已繳', cls: 'text-success bg-success-bg' }
+        : period.total > 0
+          ? { label: '未繳', cls: 'text-warning-text bg-warning-bg' }
+          : { label: '無消費', cls: 'text-text-tertiary bg-surface-alt' }
+  return <span className={`text-[11px] font-medium rounded-pill px-2 py-0.5 ${s.cls}`}>{s.label}</span>
+}
+
+// 延後入帳：把選定消費的入帳日挪到該期結帳日之後，該筆就改列下一期帳單、
+// 也不再計入卡片已用額度（店家尚未向銀行請款 ＝ 這筆還沒真的欠）。
+// 同一個面板兼顧逐列（帶 preselectId 進來）與批次勾選。
+function DeferSheet({ request, charges, paid, lookups, defaultDate, onClose }) {
+  const open = !!request
+  const [selected, setSelected] = useState(() => new Set())
+  const [date, setDate] = useState(defaultDate)
+  const { run, busy, error } = useAsyncAction()
+
+  // 每次開啟重置：逐列進來只勾那筆，從標題進來則全不勾。
+  // defaultDate 納入 key，換一期再開才會重算預設入帳日。
+  const key = open ? `${defaultDate}|${request.preselectId ?? 'batch'}` : 'closed'
+  const [lastKey, setLastKey] = useState(key)
+  if (lastKey !== key) {
+    setLastKey(key)
+    setSelected(new Set(open && request.preselectId ? [request.preselectId] : []))
+    setDate(defaultDate)
+  }
+
+  const rows = charges.slice().sort((a, b) => (a.tradeDate < b.tradeDate ? 1 : -1))
+  const picked = rows.filter((t) => selected.has(t.id))
+  // 入帳日不得早於消費日，否則餘額會在消費前就變動
+  const minDate = picked.reduce((m, t) => (t.tradeDate > m ? t.tradeDate : m), '')
+  const total = picked.reduce((s, t) => s + (t.type === 'expense' ? t.amount : -t.amount), 0)
+  const canSave = picked.length > 0 && !!date && date >= minDate
+
+  const toggle = (id) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const confirm = () => {
+    if (!canSave) return
+    run(async () => {
+      await settle(setPostingDates(picked.map((t) => ({ id: t.id, postingDate: date }))))
+      onClose()
+    })
+  }
+
+  return (
+    <Sheet open={open} onClose={onClose} title="延後入帳" bodyClassName="overflow-y-auto">
+      <div className="p-[18px] flex flex-col gap-3.5">
+        <p className="text-[13px] text-text-secondary">
+          店家還沒向銀行請款、對帳時金額對不上的消費，挪到下一期帳單。
+        </p>
+        {paid && (
+          <p className="text-[12px] text-warning-text bg-warning-bg rounded-modal px-3 py-2">
+            這期帳單已繳費。延後後帳單金額會與當初的繳款金額不符，確認是要調整的話再繼續。
+          </p>
+        )}
+
+        <div>
+          <div className="text-[13px] text-text-secondary mb-1.5 px-1">
+            要延後的項目（已選 {picked.length}）
+          </div>
+          <div className="bg-surface border border-line rounded-modal divide-y divide-line-light">
+            {rows.map((t) => {
+              const on = selected.has(t.id)
+              const cat = lookups.cat[t.splits?.[0]?.categoryId]
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => toggle(t.id)}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left"
+                >
+                  <span
+                    className={`w-[18px] h-[18px] flex-none rounded-[5px] border flex items-center justify-center ${
+                      on ? 'bg-brand border-brand text-white' : 'border-line'
+                    }`}
+                  >
+                    {on && <FontAwesomeIcon icon={faCheck} className="text-[10px]" />}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[14px] font-medium truncate">
+                      {t.merchant || cat?.name || t.note || '未分類'}
+                    </div>
+                    <div className="text-[11px] text-text-tertiary tabular-nums">{formatMd(t.tradeDate)}</div>
+                  </div>
+                  <span className="text-[14px] font-semibold tabular-nums flex-none">
+                    {formatAmount(t.type === 'expense' ? t.amount : -t.amount)}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[13px] text-text-secondary mb-1.5">改為入帳日</div>
+          <input
+            type="date"
+            value={date}
+            min={minDate || undefined}
+            onChange={(e) => e.target.value && setDate(e.target.value)}
+            className="w-full px-3.5 py-2.5 bg-surface border border-line rounded-modal text-[15px] outline-none"
+          />
+        </div>
+
+        <p className="text-[11px] text-text-tertiary">
+          {picked.length === 0
+            ? '請至少勾選一筆。'
+            : `這 ${picked.length} 筆共 ${formatAmount(total)} 將移出本期帳單、改列下一期，卡片已用額度同步不計。`}
+        </p>
+        {error && <div className="text-[13px] text-error px-1">{error}</div>}
+        <button
+          onClick={confirm}
+          disabled={!canSave || busy}
+          className="flex items-center justify-center gap-1.5 h-[42px] rounded-btn bg-brand text-white text-[13px] font-semibold disabled:opacity-40"
+        >
+          <FontAwesomeIcon icon={faCheck} className="text-xs" /> 確認延後
+        </button>
+      </div>
+    </Sheet>
   )
 }
 

@@ -108,7 +108,7 @@ export default function CounterpartyLoanSheet({ open, counterpartyId = null, nam
             onClick={() => setSettleOpen(true)}
             className="flex items-center justify-center gap-1.5 h-[42px] rounded-btn bg-brand text-white text-[13px] font-semibold"
           >
-            <FontAwesomeIcon icon={faHandshake} className="text-xs" /> 一次結清
+            <FontAwesomeIcon icon={faHandshake} className="text-xs" /> 結清
           </button>
         )}
 

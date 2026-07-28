@@ -250,7 +250,8 @@ export default function HomePage() {
                           ? () => navigate(`/card/${a.id}`)
                           : a.type === 'securities'
                             ? () => navigate('/transactions?tab=stock')
-                            : undefined
+                            : // 現金／銀行：進明細頁並直接篩出這個帳戶的交易
+                              () => navigate(`/transactions?accountId=${a.id}`)
                       }
                     />
                   ))}

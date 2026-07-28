@@ -53,7 +53,7 @@
 共用欄位：
 - `id` / `type` enum(`expense` `income` `transfer` `receivable` `payable`)
 - `amount` int（永遠正數，正負由 type 決定） / `currency`'TWD'
-- `tradeDate` date / `postingDate` date（預設=tradeDate）
+- `tradeDate` date / `postingDate` date（預設=tradeDate；信用卡消費可手動延後，見 `docs/02 §4.1.1`）
 - `note?`（**明細寫這裡**） / `merchant?`（商家，交易層、不入拆帳列，僅 expense/income 適用，docs/09 批次 3） / `tagIds: array<ref→Tag>`（**平常留空**，真值在 `splits[].tagIds`；見 §3.3 的代墊例外） / `projectId` ref→Project?（未實作）
 - `invoiceId` ref→Invoice?（自發票匣歸帳時帶入） / `templateId` ref→Template?
 - `isReconciled` bool（對帳用）

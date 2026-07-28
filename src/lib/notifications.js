@@ -1,14 +1,12 @@
 // 通知聚合：信用卡繳費到期＋T+2 交割缺口＋週期提醒／扣款預告。皆為純查詢，
 // 供首頁鈴鐺通知區顯示，並被 Cloud Functions（Web Push 推播）複製共用同一套口徑。
-import { statementPeriods, availableForSettlement } from './engine'
+import { statementPeriods, availableForSettlement, paidStatementSet } from './engine'
 import { todayStr, addDays } from './date'
 
 // 已出帳、未繳、金額>0，且繳款日已逾期或在 asOf 起 days 天內的信用卡帳單。
-// 繳款狀態沿用 CardDetailPage 口徑：creditCardStatements 以 periodEnd 比對 isPaid。
+// 繳款狀態與卡片頁共用 engine.paidStatementSet（含「繳費轉帳已被刪除視為未繳」的判定）。
 export function dueCardPayments(accounts, txns, statements, asOf = todayStr(), days = 7) {
-  const paid = new Set(
-    statements.filter((s) => s.isPaid).map((s) => `${s.accountId}|${s.periodEnd}`),
-  )
+  const paid = paidStatementSet(statements, txns)
   const limit = addDays(asOf, days)
   const out = []
   for (const card of accounts) {

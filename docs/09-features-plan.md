@@ -432,6 +432,88 @@ VAPID 公鑰＝公開值，寫死前端（同 GAS proxy 先例，CLAUDE.md 機�
 
 程式碼完成，`npm run lint`／`npm run build` 綠燈（主 chunk +約 4 kB），dev server 冒煙通過：未登入渲染正常、console 無錯誤、設定頁「標籤管理」空狀態、記帳表單「標籤／未設定」常駐列、`TagPicker` 空狀態與新增鈕條件。**使用者已測試驗收通過**（新增／改名／換色／刪除、單筆與拆帳列標籤、代墊邊界、搜尋篩選與合計口徑、CSV 匯出）。2026-07-26 發布 **v1.1.4**。
 
+## 後續調整（2026-07-28，第六批：六項使用體驗修補）
+
+v1.1.4 上線後實際使用暴露的六個摩擦點，性質都是「補完既有機制」。分兩階段做：階段一不動計算口徑（②③⑤④①），階段二動帳單切期（⑥）。
+
+### ① 借還款分批結清（勾選欲結清項目）
+
+原本 `NetSettleSheet` 對該對象**全部**未結清各記一筆全額還款，實務上常常只還其中幾筆。`engine.netSettlementPlan(txns, counterpartyId, txIds = null)` 加第三參數（`null`＝全部，向後相容）；面板呼叫兩次——不帶 `txIds` 取候選清單、帶已勾選的算摘要與寫入，**淨額一律由 engine 算，UI 不自行 reduce**（`engine.js` 借貸聚合區塊的鐵律）。開啟時預設全選以維持原手感；刻意**不隨 `txns` 重置選取**（多裝置同步進來的新項目不該被自動勾選），而勾到已結清／已刪除的 id 由 engine 自動排除，UI 不必清 `selected`。寫入沿用 `addRepaymentsBatch`，不新增 repo 函式；單筆部分金額仍走 `RepaymentSheet`。入口鈕文案「一次結清」→「結清」。
+
+### ② 記帳表單分類 icon 跟隨分類色
+
+`TransactionForm` 是全站最後一個沒吃 `category.color` 的地方。`SingleCategoryChip` 有設色→實心該色＋白 icon（同 `CategoryPicker` 選中態）、**沒設色維持品牌藍**——seed 分類的 `color` 全是 `null`，若一律改成淡底會讓「已選／未選」的視覺回饋消失。`SplitRows` 每列走 15% `color-mix`（同 `TransactionRow`），代墊列維持中性色（那顆 icon 表示代墊、不是分類）。顏色取母分類、icon 取 `cat?.icon ?? parent?.icon`（後者是第四批漏改的語義）。
+
+### ③ 動作列改成 拆帳／應收／應付／進階
+
+「由他人代墊」原本是 toggle switch，與上方「代墊」按鈕兩種互動做同一件事（產生借貸關係）。改為四顆按鈕：**應收**＝原「代墊」、**應付**＝原 toggle（複用既有 `toggleAdvancedBy`，已具備「已設就清掉、未設就開 picker」語義）。`ActionBtn` 加 `active` 態——移除 switch 後這是唯一的開關狀態指示，不可省略。`AdvancedByBox` 拿掉 Switch 與 `blocked` 文案，只在選定對象後渲染資訊框；互斥的解釋改由按鈕 disabled 承擔。
+
+> 實作時發現的洞：**切換交易型別不會清掉 `state.advancedBy`**，原本是靠 `AdvancedByBox` 顯示條件裡的 `type === 'expense'` 擋住。抽成 `canAdvancedBy` 給按鈕與資訊框共用，否則設完應付再切到收入，框還在但 `buildList` 不會產生那筆應付。
+
+拆帳列內的「代墊／標記代墊／取消代墊」與借貸明細頁的「代墊／代付」**維持不改**（使用者拍板）：按鈕是動作名（應收），列是情境名（代墊），改了會讓兩頁命名分裂。
+
+### ④ 首頁現金／銀行帳戶 → 明細頁篩選該帳戶
+
+`search.js` 的 `accountId` 條件（同時比對 `accountId`／`fromAccountId`／`toAccountId`）早就寫好，只差入口。首頁 cash/bank 的 `onClick` 原本是 `undefined`（點了沒反應），改成帶 `?accountId=`；`TransactionsPage` 讀到就把 `searching` 初值設 true 並傳 `initialAccountId` 給 `SearchPanel`；**關閉搜尋時一併清 URL 參數**，否則本頁重掛會又被帶回篩選狀態。信用卡維持進卡片頁、證券維持進股票分頁（那兩個目的地資訊更豐富）。
+
+### ⑤ 發票歸帳備註帶入金額
+
+`invoiceItemsSummary` 加金額段 →「品名×2 $30、品名 $75」。數量 1 不贅述；`amount` 為 `null` 時**省略金額段而非印 `$0`**（爬蟲偶有品項沒帶 amount，印 0 會誤導對帳）。
+
+### ⑥ 信用卡延後入帳（改帳單切期口徑）
+
+**問題**：店家尚未向銀行請款時該筆不在銀行帳單上，但 App 依 `tradeDate` 就把它算進本期，對帳對不起來；手動設「入帳日」也沒用——帳單切期完全不看 `postingDate`。
+
+**拍板**：帳單歸期改看入帳日，卡片「已用額度／餘額」跟著延（銀行還沒請款＝還沒欠，兩邊同口徑；也正是三大核心觀念第 1 條的既有引擎）。口徑細節見 `docs/02 §4.1.1`。
+
+- `engine.statementPeriods` 納入判定 `tx.tradeDate` → `tx.postingDate || tx.tradeDate`。**既有資料的 `postingDate` 一律等於 `tradeDate`，故現存帳單金額零變動**；分期各期同樣 `tradeDate === postingDate`，零影響。報表歸月仍用 `tradeDate`，鐵律不動。
+- 新增純函式 `engine.deferredCharges(account, txns, afterDate)`。**刻意不讓 `statementPeriods` 多產生一期未來期**——那會讓 `CardDetailPage` 的 `openPeriod = periods.find(p => p.isOpen)` 抓到下期而非本期。
+- 新增 `repo.setPostingDates(entries)`（單一 `writeBatch`）。收回＝傳該筆 `tradeDate`（`postingDate` 欄位一律存實際日期，不存 `null`）。
+- `CardDetailPage`：本期明細標題加「延後入帳」批次鈕、每列加「延後」小鈕（同一個 `DeferSheet`，帶 `preselectId` 就是逐列模式）；新增「已延後至下期」區塊可「收回」。`DeferSheet` 預設日期＝`addDays(periodEnd, 1)`（下期期初，最早能落入下期的日期），`min` 取已選筆中最大的 `tradeDate`（入帳日不得早於消費日）。
+- **連帶**：`notifications.dueCardPayments` 走同一個 `statementPeriods`，卡費提醒金額自動跟著新口徑（正確連動），但 **Cloud Functions 必須重新 `firebase deploy --only functions`** 才會生效（`copy-shared.mjs` 在 predeploy 自動同步 `functions/shared/`）。`payCreditCardStatement` 存的 `totalAmount: period.total` 自動跟著，無需改動。
+
+### ⑦ 卡片頁期別導航（階段三，驗收階段二後追加）
+
+**問題**：延後入帳做完後，卡片頁仍只看得到**本期**明細——「帳單」卡列出近 6 期金額但點不進去，過去期的消費明細在這頁查不到。
+
+**拍板**：移除近 6 期一覽卡改成期別導航（避免資訊重複）、可翻到下一期（往回 12 期／往前 1 期）、「已延後至下期」區塊只在本期顯示。
+
+- `statementPeriods` 加 `future = 0`（迴圈由 `i = -future` 起跳）＋每期多回 `isFuture: asOf < periodStart`。**`isFuture` 是必要的**：加了未來期之後 `isOpen`（`asOf <= periodEnd`）對未來期同樣為真，狀態 badge 會把下一期誤標成「本期累計」；同理 `periods.find(p => p.isOpen)` 這種抓本期的寫法會抓到下一期，階段二留下的三處（`openPeriod`／`DeferSheet` 預設日期／`deferredCharges` 起算點）一併改成 `periods[FUTURE]`。`future` 預設 0 → 既有呼叫端（`notifications.dueCardPayments`）行為不變。
+- `CardDetailPage`：`FUTURE = 1`／`MONTHS = 12`、`periods` 包 `useMemo`（13 期 × txns，原本沒快取）、`idx` state（`idx--` 往未來、`idx++` 往過去）。導航卡版面沿用 `TransactionsPage` 的月份摘要卡；標題 `{monthLabel(y, m)}帳單`（`y/m` 取自 `periodEnd`，結帳日所在月＝信用卡慣例）；badge 五態（未開始／本期累計／已繳／未繳／無消費）。明細改吃 `periods[idx].charges`，空狀態「這期尚無消費」。
+- **逐列「延後」鈕與批次鈕只在本期顯示**：過去期已出帳、銀行帳單已開出，改入帳日會讓該筆跑到別期而與已繳快照對不上；未來期的消費本來就還沒入帳。
+- 不做：「回到本期」快捷鈕（明細帳本頁也沒有）、按日分組的明細（每列尾端已有「延後」鈕，再分組版面過擠）。
+
+### ⑧ 修 BUG：刪掉繳費轉帳後帳單仍顯示「已繳」（階段三驗收時回報）
+
+`payCreditCardStatement` 以 `writeBatch` 原子寫入「繳費轉帳 ＋ `creditCardStatements` 快照」，但 `deleteTransaction` 只刪交易、不管快照 → 留下 `isPaid: true` 的孤兒。**隱藏的另一半**：`dueCardPayments` 也用同一份快照判已繳，所以刪掉繳費記錄後不只顯示錯，**推播從此不再提醒該期繳費**。
+
+兩層都補：
+
+- **顯示端（治標＋修既有髒資料）**：新增 `engine.paidStatementSet(statements, txns)` → `Set<accountId|periodEnd>`，快照的 `paymentTransactionId` 指向的交易不存在就視為未繳。`CardDetailPage` 與 `notifications.dueCardPayments`（原本各寫一份 `isPaid` 比對）改為共用它。沒有 `paymentTransactionId` 的舊快照維持原樣，向後相容。
+- **寫入端（治本）**：`repo.deleteTransaction` 先 `where('paymentTransactionId', '==', id)` 查一次，有孤兒就連同交易一起 `writeBatch` 刪掉。刪除是低頻操作，多一次 query 可接受。
+
+只做治本無法修使用者手上**已經產生**的孤兒快照，只做治標會讓孤兒 doc 持續累積（還會進備份匯出），所以兩層都要。
+
+### ⑨ 非當期帳單也可延後入帳（階段三驗收時追加）
+
+⑦ 原本把延後鈕限制在本期，理由是「過去期已出帳、改了會與已繳快照對不上」。實際使用推翻了這個收斂——**對帳時發現銀行沒收的那筆，多半正是已出帳期別裡的消費**，限制在本期反而擋掉主要情境。
+
+- 逐列「延後」鈕與批次鈕在每一期都提供；`DeferSheet` 的 `charges` 與 `defaultDate`（`addDays(該期 periodEnd, 1)`）改吃當前瀏覽的期別，`defaultDate` 併入面板的重置 key，換期再開才會重算。
+- 明細列按鈕改**雙態**：該筆已延後（`postingDate > tradeDate`）就顯示「收回」，不必回到本期才收得回來。
+- **已繳期允許延後但顯示警告**（依全域「警告＋允許」原則，不硬擋——這不是資料毀損，且可收回）：面板提示「這期帳單已繳費，延後後帳單金額會與當初的繳款金額不符」。
+
+### 進度
+
+階段一：`npm run lint`／`npm run build` 綠燈，dev server 冒煙通過（動作列四顆渲染、`?accountId=` 自動開搜尋面板、按取消清 URL 參數、既有 `?tab=stock` 未破壞、console 無錯）；`netSettlementPlan` 的 `txIds` 過濾以 node 驗 9/9（含向後相容、部分還款只算未結清餘額、失效 id 自動排除、分批合計＝全選合計）。**使用者已測試驗收通過。**
+
+階段二：lint／build 綠燈；帳單口徑以 node 驗 14/14——**既有資料（`postingDate === tradeDate`）帳單金額不變**、缺 `postingDate` 的舊資料仍正確歸期、延後後本期減該筆且不落在任何一期、`deferredCharges` 排除他卡與轉帳、已用額度同步減少、收回完全回復。
+
+階段三：lint／build 綠燈、dev server 冒煙無錯；`future` 參數以 node 驗 16/16，其中 **`future:1` 的 `slice(1)` 與 `future:0` 逐欄位完全相同**（最強的向後相容證明）、下一期 `isFuture` 真而 `isOpen` 也真（故不可只靠 `isOpen` 判本期）、被延後的消費確實落在下一期、無 `statementDay` 仍回空陣列。階段一、二的 node 測試回歸通過（9/9、14/14）。
+
+⑧⑨：lint／build 綠燈、dev server 冒煙無錯；繳費快照以 node 驗 7/7——繳費轉帳存在→已繳、**已刪→不算已繳且推播重新提醒**、`isPaid:false` 不算、無 `paymentTransactionId` 的舊快照仍已繳、多卡 key 不混淆。三份既有 node 測試全數回歸通過（9/9、14/14、16/16）。
+
+**全部六批＋兩個 bug 修復皆已使用者實機測試驗收通過（2026-07-28），發布 v1.2.0。**
+
 ## 保留／明確不做（本輪拍板）
 
 - **Project 單值專案維度**：不做。「一個項目多個標籤」已由 Tag 涵蓋，再做一套單值分群只會重疊。

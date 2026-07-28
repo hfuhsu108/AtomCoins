@@ -59,8 +59,21 @@ export async function updateTransaction(id, patch) {
   await patchDoc('transactions', id, patch)
 }
 
+// 刪交易時一併清掉指向它的信用卡帳單快照：繳費轉帳（payCreditCardStatement 原子寫入的
+// 另一半）被刪掉後若留下 isPaid 快照，該期會永遠顯示「已繳」、推播也不再提醒繳費。
+// 顯示端另有 engine.paidStatementSet 的存在性檢查兜底（修既有孤兒與多裝置競態），兩層都要。
 export async function deleteTransaction(id) {
-  await deleteDoc(ref('transactions', id))
+  const orphans = await getDocs(
+    query(col('creditCardStatements'), where('paymentTransactionId', '==', id)),
+  )
+  if (orphans.empty) {
+    await deleteDoc(ref('transactions', id))
+    return
+  }
+  const batch = writeBatch(firestore)
+  batch.delete(ref('transactions', id))
+  orphans.docs.forEach((d) => batch.delete(d.ref))
+  await batch.commit()
 }
 
 // 刪除整個代墊/AA 連動群組（同 linkGroupId），避免只刪一筆留下扭曲帳務的孤兒
@@ -343,6 +356,19 @@ export async function addRepaymentsBatch(entries) {
   entries.forEach((e, i) => {
     batch.update(ref('transactions', e.txId), stripUndefined({ repayments: lists[i], updatedAt: ts }))
   })
+  await batch.commit()
+}
+
+// 批次改入帳日（信用卡延後入帳）：entries = [{ id, postingDate }]，整批原子寫入。
+// 延後＝傳目標日期；收回＝傳該筆的 tradeDate（postingDate 欄位一律存實際日期，不存 null）。
+// 單期卡帳筆數遠低於 writeBatch 的 500 上限，不做分批。
+export async function setPostingDates(entries) {
+  if (entries.length === 0) return
+  const batch = writeBatch(firestore)
+  const ts = now()
+  for (const e of entries) {
+    batch.update(ref('transactions', e.id), { postingDate: e.postingDate, updatedAt: ts })
+  }
   await batch.commit()
 }
 

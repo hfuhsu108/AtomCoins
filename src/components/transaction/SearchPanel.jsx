@@ -58,14 +58,15 @@ function groupByDate(list) {
   return [...map.entries()].map(([date, items]) => ({ date, items }))
 }
 
-export default function SearchPanel({ txns, categories, accounts, lookups, hidden, onClose }) {
+// initialAccountId：由首頁點帳戶進來時預填的帳戶篩選（僅作初值，之後由使用者自由改）
+export default function SearchPanel({ txns, categories, accounts, lookups, hidden, initialAccountId = null, onClose }) {
   const navigate = useNavigate()
   const tags = useCollection('tags')
 
   const [keyword, setKeyword] = useState('')
   const [types, setTypes] = useState([])
   const [categoryId, setCategoryId] = useState(null)
-  const [accountId, setAccountId] = useState(null)
+  const [accountId, setAccountId] = useState(initialAccountId)
   const [tagIds, setTagIds] = useState([])
   const [tagOpen, setTagOpen] = useState(false)
   const [rangeKey, setRangeKey] = useState('all')
