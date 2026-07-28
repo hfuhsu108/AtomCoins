@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faChevronRight, faChevronLeft, faTrashCan, faRepeat, faPercent, faCopy, faFileArrowDown, faBookmark, faStore, faWallet, faCloud, faTag, faBell, faUserGroup, faMagnifyingGlass, faXmark } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faChevronRight, faChevronLeft, faTrashCan, faRepeat, faPercent, faCopy, faFileArrowDown, faBookmark, faStore, faWallet, faCloud, faTag, faTags, faBell, faUserGroup, faMagnifyingGlass, faXmark } from '@fortawesome/free-solid-svg-icons'
 import { faGoogle } from '@fortawesome/free-brands-svg-icons'
 import { httpsCallable } from 'firebase/functions'
 import { useCollection, useAllCollections, useSettings } from '../db/DataProvider'
@@ -22,6 +22,7 @@ import BrokerEditSheet from '../components/settings/BrokerEditSheet'
 import MerchantAliasSheet from '../components/settings/MerchantAliasSheet'
 import CategoryManager, { ReorderBtns } from '../components/settings/CategoryManager'
 import CounterpartyManager from '../components/settings/CounterpartyManager'
+import TagManager from '../components/settings/TagManager'
 import Sheet from '../components/Sheet'
 
 // build 時間以 ISO（UTC）注入，顯示時轉本地時區
@@ -75,6 +76,7 @@ const MENU = [
   { key: 'accounts', label: '帳戶管理', sub: '新增、編輯、刪除、排序帳戶', icon: faWallet },
   { key: 'categories', label: '分類管理', sub: '大/小分類、圖示、顏色、排序', icon: faTag },
   { key: 'counterparties', label: '借貸對象', sub: '新增、改名、刪除、排序', icon: faUserGroup },
+  { key: 'tags', label: '標籤管理', sub: '專案／主題標籤，改名、顏色、刪除', icon: faTags },
   { key: 'brokers', label: '券商設定', sub: '手續費折數與最低手續費', icon: faPercent },
   { key: 'recurring', label: '週期性收支', sub: '自動記帳與提醒規則', icon: faRepeat },
   { key: 'templates', label: '範本', sub: '快速記帳範本', icon: faBookmark },
@@ -299,6 +301,9 @@ export default function SettingsPage() {
 
       {/* 借貸對象 */}
       {section === 'counterparties' && <CounterpartyManager />}
+
+      {/* 標籤管理 */}
+      {section === 'tags' && <TagManager />}
 
       {/* 券商設定 */}
       {section === 'brokers' && (<>

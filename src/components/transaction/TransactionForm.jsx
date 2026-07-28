@@ -47,6 +47,8 @@ import NumberPad from './NumberPad'
 import CategoryPicker from './CategoryPicker'
 import AccountPicker from './AccountPicker'
 import CounterpartyPicker from './CounterpartyPicker'
+import TagPicker from './TagPicker'
+import TagChip from '../TagChip'
 import MerchantAliasSheet from '../settings/MerchantAliasSheet'
 import { STATUS } from './TransactionRow'
 import StockFields, { initStockState, stockCanSave, buildStockRecord } from './StockFields'
@@ -60,7 +62,7 @@ const TYPES = [
   { id: 'stock', label: '股票', sign: '', color: 'text-text-primary' },
 ]
 
-const emptySplit = () => ({ key: newId(), categoryId: null, expr: '', advanceCounterpartyId: null })
+const emptySplit = () => ({ key: newId(), categoryId: null, expr: '', advanceCounterpartyId: null, tagIds: [] })
 
 // 從既有交易回填表單狀態（編輯用，階段4 接入）
 function stateFromTx(tx) {
@@ -90,6 +92,7 @@ function stateFromTx(tx) {
       categoryId: s.categoryId,
       expr: String(s.amount),
       advanceCounterpartyId: null,
+      tagIds: s.tagIds ?? [],
     }))
     if (base.splits.length === 0) base.splits = [emptySplit()]
   } else {
@@ -116,7 +119,7 @@ function stateFromInvoice(invoice, aliases, suggestion = null) {
     postingDate: null,
     note: invoiceItemsSummary(invoice),
     merchant: resolveMerchant(invoice.merchant, aliases) ?? '',
-    splits: [{ key: newId(), categoryId: suggestion?.categoryId ?? null, expr: String(invoice.totalAmount ?? ''), advanceCounterpartyId: null }],
+    splits: [{ key: newId(), categoryId: suggestion?.categoryId ?? null, expr: String(invoice.totalAmount ?? ''), advanceCounterpartyId: null, tagIds: [] }],
     activeSplit: 0,
     amountExpr: '',
     accountId: null,
@@ -155,11 +158,13 @@ function stateFromTemplate(template) {
     advancedBy: null,
   }
   if (p.type === 'expense' || p.type === 'income') {
+    // 範本刻意不記標籤（長期重複的範本帶著短期專案標籤只會誤記），套用時一律留空
     const splits = (p.splits ?? []).map((s) => ({
       key: newId(),
       categoryId: s.categoryId ?? null,
       expr: s.amount ? String(s.amount) : '',
       advanceCounterpartyId: null,
+      tagIds: [],
     }))
     base.splits = splits.length ? splits : [emptySplit()]
   } else if (p.type !== 'transfer') {
@@ -176,6 +181,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
   const brokers = useCollection('brokers')
   const templates = useCollection('templates')
   const merchantAliases = useCollection('merchantAliases')
+  const tags = useCollection('tags')
   const txns = useCollection('transactions')
   const invoiceSuggestions = useCollection('invoiceSuggestions')
 
@@ -264,8 +270,10 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
     for (const a of accounts) acc[a.id] = a
     const cp = {}
     for (const c of counterparties) cp[c.id] = c
-    return { cat, acc, cp }
-  }, [categories, accounts, counterparties])
+    const tag = {}
+    for (const t of tags) tag[t.id] = t
+    return { cat, acc, cp, tag }
+  }, [categories, accounts, counterparties, tags])
 
   const onPress = (key) => {
     if (isExpenseLike) {
@@ -290,7 +298,8 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
       const expr = target > 0 && remaining > 0 ? String(remaining) : ''
       return {
         ...s,
-        splits: [...s.splits, { ...emptySplit(), expr }],
+        // 新列繼承第一列的標籤：拆帳多半是同一次消費的細分，標籤本該相同（不要的可在該列移除）
+        splits: [...s.splits, { ...emptySplit(), expr, tagIds: s.splits[0]?.tagIds ?? [] }],
         activeSplit: s.splits.length,
       }
     })
@@ -305,6 +314,21 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
   const markAdvance = (idx) => {
     // 標記某列代墊 → 開對象選擇器；選完才真正設定
     setPicker({ kind: 'counterparty', target: idx })
+  }
+  // 標籤切換：target 為 'main'（未拆帳時操作唯一那列）或拆帳列 index。
+  // 標籤一律存在拆帳列上，交易層不用（唯一例外是代墊拆出的應收，見 buildList）
+  const toggleTag = (target, tagId) => {
+    setState((s) => {
+      const idx = target === 'main' ? 0 : target
+      if (!s.splits[idx]) return s
+      const splits = s.splits.slice()
+      const cur = splits[idx].tagIds ?? []
+      splits[idx] = {
+        ...splits[idx],
+        tagIds: cur.includes(tagId) ? cur.filter((id) => id !== tagId) : [...cur, tagId],
+      }
+      return { ...s, splits }
+    })
   }
   const clearAdvance = (idx) => {
     setState((s) => {
@@ -405,6 +429,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           categoryId: s.categoryId,
           amount: toAmount(s.expr) ?? 0,
           advance: s.advanceCounterpartyId,
+          tagIds: s.tagIds ?? [],
         }))
         .filter((s) => s.amount > 0)
       const fallback = type === 'expense' ? UNCATEGORIZED_EXPENSE_ID : UNCATEGORIZED_INCOME_ID
@@ -426,10 +451,12 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           tagIds: [],
           projectId: null,
           isReconciled: state.reconciled,
+          // 標籤的唯一真值在拆帳列上；交易層的 tagIds 留空（見上方）
           splits: normal.map((s) => ({
             categoryId: s.categoryId || fallback,
             amount: s.amount,
             note: null,
+            tagIds: s.tagIds,
           })),
         })
       }
@@ -442,7 +469,9 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           tradeDate,
           postingDate,
           note,
-          tagIds: [],
+          // 這列被拆成獨立的應收（沒有 splits），標籤只能存在交易層，否則使用者打的標籤會靜默消失。
+          // 應收本金不進收支統計，所以不會影響專案花費合計。
+          tagIds: adv.tagIds,
           projectId: null,
           repayments: [],
           isReconciled: false,
@@ -535,7 +564,9 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
       // 僅新增、僅支出＋信用卡帳戶；忽略拆帳/代墊，以總額單一分類建立。
       if (!initialTx && isExpenseLike && type === 'expense' && state.installment) {
         const fallback = UNCATEGORIZED_EXPENSE_ID
-        const categoryId = state.splits.find((s) => s.categoryId)?.categoryId || fallback
+        // 分期忽略拆帳，取第一個有分類的列；標籤跟著同一列走
+        const src = state.splits.find((s) => s.categoryId) ?? state.splits[0]
+        const categoryId = src?.categoryId || fallback
         const tradeDate = state.tradeDate
         const expense = {
           type: 'expense',
@@ -547,7 +578,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           tagIds: [],
           projectId: null,
           isReconciled: state.reconciled,
-          splits: [{ categoryId, amount: total, note: null }],
+          splits: [{ categoryId, amount: total, note: null, tagIds: src?.tagIds ?? [] }],
         }
         await settle(createInstallmentPlan({
           expense,
@@ -838,6 +869,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
                 onClearAdvance={clearAdvance}
                 onRemove={removeSplit}
                 onMarkAdvance={markAdvance}
+                onOpenTags={(i) => setPicker({ kind: 'tag', target: i })}
                 canAdvance={type === 'expense' && !state.advancedBy}
                 onAddSplit={addSplit}
                 total={total}
@@ -881,6 +913,17 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
             <div className="mt-2.5">
               <NoteRow note={state.note} onChange={(v) => set({ note: v })} />
             </div>
+
+            {/* 標籤：未拆帳時在這裡設（實際寫入唯一那個拆帳列）；拆帳時改由每列各自標 */}
+            {!multiRow && (
+              <div className="mt-2.5">
+                <TagRow
+                  tagIds={state.splits[0]?.tagIds}
+                  lookups={lookups}
+                  onOpen={() => setPicker({ kind: 'tag', target: 'main' })}
+                />
+              </div>
+            )}
 
             {advOpen && (
               <div className="mt-2.5 flex flex-col gap-2.5">
@@ -1062,6 +1105,17 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
         value={picker?.target === 'main' ? state.counterpartyId : null}
         onSelect={handlePick}
       />
+      <TagPicker
+        open={picker?.kind === 'tag'}
+        onClose={() => setPicker(null)}
+        tags={tags}
+        value={
+          picker?.kind === 'tag'
+            ? state.splits[picker.target === 'main' ? 0 : picker.target]?.tagIds ?? []
+            : []
+        }
+        onToggle={(tagId) => toggleTag(picker.target, tagId)}
+      />
       <TemplateNameSheet open={tplNameOpen} busy={busy} onClose={() => setTplNameOpen(false)} onSave={saveAsTemplate} />
       <MerchantAliasSheet
         open={aliasSheetOpen}
@@ -1146,6 +1200,26 @@ function TemplateNameSheet({ open, busy, onClose, onSave }) {
 }
 
 // ── 子元件 ───────────────────────────────────────────────────
+// 交易層的標籤列（僅未拆帳時顯示，實際寫在唯一那個拆帳列上）。
+// 常駐可見而不摺進進階區：專案期間每筆都要用，藏起來每次都得多點一下。
+function TagRow({ tagIds, lookups, onOpen }) {
+  const list = (tagIds ?? []).map((id) => lookups.tag[id]).filter(Boolean)
+  return (
+    <button
+      onClick={onOpen}
+      className="w-full flex items-center gap-3 px-4 py-3 bg-surface border border-line rounded-modal text-left"
+    >
+      <span className="text-sm text-text-secondary flex-none">標籤</span>
+      <div className="flex-1 min-w-0 flex items-center justify-end gap-1.5 overflow-x-auto">
+        {list.length === 0
+          ? <span className="text-[15px] text-text-tertiary">未設定</span>
+          : list.map((t) => <TagChip key={t.id} tag={t} />)}
+      </div>
+      <FontAwesomeIcon icon={faChevronDown} className="text-text-tertiary text-[13px] flex-none" />
+    </button>
+  )
+}
+
 function SingleCategoryChip({ split, lookups, onOpen }) {
   const cat = lookups.cat[split.categoryId]
   const parent = cat?.parentId ? lookups.cat[cat.parentId] : cat
@@ -1187,6 +1261,7 @@ function SplitRows({
   onClearAdvance,
   onRemove,
   onMarkAdvance,
+  onOpenTags,
   onAddSplit,
   total,
   targetTotal = 0,
@@ -1250,32 +1325,43 @@ function SplitRows({
                   <FontAwesomeIcon icon={faChevronDown} className="text-text-tertiary text-[10px] ml-1.5" />
                 </button>
               )}
-              {/* 代墊只對支出成立；非支出不給標記，但已標記的仍可取消（清掉切換型別留下的舊值）*/}
-              {(advance || canAdvance) && (
-                <div className="flex gap-2 mt-1">
-                  {advance ? (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onClearAdvance(i)
-                      }}
-                      className="text-[11px] text-text-tertiary"
-                    >
-                      取消代墊
-                    </button>
-                  ) : (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onMarkAdvance(i)
-                      }}
-                      className="text-[11px] text-text-tertiary"
-                    >
-                      標記代墊
-                    </button>
-                  )}
-                </div>
-              )}
+              {/* 次要動作列：代墊切換（只對支出成立；已標記的仍可取消，清掉切換型別留下的舊值）
+                  ＋該列標籤。標籤與型別無關，所以這一行一律渲染。*/}
+              <div className="flex items-center flex-wrap gap-2 mt-1">
+                {advance ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onClearAdvance(i)
+                    }}
+                    className="text-[11px] text-text-tertiary"
+                  >
+                    取消代墊
+                  </button>
+                ) : canAdvance ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onMarkAdvance(i)
+                    }}
+                    className="text-[11px] text-text-tertiary"
+                  >
+                    標記代墊
+                  </button>
+                ) : null}
+                {(s.tagIds ?? []).map((id) => lookups.tag[id]).filter(Boolean).map((t) => (
+                  <TagChip key={t.id} tag={t} />
+                ))}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onOpenTags(i)
+                  }}
+                  className="text-[11px] text-text-tertiary"
+                >
+                  {s.tagIds?.length ? '編輯標籤' : '＋標籤'}
+                </button>
+              </div>
             </div>
             <span className={`text-[15px] font-semibold tabular-nums ${active ? 'text-brand' : ''}`}>
               {formatNumber(amount)}

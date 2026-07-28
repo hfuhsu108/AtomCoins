@@ -8,6 +8,8 @@ import { todayStr, parseDate, monthPrefix, addMonth, formatMd, weekday } from '.
 import TransactionRow from './TransactionRow'
 import CategoryPicker from './CategoryPicker'
 import AccountPicker from './AccountPicker'
+import TagPicker from './TagPicker'
+import { useCollection } from '../../db/DataProvider'
 
 const TYPE_OPTIONS = [
   { id: 'expense', label: '支出' },
@@ -58,11 +60,14 @@ function groupByDate(list) {
 
 export default function SearchPanel({ txns, categories, accounts, lookups, hidden, onClose }) {
   const navigate = useNavigate()
+  const tags = useCollection('tags')
 
   const [keyword, setKeyword] = useState('')
   const [types, setTypes] = useState([])
   const [categoryId, setCategoryId] = useState(null)
   const [accountId, setAccountId] = useState(null)
+  const [tagIds, setTagIds] = useState([])
+  const [tagOpen, setTagOpen] = useState(false)
   const [rangeKey, setRangeKey] = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -86,23 +91,30 @@ export default function SearchPanel({ txns, categories, accounts, lookups, hidde
 
   const toggleType = (id) =>
     setTypes((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]))
+  const toggleTag = (id) =>
+    setTagIds((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]))
 
   const filtered = useMemo(
     () =>
       filterTransactions(
         txns,
-        { keyword, types, categoryId, accountId, dateFrom, dateTo, amountMin, amountMax },
+        { keyword, types, categoryId, accountId, tagIds, dateFrom, dateTo, amountMin, amountMax },
         lookups,
       ),
-    [txns, keyword, types, categoryId, accountId, dateFrom, dateTo, amountMin, amountMax, lookups],
+    [txns, keyword, types, categoryId, accountId, tagIds, dateFrom, dateTo, amountMin, amountMax, lookups],
   )
 
-  const totals = useMemo(() => searchTotals(filtered), [filtered])
+  // 合計要帶 criteria：有標籤條件時只加總命中的拆帳列（見 search.js）
+  const totals = useMemo(() => searchTotals(filtered, { tagIds }), [filtered, tagIds])
   const sorted = useMemo(() => [...filtered].sort(byNewest), [filtered])
   const days = useMemo(() => groupByDate(sorted.slice(0, CAP)), [sorted])
 
   const selectedCat = categoryId ? categories.find((c) => c.id === categoryId) : null
   const selectedAcc = accountId ? accounts.find((a) => a.id === accountId) : null
+  // 標籤顯示值：第一個名稱＋餘數（多選時避免把整列擠爆）
+  const tagLabel = tagIds.length > 0
+    ? (tags.find((t) => t.id === tagIds[0])?.name ?? '已選') + (tagIds.length > 1 ? ` +${tagIds.length - 1}` : '')
+    : null
 
   return (
     <div>
@@ -156,6 +168,14 @@ export default function SearchPanel({ txns, categories, accounts, lookups, hidde
           <FilterRow label="分類" value={selectedCat?.name} onClick={() => setCatOpen(true)} onClear={categoryId ? () => setCategoryId(null) : null} />
           <FilterRow label="帳戶" value={selectedAcc?.name} onClick={() => setAccOpen(true)} onClear={accountId ? () => setAccountId(null) : null} />
         </div>
+
+        {/* 標籤：跨月專案的主要入口，可多選（任一命中）。合計只算掛標籤的拆帳列 */}
+        <FilterRow
+          label="標籤"
+          value={tagLabel}
+          onClick={() => setTagOpen(true)}
+          onClear={tagIds.length > 0 ? () => setTagIds([]) : null}
+        />
 
         {/* 日期區間 */}
         <div>
@@ -260,6 +280,15 @@ export default function SearchPanel({ txns, categories, accounts, lookups, hidde
         accounts={accounts}
         value={accountId}
         onSelect={setAccountId}
+      />
+      {/* manage=false：篩選情境只選取，不在這裡建標籤或改名 */}
+      <TagPicker
+        open={tagOpen}
+        onClose={() => setTagOpen(false)}
+        tags={tags}
+        value={tagIds}
+        onToggle={toggleTag}
+        manage={false}
       />
     </div>
   )

@@ -9,6 +9,7 @@ import { getIcon } from '../../lib/icons'
 import { formatNumber } from '../../lib/format'
 import { formatMd } from '../../lib/date'
 import { settlementStatus, outstanding, isPending } from '../../lib/engine'
+import TagChip from '../TagChip'
 
 // 借還款三態 badge：export 供記帳表單與借貸明細共用，避免各寫一份導致配色漂移
 export const STATUS = {
@@ -36,6 +37,12 @@ function categoryView(categoryId, lookups) {
   }
 }
 
+// id 陣列 → 標籤物件（略過已刪除的）。取用口徑：拆帳列有自己的標籤就用它、沒有才繼承
+// 交易層，與 search.js／backup.js 同一條規則
+function tagViews(ids, lookups) {
+  return (ids ?? []).map((id) => lookups.tag?.[id]).filter(Boolean)
+}
+
 // 依交易型別決定圖示、標題、副標、金額顏色與正負（單列視圖）
 function describe(tx, lookups) {
   if (tx.type === 'expense' || tx.type === 'income') {
@@ -47,6 +54,7 @@ function describe(tx, lookups) {
       color,
       title,
       acct: acct?.name,
+      tags: tagViews(tx.splits?.[0]?.tagIds?.length ? tx.splits[0].tagIds : tx.tagIds, lookups),
       note: mergeMerchant(tx.merchant, tx.note),
       amount: tx.amount,
       amountColor: tx.type === 'expense' ? 'text-expense' : 'text-income',
@@ -60,6 +68,7 @@ function describe(tx, lookups) {
       icon: faRightLeft,
       title: '轉帳',
       acct: `${from?.name ?? '?'} → ${to?.name ?? '?'}`,
+      tags: tagViews(tx.tagIds, lookups),
       note: tx.fee ? `手續費 NT$ ${formatNumber(tx.fee)}${tx.note ? ' · ' + tx.note : ''}` : tx.note,
       amount: tx.amount,
       amountColor: 'text-text-primary',
@@ -77,6 +86,8 @@ function describe(tx, lookups) {
     icon: faHandHoldingDollar,
     title: `${lent} · ${cp?.name ?? '對象'}`,
     statusBadge: st,
+    // 代墊拆出的應收沒有 splits，標籤存在交易層（見 TransactionForm.buildList）
+    tags: tagViews(tx.tagIds, lookups),
     note: left > 0 && left !== tx.amount ? `未結清 NT$ ${formatNumber(left)}` : tx.note,
     amount: tx.amount,
     amountColor: isRecv ? 'text-expense' : 'text-income',
@@ -94,6 +105,7 @@ function splitView(tx, split, index, count, lookups) {
     title,
     badge: { label: `拆帳 ${index + 1}/${count}`, icon: faArrowsSplitUpAndLeft },
     acct: acct?.name,
+    tags: tagViews(split.tagIds?.length ? split.tagIds : tx.tagIds, lookups),
     note: mergeMerchant(tx.merchant, split.note || tx.note),
     amount: split.amount,
     amountColor: tx.type === 'expense' ? 'text-expense' : 'text-income',
@@ -177,6 +189,11 @@ function Row({ view: d, pending, installment, reconciled, pendingDate, onClick }
             <span className="flex-none text-xs text-text-secondary bg-surface-alt rounded-chip px-1.5 py-0.5">
               {d.acct}
             </span>
+          )}
+          {/* 標籤最多兩個＋餘數：這一行的 note 本來就是被壓縮的那個，chip 再多會把它吃光 */}
+          {d.tags?.slice(0, 2).map((t) => <TagChip key={t.id} tag={t} />)}
+          {d.tags?.length > 2 && (
+            <span className="flex-none text-xs text-text-tertiary">+{d.tags.length - 2}</span>
           )}
           {d.note && <span className="text-xs text-text-tertiary truncate">{d.note}</span>}
         </div>

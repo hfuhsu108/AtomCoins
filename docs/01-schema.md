@@ -22,11 +22,23 @@
 
 ## 3.3 Tag 標籤
 
-`id` / `name` / `color?` / `createdAt`。多對多：交易與拆帳列各帶 `tagIds: array<ref→Tag>`。
+`id` / `name` / `color?`（沿用 `CATEGORY_COLORS` 同一組色盤，`null`＝中性色） / `createdAt`。**專案／主題標籤**（例如 `#福岡自由行`），一筆可多個（docs/09 第五批）。
+
+**唯一真值在 `splits[].tagIds`**：標籤掛在拆帳列上，未拆帳時就是唯一那一列（UI 呈現為「整筆的標籤」），交易層的 `tagIds` 平常留空。**唯一例外**：某個拆帳列同時標記代墊時，它會被拆成獨立的 `receivable`（沒有 splits），標籤只能存在交易層，否則使用者打的標籤會靜默消失；應收本金不進收支統計，所以不影響專案花費合計。讀取一律走「拆帳列有自己的就用它、沒有才繼承交易層」——`search.js` 的 `tagIdsOf`、`backup.js` 的 CSV 匯出、`TransactionRow.tagViews` 三處同一條口徑，任一處漂移就會讓畫面與匯出檔對不上。
+
+僅 `expense`／`income` 可打標籤（轉帳、借還款、股票不做）。範本刻意不記標籤（長期範本帶著短期專案標籤只會誤記）；週期規則的 payload 是整份展開，會沿用建立時的標籤到每一期。
+
+管理入口：設定 →「標籤管理」（新增／改名／換色／刪除，依 `Intl.Collator('zh-Hant')` 名稱序＋搜尋列），記帳表單的標籤選擇器（多選，點選不關閉、底部「完成」）也可直接新建與用鉛筆鈕改名，Picker 內不放刪除（同借貸對象的理由）。**刻意不加 `sortOrder`**——標籤沒有天然順序，名稱序足夠；**不做封存**，靠選擇器的搜尋列。
+
+**刪除語義：清掉引用再刪**（`repo.deleteTagCleanup` 掃全部交易，濾掉 `splits[].tagIds` 與交易層 `tagIds`，每 450 筆一個 batch）。不仿對象的「有引用就擋下」——標籤只是標記，移除不動到任何金額；也不需要分類那種「改歸未分類」的退路。
+
+篩選與合計：明細搜尋可多選標籤（**OR，任一命中**），合計**只加總掛該標籤的拆帳列**（一筆 1000 元裡只有 300 元那列掛了標籤，專案花費就是 300）。
 
 ## 3.4 Project 專案
 
 `id` / `name` / `description?` / `color?` / `startDate?` / `endDate?` / `budgetAmount?` int(**保留，預算暫不實作**) / `isArchived` / `createdAt` / `updatedAt`。
+
+**目前未實作**（`projects` collection 與 `repo.createProject` 存在但無 UI 與呼叫端）。「一個項目可以有多個標籤」的需求已由 §3.3 Tag 涵蓋，不再另做這個單值維度，避免兩套重疊的分群概念。
 
 ## 3.5 Counterparty 對象
 
@@ -42,7 +54,7 @@
 - `id` / `type` enum(`expense` `income` `transfer` `receivable` `payable`)
 - `amount` int（永遠正數，正負由 type 決定） / `currency`'TWD'
 - `tradeDate` date / `postingDate` date（預設=tradeDate）
-- `note?`（**明細寫這裡**） / `merchant?`（商家，交易層、不入拆帳列，僅 expense/income 適用，docs/09 批次 3） / `tagIds: array<ref→Tag>` / `projectId` ref→Project?
+- `note?`（**明細寫這裡**） / `merchant?`（商家，交易層、不入拆帳列，僅 expense/income 適用，docs/09 批次 3） / `tagIds: array<ref→Tag>`（**平常留空**，真值在 `splits[].tagIds`；見 §3.3 的代墊例外） / `projectId` ref→Project?（未實作）
 - `invoiceId` ref→Invoice?（自發票匣歸帳時帶入） / `templateId` ref→Template?
 - `isReconciled` bool（對帳用）
 - `linkGroupId` string?（已拍板採用；把同一筆消費拆出的「自己支出＋代墊應收」或「支出＋他人代墊應付」綁在一起，刪除時整組刪）
@@ -50,7 +62,7 @@
 
 型別專屬：
 - **expense / income**：`accountId` ref→Account；`splits: array<Split>`（拆帳列，單一類別時長度=1）。
-  - `Split` = `{ categoryId ref→Category, amount int, tagIds?: array<ref→Tag>, projectId?: ref→Project, note?: string }`
+  - `Split` = `{ categoryId ref→Category, amount int, tagIds?: array<ref→Tag>（**標籤的真值所在**，見 §3.3）, projectId?: ref→Project（未實作）, note?: string }`
   - Σ split.amount **理想**=amount；**不強制**，差額自動歸「未分類」列並跳警告。
 - **transfer**：`fromAccountId` / `toAccountId` / `fee` int(預設0) / `feeCategoryId` ref→Category(預設=內建「金融手續費」類別，可改；**計入支出**)。本金無類別。
 - **receivable（借出）/ payable（借入）**：`accountId`(資金進出帳戶) / `counterpartyId` ref→Counterparty / `repayments: array<{date, amount, accountId}>`(還款/收款記錄) / `interestRate?` decimal(**保留，先無息**)。

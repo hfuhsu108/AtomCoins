@@ -355,6 +355,37 @@ export async function createTag(data) {
   return createDoc('tags', record)
 }
 
+export async function updateTag(id, patch) {
+  await patchDoc('tags', id, patch)
+}
+
+// 刪除標籤：先把所有交易（拆帳列與交易層）對它的引用濾掉，再刪標籤本身。
+// 不仿 deleteCounterparty 的「有引用就擋下」——標籤只是標記，移除不動到任何金額；
+// 也不需要 deleteCategoryReassign 那種退路分類，因為標籤本來就可以沒有。
+// 分批不是單一交易：中途失敗最壞情況是標籤還在、部分引用已清，重跑即可收斂。
+export async function deleteTagCleanup(tagId) {
+  const txSnap = await getDocs(col('transactions'))
+  const hit = (ids) => Array.isArray(ids) && ids.includes(tagId)
+  const drop = (ids) => ids.filter((id) => id !== tagId)
+
+  const ops = []
+  txSnap.docs.forEach((d) => {
+    const t = d.data()
+    const patch = {}
+    if (Array.isArray(t.splits) && t.splits.some((s) => hit(s.tagIds))) {
+      patch.splits = t.splits.map((s) => (hit(s.tagIds) ? { ...s, tagIds: drop(s.tagIds) } : s))
+    }
+    if (hit(t.tagIds)) patch.tagIds = drop(t.tagIds)
+    if (Object.keys(patch).length) ops.push({ ref: d.ref, data: { ...patch, updatedAt: now() } })
+  })
+  for (let i = 0; i < ops.length; i += 450) {
+    const batch = writeBatch(firestore)
+    for (const op of ops.slice(i, i + 450)) batch.update(op.ref, stripUndefined(op.data))
+    await batch.commit()
+  }
+  await deleteDoc(ref('tags', tagId))
+}
+
 // ── 信用卡繳費（docs/03 §B：繳款是 transfer，不是支出）────────────
 // 「銀行→卡」轉帳＋帳單繳款快照以 writeBatch 原子綁定，避免轉帳成功但快照漏記
 export async function payCreditCardStatement({ card, fundingAccountId, amount, postingDate, period }) {

@@ -24,6 +24,7 @@ export default function TransactionsPage() {
   const txns = useCollection('transactions')
   const categories = useCollection('categories')
   const counterparties = useCollection('counterparties')
+  const tags = useCollection('tags')
 
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -40,12 +41,13 @@ export default function TransactionsPage() {
   const [ledgerView, setLedgerView] = useState('list') // list | calendar
 
   const lookups = useMemo(() => {
-    const cat = {}, acc = {}, cp = {}
+    const cat = {}, acc = {}, cp = {}, tag = {}
     for (const c of categories) cat[c.id] = c
     for (const a of accounts) acc[a.id] = a
     for (const c of counterparties) cp[c.id] = c
-    return { cat, acc, cp }
-  }, [categories, accounts, counterparties])
+    for (const t of tags) tag[t.id] = t
+    return { cat, acc, cp, tag }
+  }, [categories, accounts, counterparties, tags])
 
   const prefix = monthPrefix(ym.year, ym.month)
   const monthTxns = txns.filter((t) => t.tradeDate?.startsWith(prefix))

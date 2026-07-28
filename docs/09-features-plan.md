@@ -398,8 +398,44 @@ VAPID 公鑰＝公開值，寫死前端（同 GAS proxy 先例，CLAUDE.md 機�
 
 四項程式碼與文件完成、build/lint 綠燈、邏輯以腳本驗證（Collator 排序、`suggestFromHistory` 五種情境）、dev server 冒煙通過。**使用者已實測確認**：新圖示在首頁交易列／分類選擇器／報表分類排行三處皆正確顯示，AI 分類流程 OK。上述驗收調整待再次實測。**AI 分類的線上行為仍待部署後驗收**（需先設 `OPENAI_API_KEY` secret）。
 
+## 後續調整（2026-07-26，第五批：專案標籤）
+
+需求：為記錄打上 `#福岡自由行` 這類專案標籤，一筆可多個；**被拆帳的交易要能為單獨的拆帳列打標籤**。目的是事後把一趟旅行的所有花費撈出來看總額。
+
+**前提：這是補完既有欄位，不是新功能。** `docs/01 §3.3` 早已定義 Tag，`tags` 已在 `COLLECTIONS`（已即時訂閱、JSON 備份自動涵蓋），`repo.createTag` 已存在（零呼叫），CSV 的「標籤」欄與 split 層繼承邏輯（`backup.js:80`）也早就寫好。因此 **`firestore.rules`／`backup.js`／`DataProvider` 零改動**；又因為檢視落點只做搜尋篩選（不做報表分頁），**`engine.js` 也零改動**，連帶不必碰 `functions/copy-shared.mjs`（`search.js` 不在共用清單內）。
+
+### 拍板決策（兩輪 AskUserQuestion）
+
+1. **實體化**：`tags` collection（`name`＋`color?`），設定頁可管理，改名即時反映到所有記錄。不用純字串。
+2. **標籤只存拆帳列**，交易層 `tagIds` 平常留空。單一維度聚合，不會有「交易有標籤、列沒有」的口徑分裂。
+3. **僅支出／收入**可打標籤。
+4. **代墊邊界**：拆帳列標了標籤又標記代墊時，標籤寫入拆出的那筆 `receivable` 的交易層（應收本金不進收支統計，不影響專案花費）。**刻意不讓它靜默消失**——本專案已踩過「收入拆帳列標記代墊會丟金額」的同類坑。
+5. **合計只算掛該標籤的拆帳列**：1000 元裡只有 300 元那列掛標籤，專案花費就是 300。現有 `searchTotals` 是整筆加總會高估，故加第二參數 `criteria`。
+6. **多標籤＝OR**（任一命中），與既有「交易型別」多選一致。
+7. **刪除＝清引用再刪**（`deleteTagCleanup`），不擋刪、不需退路分類。
+8. **不做封存、不加 `sortOrder`**：靠 `Intl.Collator('zh-Hant')` 名稱序＋選擇器搜尋列。
+
+檢視落點只做**搜尋面板加標籤條件**（使用者選定）：不做報表標籤分頁、不做首頁專案卡、不做 `TagDetailPage`。Project（單值維度）維持未實作。
+
+### 實作
+
+- **資料層**：`repo.updateTag`／`deleteTagCleanup`（掃全部交易濾掉兩層 `tagIds`，每 450 筆一 batch，仿 `deleteCategoryReassign`）。`createTag` 沿用現況（不走 `buildRecord`，同 `createCounterparty` 風格）。
+- **純函式** `search.js`：`tagIdsOf`（單一口徑來源，與 `backup.js:80` 對齊）／`tagMatches`（收支逐拆帳列、其餘型別比交易層——**不能照抄 `categoryMatches` 的「非收支一律不符」**，否則漏掉代墊應收）／`taggedTotal`；criteria 加 `tagIds`；`matchKeyword` 的 hay 納入標籤名（打「福岡」不必先選條件）；`searchTotals(txns, criteria = {})`。
+- **共用元件** `components/TagChip.jsx`：記帳表單／明細列／標籤編輯預覽三處共用，避免配色漂移（同 `TransactionRow` export `STATUS` 的理由）。自訂色走 `color-mix`。
+- **管理**：`TagManager`＋`TagEditSheet`（設定頁「標籤管理」一行掛載，MENU icon 用 `faTags`，`faTag` 已被分類管理占用）。EditSheet 自己訂閱 `transactions` 算引用筆數（它也從記帳表單的 Picker 開啟）。
+- **選擇器** `TagPicker`：多選（點選不關閉、底部「完成（已選 N）」），輸入框一框兩用（過濾＋新增，同名不給新增），先產 `newId()` 再寫入以容忍離線 `settle` 逾時；`manage=false` 時只選取（搜尋面板用）。
+- **記帳表單**：`emptySplit` 加 `tagIds`；三個 `stateFrom*` 還原；**`addSplit` 新列繼承第一列的標籤**（取代「套用到全部列」按鈕——拆帳多半是同一次消費的細分，零額外 UI）；`TagRow` 常駐列（僅未拆帳時，操作 `splits[0]`）；`SplitRows` 每列第二行放 chips＋「＋標籤」，該行**顯示條件從 `(advance || canAdvance)` 放寬為一律渲染**（否則收入的列不會有這一行）；`buildList` 的 `evaluated` 必須帶 `tagIds`（否則後面全丟）、主筆 splits 帶值、代墊 receivable 存交易層；分期取用的那一列標籤跟著走。
+- **顯示**：`TransactionRow` 的 `describe`／`splitView` 產出 `tags`（在資料整形階段就解析成物件，同該檔 icon 的慣例），chip 放**第二行**帳戶 chip 之後（第一行已有 5 種 badge），最多 2 個＋餘數。`lookups` 加 `tag` 的**三處**建立點：`TransactionsPage`／`CardDetailPage`／`TransactionForm`。
+- **搜尋**：`SearchPanel` 加 `tagIds` state＋獨立一行 `FilterRow`（開 `TagPicker`，顯示「福岡自由行 +1」），合計傳 `criteria`。
+
+### 進度
+
+程式碼完成，`npm run lint`／`npm run build` 綠燈（主 chunk +約 4 kB），dev server 冒煙通過：未登入渲染正常、console 無錯誤、設定頁「標籤管理」空狀態、記帳表單「標籤／未設定」常駐列、`TagPicker` 空狀態與新增鈕條件。**使用者已測試驗收通過**（新增／改名／換色／刪除、單筆與拆帳列標籤、代墊邊界、搜尋篩選與合計口徑、CSV 匯出）。2026-07-26 發布 **v1.1.4**。
+
 ## 保留／明確不做（本輪拍板）
 
+- **Project 單值專案維度**：不做。「一個項目多個標籤」已由 Tag 涵蓋，再做一套單值分群只會重疊。
+- 標籤的報表分頁／首頁專案卡／標籤詳情頁：本輪不做，需要時再議。
 - 自訂起訖區間報表：批次 4 只做年視角，自訂區間保留。
 - iOS 完整推播引導 Sheet：主力裝置 Android，保留為選配。
 - 淨資產歷史回補：缺歷史股價，混合口徑誤導，不做。

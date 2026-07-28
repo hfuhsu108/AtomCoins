@@ -23,6 +23,7 @@ export default function CardDetailPage() {
   const txns = useCollection('transactions')
   const categories = useCollection('categories')
   const counterparties = useCollection('counterparties')
+  const tags = useCollection('tags')
   const settings = useSettings()
   const allStatements = useCollection('creditCardStatements')
   const statements = id ? allStatements.filter((s) => s.accountId === id) : []
@@ -42,11 +43,12 @@ export default function CardDetailPage() {
   for (const s of statements) if (s.isPaid) paidByEnd[s.periodEnd] = s
 
   const lookups = (() => {
-    const cat = {}, acc = {}, cp = {}
+    const cat = {}, acc = {}, cp = {}, tag = {}
     for (const c of categories) cat[c.id] = c
     for (const a of accounts) acc[a.id] = a
     for (const c of counterparties) cp[c.id] = c
-    return { cat, acc, cp }
+    for (const t of tags) tag[t.id] = t
+    return { cat, acc, cp, tag }
   })()
 
   const openPeriod = periods.find((p) => p.isOpen)
