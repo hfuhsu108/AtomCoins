@@ -5,6 +5,7 @@ import { createCounterparty } from '../../db/repo'
 import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
 import { newId } from '../../lib/id'
 import Sheet from '../Sheet'
+import EmptyState from '../EmptyState'
 import CounterpartyEditSheet from '../settings/CounterpartyEditSheet'
 
 // 對象選擇器（借還款／代墊用）。清單空時可直接輸入新增。
@@ -54,9 +55,7 @@ export default function CounterpartyPicker({ open, onClose, counterparties, valu
       {error && <div className="px-3 pt-2 text-[13px] text-error">{error}</div>}
       <div className="flex-1 overflow-y-auto p-2">
         {list.length === 0 && (
-          <div className="py-8 text-center text-text-tertiary text-sm">
-            尚無對象，於上方輸入新增
-          </div>
+          <EmptyState title="尚無對象" hint="於上方輸入新增" compact />
         )}
         {list.map((cp) => {
           const active = cp.id === value

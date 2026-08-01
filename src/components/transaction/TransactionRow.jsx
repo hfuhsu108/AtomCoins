@@ -4,11 +4,14 @@ import {
   faHandHoldingDollar,
   faArrowsSplitUpAndLeft,
   faCircleCheck,
+  faLayerGroup,
 } from '@fortawesome/free-solid-svg-icons'
 import { getIcon } from '../../lib/icons'
-import { formatNumber } from '../../lib/format'
+import { formatNumber, formatAmount, MASK } from '../../lib/format'
 import { formatMd } from '../../lib/date'
 import { settlementStatus, outstanding, isPending } from '../../lib/engine'
+import { useHiddenAmount } from '../HiddenAmountProvider'
+import useLongPress, { LONG_PRESS_CLASS } from '../../hooks/useLongPress'
 import TagChip from '../TagChip'
 
 // 借還款三態 badge：export 供記帳表單與借貸明細共用，避免各寫一份導致配色漂移
@@ -43,8 +46,9 @@ function tagViews(ids, lookups) {
   return (ids ?? []).map((id) => lookups.tag?.[id]).filter(Boolean)
 }
 
-// 依交易型別決定圖示、標題、副標、金額顏色與正負（單列視圖）
-function describe(tx, lookups) {
+// 依交易型別決定圖示、標題、副標、金額顏色與正負（單列視圖）。
+// hidden 一路傳進來是因為副標裡也嵌了金額（手續費、未結清），只遮右側大數字會漏。
+function describe(tx, lookups, hidden) {
   if (tx.type === 'expense' || tx.type === 'income') {
     const first = tx.splits?.[0]
     const { icon, title, color } = categoryView(first?.categoryId, lookups)
@@ -69,7 +73,7 @@ function describe(tx, lookups) {
       title: '轉帳',
       acct: `${from?.name ?? '?'} → ${to?.name ?? '?'}`,
       tags: tagViews(tx.tagIds, lookups),
-      note: tx.fee ? `手續費 NT$ ${formatNumber(tx.fee)}${tx.note ? ' · ' + tx.note : ''}` : tx.note,
+      note: tx.fee ? `手續費 ${formatAmount(tx.fee, { hidden })}${tx.note ? ' · ' + tx.note : ''}` : tx.note,
       amount: tx.amount,
       amountColor: 'text-text-primary',
       sign: '',
@@ -88,7 +92,7 @@ function describe(tx, lookups) {
     statusBadge: st,
     // 代墊拆出的應收沒有 splits，標籤存在交易層（見 TransactionForm.buildList）
     tags: tagViews(tx.tagIds, lookups),
-    note: left > 0 && left !== tx.amount ? `未結清 NT$ ${formatNumber(left)}` : tx.note,
+    note: left > 0 && left !== tx.amount ? `未結清 ${formatAmount(left, { hidden })}` : tx.note,
     amount: tx.amount,
     amountColor: isRecv ? 'text-expense' : 'text-income',
     sign: isRecv ? '−' : '+',
@@ -113,7 +117,10 @@ function splitView(tx, split, index, count, lookups) {
   }
 }
 
-export default function TransactionRow({ tx, lookups, onClick }) {
+// onLongPress 是可選的：只有明細頁的帳本清單接預覽，卡片頁與搜尋結果維持單純點擊
+export default function TransactionRow({ tx, lookups, onClick, onLongPress }) {
+  const { hidden } = useHiddenAmount()
+  const { enabled: lpOn, handlers: lp } = useLongPress(onLongPress ? () => onLongPress(tx) : null)
   const pending = isPending(tx)
   const installment = !!tx.installmentPlanId
 
@@ -126,30 +133,40 @@ export default function TransactionRow({ tx, lookups, onClick }) {
       <Row
         key={`${tx.id}:${i}`}
         view={splitView(tx, sp, i, tx.splits.length, lookups)}
+        hidden={hidden}
         pending={pending}
         installment={installment}
         reconciled={tx.isReconciled}
         pendingDate={tx.postingDate}
         onClick={onClick}
+        lp={lp}
+        lpOn={lpOn}
       />
     ))
   }
 
   return (
     <Row
-      view={describe(tx, lookups)}
+      view={describe(tx, lookups, hidden)}
+      hidden={hidden}
       pending={pending}
       installment={installment}
       reconciled={tx.isReconciled}
       pendingDate={tx.postingDate}
       onClick={onClick}
+      lp={lp}
+      lpOn={lpOn}
     />
   )
 }
 
-function Row({ view: d, pending, installment, reconciled, pendingDate, onClick }) {
+function Row({ view: d, hidden, pending, installment, reconciled, pendingDate, onClick, lp = {}, lpOn = false }) {
   return (
-    <button onClick={onClick} className="flex items-center gap-3 w-full py-3 text-left">
+    <button
+      onClick={onClick}
+      {...lp}
+      className={`flex items-center gap-3 w-full py-3 text-left ${lpOn ? LONG_PRESS_CLASS : ''}`}
+    >
       <span
         className={`w-9 h-9 flex-none rounded-btn flex items-center justify-center ${d.color ? '' : 'bg-surface-alt text-text-secondary'}`}
         style={d.color ? { background: `color-mix(in srgb, ${d.color} 15%, transparent)`, color: d.color } : undefined}
@@ -170,8 +187,10 @@ function Row({ view: d, pending, installment, reconciled, pendingDate, onClick }
               {d.statusBadge.label}
             </span>
           )}
+          {/* 與「拆帳」badge 區分：兩者原本同為 brand 色，同時出現時只能靠有無圖示分辨 */}
           {installment && (
-            <span className="flex-none text-[11px] font-medium text-brand bg-brand-light rounded-chip px-1.5 py-0.5">
+            <span className="flex-none text-[11px] font-medium text-text-secondary bg-surface-alt rounded-chip px-1.5 py-0.5">
+              <FontAwesomeIcon icon={faLayerGroup} className="text-[9px] mr-1" />
               分期
             </span>
           )}
@@ -199,7 +218,8 @@ function Row({ view: d, pending, installment, reconciled, pendingDate, onClick }
         </div>
       </div>
       <span className={`text-[15px] font-semibold tabular-nums whitespace-nowrap ${d.amountColor}`}>
-        {d.sign}NT$ {formatNumber(d.amount)}
+        {/* 遮蔽時連正負號一起收掉，與 formatSigned／formatBalance 的行為一致 */}
+        {hidden ? MASK : `${d.sign}NT$ ${formatNumber(d.amount)}`}
       </span>
     </button>
   )

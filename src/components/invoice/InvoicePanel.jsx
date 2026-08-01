@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faCircleCheck, faTriangleExclamation, faRotate, faRotateLeft, faWandMagicSparkles } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faCircleCheck, faTriangleExclamation, faRotate, faRotateLeft, faWandMagicSparkles, faReceipt } from '@fortawesome/free-solid-svg-icons'
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '../../lib/firebase'
 import { useCollection } from '../../db/DataProvider'
 import { useScraperStatus } from '../../hooks/useScraperStatus'
+import { filterInvoices } from '../../lib/search'
 import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
 import { updateInvoice, unrecordInvoice } from '../../db/repo'
 import { formatDateTime } from '../../lib/date'
 import { useConfirm } from '../ConfirmSheet'
+import EmptyState from '../EmptyState'
 import InvoiceRow from './InvoiceRow'
 import InvoiceEditSheet from './InvoiceEditSheet'
+import InvoicePreview from './InvoicePreview'
 
 // 依發票日新到舊、同日再依建立時間新到舊
 function byDateDesc(a, b) {
@@ -19,7 +22,7 @@ function byDateDesc(a, b) {
   return (a.createdAt ?? '') < (b.createdAt ?? '') ? 1 : -1
 }
 
-export default function InvoicePanel({ hidden }) {
+export default function InvoicePanel({ hidden, keyword = '' }) {
   const navigate = useNavigate()
   const invoices = useCollection('invoices')
   const merchantAliases = useCollection('merchantAliases')
@@ -27,6 +30,7 @@ export default function InvoicePanel({ hidden }) {
   const suggestions = useCollection('invoiceSuggestions')
   const status = useScraperStatus()
   const [sub, setSub] = useState('inbox') // inbox | processed
+  const [preview, setPreview] = useState(null) // 長按預覽中的發票
   // 發票編輯 sheet：undefined=關閉、null=手動新增、發票物件=編輯
   const [editTarget, setEditTarget] = useState(undefined)
 
@@ -36,7 +40,12 @@ export default function InvoicePanel({ hidden }) {
     return { inbox, processed }
   }, [invoices])
 
-  const list = sub === 'inbox' ? inbox : processed
+  // 子分頁標籤上的數字維持總數（那是「有幾張」），關鍵字只影響列出來的清單
+  const searching = !!keyword.trim()
+  const list = useMemo(
+    () => filterInvoices(sub === 'inbox' ? inbox : processed, keyword, merchantAliases),
+    [sub, inbox, processed, keyword, merchantAliases],
+  )
 
   // 自動分類建議 → 顯示用資料：名稱走「母·子」、圖示與顏色沿用母分類（同 TransactionRow 口徑）
   const suggestionView = useMemo(() => {
@@ -143,9 +152,15 @@ export default function InvoicePanel({ hidden }) {
       </div>
 
       {list.length === 0 ? (
-        <div className="py-16 text-center text-text-tertiary text-sm">
-          {sub === 'inbox' ? '發票匣是空的，爬蟲每日自動抓取' : '尚無已處理的發票'}
-        </div>
+        searching ? (
+          <EmptyState title="找不到符合的發票" hint="可試商家名、發票號碼、載具或品項名稱" />
+        ) : (
+          <EmptyState
+            icon={faReceipt}
+            title={sub === 'inbox' ? '尚無待歸帳發票' : '尚無已處理的發票'}
+            hint={sub === 'inbox' ? '爬蟲每日自動抓取，也可用上方「手動新增」' : undefined}
+          />
+        )
       ) : (
         <div className="bg-surface border border-line rounded-card shadow-card px-4">
           {list.map((inv) => (
@@ -161,6 +176,7 @@ export default function InvoicePanel({ hidden }) {
               onUnrecord={() => onUnrecord(inv)}
               onOpenTx={() => inv.transactionId && navigate(`/add?id=${inv.transactionId}`)}
               onEdit={setEditTarget}
+              onLongPress={setPreview}
             />
           ))}
         </div>
@@ -170,6 +186,18 @@ export default function InvoicePanel({ hidden }) {
         open={editTarget !== undefined}
         invoice={editTarget ?? null}
         onClose={() => setEditTarget(undefined)}
+      />
+
+      <InvoicePreview
+        invoice={preview}
+        aliases={merchantAliases}
+        hidden={hidden}
+        onClose={() => setPreview(null)}
+        onOpenTx={() => {
+          const id = preview?.transactionId
+          setPreview(null)
+          if (id) navigate(`/add?id=${id}`)
+        }}
       />
       {confirmElement}
     </>

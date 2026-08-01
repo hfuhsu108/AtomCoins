@@ -17,12 +17,15 @@ import { useConfirm } from '../components/ConfirmSheet'
 import { formatBalance, formatAmount } from '../lib/format'
 import { todayStr, formatMd } from '../lib/date'
 import { accountIcon } from '../lib/icons'
+import { useHiddenAmount, EyeButton } from '../components/HiddenAmountProvider'
 import AccountEditSheet from '../components/settings/AccountEditSheet'
 import BrokerEditSheet from '../components/settings/BrokerEditSheet'
 import MerchantAliasSheet from '../components/settings/MerchantAliasSheet'
 import CategoryManager, { ReorderBtns } from '../components/settings/CategoryManager'
 import CounterpartyManager from '../components/settings/CounterpartyManager'
 import TagManager from '../components/settings/TagManager'
+import Toggle from '../components/Toggle'
+import EmptyState from '../components/EmptyState'
 import Sheet from '../components/Sheet'
 
 // build 時間以 ISO（UTC）注入，顯示時轉本地時區
@@ -108,6 +111,7 @@ export default function SettingsPage() {
   const [aliasQuery, setAliasQuery] = useState('')
 
   const user = useAuth()
+  const { opt } = useHiddenAmount()
   const allData = useAllCollections()
   const [theme, setThemeState] = useState(getTheme)
   const pwa = usePwa()
@@ -209,6 +213,13 @@ export default function SettingsPage() {
             <FontAwesomeIcon icon={faChevronLeft} className="text-sm" />
           </button>
           <h1 className="text-xl font-semibold">{TITLES[section]}</h1>
+          {/* 只有帳戶管理列得出餘額，其餘子區塊沒有金額可遮 */}
+          {section === 'accounts' && (
+            <>
+              <span className="flex-1" />
+              <EyeButton />
+            </>
+          )}
         </div>
       )}
 
@@ -278,12 +289,12 @@ export default function SettingsPage() {
                         </div>
                         {isCard && a.creditLimit > 0 && (
                           <span className="text-xs text-text-tertiary tabular-nums">
-                            額度 {formatAmount(a.creditLimit)} · 可用 {formatAmount(a.creditLimit + bal)}
+                            額度 {formatAmount(a.creditLimit, opt)} · 可用 {formatAmount(a.creditLimit + bal, opt)}
                           </span>
                         )}
                       </div>
                       <span className="text-[13px] text-text-secondary tabular-nums">
-                        {isCard ? `已用 ${formatAmount(-bal)}` : formatBalance(bal)}
+                        {isCard ? `已用 ${formatAmount(-bal, opt)}` : formatBalance(bal, opt)}
                       </span>
                       <FontAwesomeIcon icon={faChevronRight} className="text-text-tertiary text-[11px]" />
                     </button>
@@ -318,7 +329,7 @@ export default function SettingsPage() {
 
       <div className="bg-surface border border-line rounded-card shadow-card px-3.5 divide-y divide-line-light">
         {brokers.length === 0 ? (
-          <div className="py-6 text-center text-text-tertiary text-sm">尚未建立券商</div>
+          <EmptyState title="尚無券商" hint="用右上角「新增券商」建立" compact />
         ) : (
           brokers.map((b) => (
             <button
@@ -350,9 +361,7 @@ export default function SettingsPage() {
         <>
           <div className="bg-surface border border-line rounded-card shadow-card px-3.5 divide-y divide-line-light">
             {rules.length === 0 && (
-              <div className="py-6 text-center text-text-tertiary text-sm">
-                尚無週期性收支（於記帳表單「進階 → 設為週期性」建立）
-              </div>
+              <EmptyState title="尚無週期性收支" hint="於記帳表單「進階 → 設為週期性」建立" compact />
             )}
             {rules
               .slice()
@@ -395,9 +404,7 @@ export default function SettingsPage() {
         <>
           <div className="bg-surface border border-line rounded-card shadow-card px-3.5 divide-y divide-line-light">
             {templates.length === 0 && (
-              <div className="py-6 text-center text-text-tertiary text-sm">
-                尚無範本（於記帳表單「存為範本」建立）
-              </div>
+              <EmptyState title="尚無範本" hint="於記帳表單「存為範本」建立" compact />
             )}
             {templates
               .slice()
@@ -459,9 +466,9 @@ export default function SettingsPage() {
       </div>
       <div className="bg-surface border border-line rounded-card shadow-card px-3.5 divide-y divide-line-light">
         {merchantAliases.length === 0 ? (
-          <div className="py-6 text-center text-text-tertiary text-sm">尚未建立別名</div>
+          <EmptyState title="尚無別名" hint="用右上角「新增」把載具的公司全名對應到店名" compact />
         ) : visibleAliases.length === 0 ? (
-          <div className="py-6 text-center text-text-tertiary text-sm">找不到符合的別名</div>
+          <EmptyState title="找不到符合的別名" compact />
         ) : (
           visibleAliases.map((a) => (
             <div key={a.id} className="flex items-center gap-3 py-3">
@@ -728,29 +735,6 @@ const PUSH_SCENARIOS = [
   { key: 'recurring', label: '週期收支提醒', desc: '待確認提醒、明日自動扣款預告' },
   { key: 'scraperHealth', label: '發票同步異常', desc: '爬蟲逾 48 小時沒成功（預設關）' },
 ]
-
-// 圓角開關（無既有共用元件，就地實作）
-function Toggle({ checked, disabled, onChange, label }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={`relative h-6 w-11 flex-none rounded-full transition-colors disabled:opacity-40 ${
-        checked ? 'bg-brand' : 'bg-surface-alt border border-line'
-      }`}
-    >
-      <span
-        className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
-          checked ? 'left-[22px]' : 'left-0.5'
-        }`}
-      />
-    </button>
-  )
-}
 
 function PushSettings() {
   const settings = useSettings()

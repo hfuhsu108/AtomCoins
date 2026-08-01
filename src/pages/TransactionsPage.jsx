@@ -1,12 +1,15 @@
 import { useState, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faChevronLeft, faChevronRight, faEye, faEyeSlash, faMagnifyingGlass, faList, faCalendarDays } from '@fortawesome/free-solid-svg-icons'
+import { faChevronLeft, faChevronRight, faMagnifyingGlass, faList, faCalendarDays, faReceipt, faXmark } from '@fortawesome/free-solid-svg-icons'
 import { useCollection } from '../db/DataProvider'
 import { monthlySummary } from '../lib/engine'
 import { formatAmount, formatSigned } from '../lib/format'
 import { todayStr, parseDate, monthLabel, monthPrefix, addMonth, formatMd, weekday } from '../lib/date'
+import { useHiddenAmount, EyeButton } from '../components/HiddenAmountProvider'
+import EmptyState from '../components/EmptyState'
 import TransactionRow from '../components/transaction/TransactionRow'
+import TransactionPreview from '../components/transaction/TransactionPreview'
 import SearchPanel from '../components/transaction/SearchPanel'
 import CalendarView from '../components/transaction/CalendarView'
 import StockPanel from '../components/stock/StockPanel'
@@ -29,23 +32,43 @@ export default function TransactionsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   const now = parseDate(todayStr())
-  const [tab, setTab] = useState(searchParams.get('tab') || 'ledger')
+  const initialTab = searchParams.get('tab') || 'ledger'
+  const [tab, setTab] = useState(initialTab)
+  const [ym, setYm] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 })
+  const { hidden, opt } = useHiddenAmount()
+  // 首頁點帳戶會帶 ?accountId= 進來。同一個參數兩種語義，靠 tab 分流：
+  // 現金／銀行（ledger）＝開搜尋面板並預填帳戶；證券（stock）＝篩該證券帳戶的持股與交易。
+  const [initialAccountId] = useState(searchParams.get('accountId'))
+  const [searching, setSearching] = useState(!!initialAccountId && initialTab === 'ledger')
+  const [stockAccountId, setStockAccountId] = useState(
+    initialTab === 'stock' ? searchParams.get('accountId') : null,
+  )
+  // 股票／發票分頁的關鍵字（帳本另有多條件的 SearchPanel）
+  const [keyword, setKeyword] = useState('')
+
   // 切分頁寫回 URL：歸帳離開再返回（navigate -1）能停在原分頁；預設 ledger 不帶參數
   const changeTab = (id) => {
     setTab(id)
+    // 換分頁就結束搜尋：關鍵字是對「當時那份清單」下的，留著會讓新分頁看起來莫名奇妙全空
+    setSearching(false)
+    setKeyword('')
+    setStockAccountId(null)
     setSearchParams(id === 'ledger' ? {} : { tab: id }, { replace: true })
   }
-  const [ym, setYm] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 })
-  const [hidden, setHidden] = useState(false)
-  // 首頁點帳戶會帶 ?accountId= 進來：直接開搜尋面板並預填帳戶篩選
-  const [initialAccountId] = useState(searchParams.get('accountId'))
-  const [searching, setSearching] = useState(!!initialAccountId)
-  // 關閉搜尋時一併清掉 URL 參數，否則本頁重掛時又會被帶回篩選狀態
+  // 關閉搜尋時一併清掉 URL 參數，否則本頁重掛時又會被帶回篩選狀態（但要保留 tab）
   const closeSearch = () => {
     setSearching(false)
-    if (searchParams.get('accountId')) setSearchParams({}, { replace: true })
+    setKeyword('')
+    if (searchParams.get('accountId')) {
+      setSearchParams(tab === 'ledger' ? {} : { tab }, { replace: true })
+    }
+  }
+  const clearStockAccount = () => {
+    setStockAccountId(null)
+    if (searchParams.get('accountId')) setSearchParams({ tab: 'stock' }, { replace: true })
   }
   const [ledgerView, setLedgerView] = useState('list') // list | calendar
+  const [previewTx, setPreviewTx] = useState(null) // 長按預覽中的交易
 
   const lookups = useMemo(() => {
     const cat = {}, acc = {}, cp = {}, tag = {}
@@ -59,7 +82,8 @@ export default function TransactionsPage() {
   const prefix = monthPrefix(ym.year, ym.month)
   const monthTxns = txns.filter((t) => t.tradeDate?.startsWith(prefix))
   const summary = monthlySummary(txns, ym.year, ym.month)
-  const opt = { hidden }
+  // 禁止翻到未來月（與報表頁同一口徑）：未來沒有記錄，翻過去只會是連續的空畫面
+  const atCurrentMonth = ym.year * 12 + (ym.month - 1) >= now.getFullYear() * 12 + now.getMonth()
 
   // 依日期分組（新到舊），組內依建立時間新到舊
   const days = useMemo(() => {
@@ -95,16 +119,11 @@ export default function TransactionsPage() {
               <FontAwesomeIcon icon={faMagnifyingGlass} />
             </button>
           )}
-          <button
-            onClick={() => setHidden((v) => !v)}
-            className="w-[38px] h-[38px] rounded-chip bg-surface border border-line text-text-secondary flex items-center justify-center"
-          >
-            <FontAwesomeIcon icon={hidden ? faEyeSlash : faEye} />
-          </button>
+          <EyeButton />
         </div>
       </header>
 
-      {searching ? (
+      {searching && tab === 'ledger' ? (
         <SearchPanel
           txns={txns}
           categories={categories}
@@ -131,10 +150,27 @@ export default function TransactionsPage() {
         ))}
       </div>
 
+      {/* 股票／發票分頁的關鍵字列：擺在分頁列下方＝它濾的是當前分頁的清單，
+          且不像帳本那樣整頁覆蓋，分頁列始終看得見 */}
+      {searching && tab !== 'ledger' && (
+        <TabSearchBar
+          value={keyword}
+          onChange={setKeyword}
+          placeholder={tab === 'stock' ? '搜尋代號、股名、券商' : '搜尋商家、發票號碼、品項'}
+          onClose={closeSearch}
+        />
+      )}
+
       {tab === 'stock' ? (
-        <StockPanel hidden={hidden} />
+        <StockPanel
+          hidden={hidden}
+          keyword={keyword}
+          accountId={stockAccountId}
+          accountName={stockAccountId ? lookups.acc[stockAccountId]?.name : null}
+          onClearAccount={clearStockAccount}
+        />
       ) : tab === 'invoice' ? (
-        <InvoicePanel hidden={hidden} />
+        <InvoicePanel hidden={hidden} keyword={keyword} />
       ) : (
         <>
           {/* 月份摘要 */}
@@ -149,7 +185,8 @@ export default function TransactionsPage() {
               <span className="text-[15px] font-semibold">{monthLabel(ym.year, ym.month)}</span>
               <button
                 onClick={() => setYm((p) => addMonth(p, 1))}
-                className="w-7 h-7 rounded-chip bg-surface-alt text-text-secondary flex items-center justify-center"
+                disabled={atCurrentMonth}
+                className="w-7 h-7 rounded-chip bg-surface-alt text-text-secondary flex items-center justify-center disabled:opacity-40"
               >
                 <FontAwesomeIcon icon={faChevronRight} className="text-xs" />
               </button>
@@ -189,9 +226,14 @@ export default function TransactionsPage() {
               lookups={lookups}
               hidden={hidden}
               onRowClick={(t) => navigate(`/add?id=${t.id}`)}
+              onRowLongPress={setPreviewTx}
             />
           ) : days.length === 0 ? (
-            <div className="py-16 text-center text-text-tertiary text-sm">本月尚無記錄</div>
+            <EmptyState
+              icon={faReceipt}
+              title="本月尚無記錄"
+              action={{ label: '記一筆', onClick: () => navigate('/add') }}
+            />
           ) : (
             days.map((d) => (
               <div key={d.date} className="mb-2">
@@ -212,6 +254,7 @@ export default function TransactionsPage() {
                       tx={t}
                       lookups={lookups}
                       onClick={() => navigate(`/add?id=${t.id}`)}
+                      onLongPress={setPreviewTx}
                     />
                   ))}
                 </div>
@@ -222,6 +265,47 @@ export default function TransactionsPage() {
       )}
         </>
       )}
+
+      <TransactionPreview
+        tx={previewTx}
+        lookups={lookups}
+        hidden={hidden}
+        onClose={() => setPreviewTx(null)}
+        onOpen={() => {
+          const id = previewTx?.id
+          setPreviewTx(null)
+          if (id) navigate(`/add?id=${id}`)
+        }}
+      />
+    </div>
+  )
+}
+
+// 股票／發票分頁共用的關鍵字列（帳本用條件較多的 SearchPanel）
+function TabSearchBar({ value, onChange, placeholder, onClose }) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <div className="flex-1 flex items-center gap-2 h-[42px] px-3 bg-surface border border-line rounded-modal">
+        <FontAwesomeIcon icon={faMagnifyingGlass} className="text-text-tertiary text-sm" />
+        <input
+          autoFocus
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="flex-1 min-w-0 bg-transparent text-[15px] outline-none placeholder:text-text-tertiary"
+        />
+        {value && (
+          <button onClick={() => onChange('')} aria-label="清除關鍵字" className="text-text-tertiary">
+            <FontAwesomeIcon icon={faXmark} />
+          </button>
+        )}
+      </div>
+      <button
+        onClick={onClose}
+        className="h-[42px] px-3 rounded-modal bg-surface border border-line text-[13px] font-semibold text-text-secondary flex-none"
+      >
+        取消
+      </button>
     </div>
   )
 }

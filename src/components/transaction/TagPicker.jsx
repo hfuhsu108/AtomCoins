@@ -5,6 +5,7 @@ import { createTag } from '../../db/repo'
 import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
 import { newId } from '../../lib/id'
 import Sheet from '../Sheet'
+import EmptyState from '../EmptyState'
 import TagEditSheet from '../settings/TagEditSheet'
 
 // 標籤沒有天然順序，一律依名稱排（中文要 Collator，直接比字串是 UTF-16 碼位序）
@@ -68,11 +69,9 @@ export default function TagPicker({ open, onClose, tags, value = [], onToggle, m
 
       <div className="flex-1 overflow-y-auto p-2">
         {tags.length === 0 ? (
-          <div className="py-8 text-center text-text-tertiary text-sm">
-            {manage ? '尚無標籤，於上方輸入新增' : '尚無標籤'}
-          </div>
+          <EmptyState title="尚無標籤" hint={manage ? '於上方輸入新增' : undefined} compact />
         ) : list.length === 0 ? (
-          <div className="py-8 text-center text-text-tertiary text-sm">找不到符合的標籤</div>
+          <EmptyState title="找不到符合的標籤" compact />
         ) : (
           list.map((tag) => {
             const active = value.includes(tag.id)

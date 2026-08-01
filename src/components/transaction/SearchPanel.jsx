@@ -5,6 +5,7 @@ import { faMagnifyingGlass, faXmark, faChevronRight } from '@fortawesome/free-so
 import { filterTransactions, searchTotals } from '../../lib/search'
 import { formatAmount } from '../../lib/format'
 import { todayStr, parseDate, monthPrefix, addMonth, formatMd, weekday } from '../../lib/date'
+import EmptyState from '../EmptyState'
 import TransactionRow from './TransactionRow'
 import CategoryPicker from './CategoryPicker'
 import AccountPicker from './AccountPicker'
@@ -239,7 +240,7 @@ export default function SearchPanel({ txns, categories, accounts, lookups, hidde
 
       {/* 結果 */}
       {totals.count === 0 ? (
-        <div className="py-16 text-center text-text-tertiary text-sm">沒有符合條件的記錄</div>
+        <EmptyState title="找不到符合的記錄" hint="試著放寬關鍵字或日期區間" />
       ) : (
         <>
           {filtered.length > CAP && (

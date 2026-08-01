@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
 import { useCollection } from '../../db/DataProvider'
 import useNetWorth from '../../hooks/useNetWorth'
-import { formatBalance, formatSigned } from '../../lib/format'
+import EmptyState from '../EmptyState'
+import { formatBalance, formatSigned, MASK } from '../../lib/format'
 import { todayStr, addDays, formatMd, weekday } from '../../lib/date'
 
 // 淨資產趨勢（docs/09 批次 6）。SVG 折線＋漸層面積（資料視覺化例外可手寫）；
@@ -125,14 +126,12 @@ export default function AssetsReport({ hidden }) {
       {/* 趨勢圖 */}
       <div className="bg-surface border border-line rounded-card shadow-card p-4">
         {series.length < 2 || !geom ? (
-          <div className="py-14 text-center text-text-tertiary text-sm">
-            淨資產快照自啟用日起每日累積，累積數日後可見趨勢
-          </div>
+          <EmptyState title="尚無足夠快照" hint="淨資產快照自啟用日起每日累積，累積數日後可見趨勢" />
         ) : (
           <>
             <div className="text-xs text-text-tertiary tabular-nums min-h-[16px] mb-1.5">
               {sel
-                ? `${formatMd(sel.date)} ${weekday(sel.date)}・${hidden ? '••••' : formatBalance(sel.total)}`
+                ? `${formatMd(sel.date)} ${weekday(sel.date)}・${hidden ? MASK : formatBalance(sel.total)}`
                 : `${series.length} 筆快照`}
             </div>
             <svg

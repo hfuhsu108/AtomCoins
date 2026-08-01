@@ -9,16 +9,17 @@ import {
   faChevronUp,
   faPen,
 } from '@fortawesome/free-solid-svg-icons'
-import { formatAmount, formatNumber } from '../../lib/format'
+import { formatAmount, formatNumber, MASK_SHORT } from '../../lib/format'
 import { formatMd } from '../../lib/date'
 import { resolveMerchant } from '../../lib/merchant'
 import { getIcon } from '../../lib/icons'
+import LongPressable from '../LongPressable'
 
 // 單張發票列。動作按鈕依 status 而異（inbox 歸帳/略過、recorded 取消歸帳、ignored 復原）。
 // 有 lineItems 時可點列展開唯讀明細（含已歸帳）；手動新增的發票可編輯/刪除（誤加時用）。
 // 顯示名稱套用商家別名（原始名 invoice.merchant 永不改寫）。
 // suggestion＝自動分類建議 { label, icon, color, source }，僅未歸帳列顯示，點歸帳時會預填。
-export default function InvoiceRow({ invoice, aliases, suggestion = null, hidden, onRecord, onIgnore, onRestore, onUnrecord, onOpenTx, onEdit }) {
+export default function InvoiceRow({ invoice, aliases, suggestion = null, hidden, onRecord, onIgnore, onRestore, onUnrecord, onOpenTx, onEdit, onLongPress }) {
   const [open, setOpen] = useState(false)
   const displayName = resolveMerchant(invoice.merchant, aliases)
   const items = invoice.lineItems ?? []
@@ -34,8 +35,9 @@ export default function InvoiceRow({ invoice, aliases, suggestion = null, hidden
   return (
     <div className="border-b border-line-light last:border-b-0">
       <div className="flex items-center gap-3 py-3">
-        <button
+        <LongPressable
           onClick={onRowClick}
+          onLongPress={onLongPress ? () => onLongPress(invoice) : undefined}
           className="flex items-center gap-3 flex-1 min-w-0 text-left"
         >
           <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
@@ -78,7 +80,7 @@ export default function InvoiceRow({ invoice, aliases, suggestion = null, hidden
           {hasItems ? (
             <FontAwesomeIcon icon={open ? faChevronUp : faChevronDown} className="text-text-tertiary text-[11px]" />
           ) : null}
-        </button>
+        </LongPressable>
 
         <div className="flex items-center gap-1.5 flex-none">
           {/* 手動新增的發票可編輯/刪除（誤加時用）；已歸帳需先取消歸帳 */}
@@ -110,7 +112,8 @@ export default function InvoiceRow({ invoice, aliases, suggestion = null, hidden
           )}
           {status === 'recorded' && (
             <>
-              <span className="text-[11px] font-semibold text-income bg-brand-light rounded-pill px-2 py-1">
+              {/* 完成態一律用 success 綠，與「已結清」「已繳」同一套語彙（原本用 income 藍） */}
+              <span className="text-[11px] font-semibold text-success bg-success-bg rounded-pill px-2 py-1">
                 已歸帳
               </span>
               <button
@@ -147,7 +150,9 @@ export default function InvoiceRow({ invoice, aliases, suggestion = null, hidden
                 {it.name || '（未命名）'}
                 {it.qty > 1 && <span className="text-text-tertiary"> ×{it.qty}</span>}
               </span>
-              <span className="tabular-nums flex-none ml-2">{formatNumber(it.amount ?? 0)}</span>
+              <span className="tabular-nums flex-none ml-2">
+                {hidden ? MASK_SHORT : formatNumber(it.amount ?? 0)}
+              </span>
             </div>
           ))}
           {status === 'recorded' && (

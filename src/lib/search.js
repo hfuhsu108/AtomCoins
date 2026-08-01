@@ -1,5 +1,6 @@
 // 明細全域搜尋的純函式（docs/09 批次 1）。跨月、純 client-side filter；
 // DataProvider 已整包在記憶體，個人資料量無壓力。所有條件 AND 組合。
+import { resolveMerchant } from './merchant'
 
 // 交易總額：收支取拆帳列合計，其餘型別取 amount
 function txTotal(tx) {
@@ -101,6 +102,54 @@ export function filterTransactions(txns, criteria, lookups) {
     if (kw && !matchKeyword(tx, kw, kwNum, total, lookups)) return false
     return true
   })
+}
+
+// ── 分頁感知搜尋（明細頁的股票／發票分頁）────────────────────────────
+// 帳本分頁條件多，走上方的 filterTransactions ＋ 專屬 SearchPanel；
+// 這兩個分頁只需要關鍵字過濾「當前正在看的那份清單」，故各自一個薄函式。
+
+function normalizeKw(keyword) {
+  return keyword?.trim().toLowerCase() ?? ''
+}
+
+// 任一欄位含關鍵字即命中（大小寫不敏感、略過空值）
+function hitAnyField(fields, kw) {
+  return fields.some((f) => f && String(f).toLowerCase().includes(kw))
+}
+
+// 股票交易紀錄：代號／股名／備註／券商名
+export function filterStockTxns(list, keyword, brokerMap = {}) {
+  const kw = normalizeKw(keyword)
+  if (!kw) return list
+  return list.filter((t) => hitAnyField([t.symbol, t.name, t.note, brokerMap[t.brokerId]?.name], kw))
+}
+
+// 持股與已實現損益：兩者都是 computeHoldings 的聚合結果，
+// 只帶得出代號與股名（沒有 note／brokerId 可比對）
+export function filterBySymbol(list, keyword) {
+  const kw = normalizeKw(keyword)
+  if (!kw) return list
+  return list.filter((h) => hitAnyField([h.symbol, h.name], kw))
+}
+
+// 發票：商家原始名與別名解析後的顯示名都比對——使用者記得的通常是別名後的店名，
+// 但清單上顯示的也是別名，只比對其中一邊都會出現「看得到卻搜不到」。
+export function filterInvoices(list, keyword, aliases = []) {
+  const kw = normalizeKw(keyword)
+  if (!kw) return list
+  return list.filter((inv) =>
+    hitAnyField(
+      [
+        inv.merchant,
+        resolveMerchant(inv.merchant, aliases),
+        inv.invoiceNumber,
+        inv.carrierId,
+        inv.note,
+        ...(inv.lineItems ?? []).map((it) => it.name),
+      ],
+      kw,
+    ),
+  )
 }
 
 // 結果合計：筆數＋支出／收入總額（拆帳列口徑，與月摘要一致）。

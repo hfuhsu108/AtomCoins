@@ -1,7 +1,11 @@
 // 金額一律整數（元）；顯示加千分位、NT$，正負由呼叫端決定
 // 負號統一用 U+2212（−）而非 hyphen，對齊設計稿排版
 
-const MASK = '••••••'
+// 遮蔽金額時的替代字串。export 供少數無法走 format 函式的位置（圓餅中心、日曆格）共用，
+// 免得各處自己寫死不同點數，同一畫面出現長短不一的遮罩。
+export const MASK = '••••••'
+// 窄欄位專用（日曆格、百分比欄）：6 點會撐破版面
+export const MASK_SHORT = '••'
 
 // 純數字千分位（無貨幣符號），股價等小數用 maximumFractionDigits 控制
 export function formatNumber(n, maxFractionDigits = 0) {

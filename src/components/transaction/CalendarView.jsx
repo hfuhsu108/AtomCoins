@@ -1,11 +1,12 @@
 import { useMemo, useState, useEffect } from 'react'
 import { WEEKDAYS, todayStr, daysInMonth, formatMd, weekday } from '../../lib/date'
-import { formatWan, formatAmount } from '../../lib/format'
+import { formatWan, formatAmount, MASK_SHORT } from '../../lib/format'
+import EmptyState from '../EmptyState'
 import TransactionRow from './TransactionRow'
 
 // 月曆檢視（docs/09 批次 5）：7 欄（週日起始）× 5-6 列；每格日數字＋當日支出（有才顯示），
 // 有收入另加小圓點；今日格框線高亮。點日期列該日交易。日聚合直接重用 TransactionsPage 的 days。
-export default function CalendarView({ ym, days, lookups, hidden, onRowClick }) {
+export default function CalendarView({ ym, days, lookups, hidden, onRowClick, onRowLongPress }) {
   const today = todayStr()
   const prefix = `${ym.year}-${String(ym.month).padStart(2, '0')}`
 
@@ -65,7 +66,7 @@ export default function CalendarView({ ym, days, lookups, hidden, onRowClick }) 
                 </span>
                 {info?.dayOut > 0 && (
                   <span className="text-[10px] leading-none text-expense tabular-nums">
-                    {hidden ? '••' : formatWan(info.dayOut)}
+                    {hidden ? MASK_SHORT : formatWan(info.dayOut)}
                   </span>
                 )}
                 {info?.dayIn > 0 && <span className="w-1 h-1 rounded-full bg-income" />}
@@ -93,11 +94,17 @@ export default function CalendarView({ ym, days, lookups, hidden, onRowClick }) 
           {selDay?.items?.length ? (
             <div className="bg-surface border border-line rounded-card shadow-card px-4 divide-y divide-line-light">
               {selDay.items.map((t) => (
-                <TransactionRow key={t.id} tx={t} lookups={lookups} onClick={() => onRowClick(t)} />
+                <TransactionRow
+                  key={t.id}
+                  tx={t}
+                  lookups={lookups}
+                  onClick={() => onRowClick(t)}
+                  onLongPress={onRowLongPress}
+                />
               ))}
             </div>
           ) : (
-            <div className="py-8 text-center text-text-tertiary text-sm">當日無記錄</div>
+            <EmptyState title="當日無記錄" compact />
           )}
         </div>
       )}

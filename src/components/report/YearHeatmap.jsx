@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { todayStr, weekday, formatMd } from '../../lib/date'
-import { formatAmount } from '../../lib/format'
+import { formatAmount, MASK } from '../../lib/format'
 
 // 年度消費熱力圖（docs/09 批次 5，GitHub 風格）：週為欄 × 7 列（日～六）。
 // 色階 5 級：0＝surface-alt；非零按該年非零值四分位分 4 級（color-mix N=25/45/70/100）。
@@ -116,7 +116,7 @@ export default function YearHeatmap({ year, totals, hidden }) {
       <div className="flex items-center justify-between mt-3">
         <div className="text-xs text-text-tertiary tabular-nums min-h-[16px]">
           {sel
-            ? `${formatMd(sel.date)} ${weekday(sel.date)}・支出 ${hidden ? '••••' : formatAmount(sel.amount)}`
+            ? `${formatMd(sel.date)} ${weekday(sel.date)}・支出 ${hidden ? MASK : formatAmount(sel.amount)}`
             : '點方格看當日支出'}
         </div>
         <div className="flex items-center gap-1 text-[10px] text-text-tertiary">

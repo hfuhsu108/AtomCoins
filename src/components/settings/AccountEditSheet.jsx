@@ -6,6 +6,8 @@ import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
 import { useCollection } from '../../db/DataProvider'
 import { useConfirm } from '../ConfirmSheet'
 import { newId } from '../../lib/id'
+import { accountBalances } from '../../lib/engine'
+import { formatBalance } from '../../lib/format'
 import { todayStr } from '../../lib/date'
 import Sheet from '../Sheet'
 import AccountPicker from '../transaction/AccountPicker'
@@ -153,8 +155,21 @@ export default function AccountEditSheet({ open, account, accounts, brokers = []
     set({ openingHoldings: s.openingHoldings.map((h, j) => (j === i ? { ...h, ...patch } : h)) })
   const removeHolding = (i) => set({ openingHoldings: s.openingHoldings.filter((_, j) => j !== i) })
 
-  const toggleArchive = () => {
+  // 封存會讓帳戶退出淨資產計算（engine.netWorth 跳過 isArchived），但餘額本身不歸零，
+  // 首頁帳戶列表也會濾掉它——不先提醒就會表現成「錢憑空消失」。取消封存沒有這個風險，不攔。
+  const toggleArchive = async () => {
     if (!account) return
+    if (!account.isArchived) {
+      const bal = accountBalances(accounts, txns, todayStr(), stockTxns)[account.id] ?? 0
+      if (
+        bal !== 0 &&
+        !(await confirm({
+          title: '封存帳戶',
+          message: `此帳戶目前餘額 ${formatBalance(bal)}，封存後將不計入淨資產（首頁淨資產會跟著變動），但交易記錄仍會保留。確定封存？`,
+          danger: true,
+        }))
+      ) return
+    }
     run(async () => {
       await settle(updateAccount(account.id, { isArchived: !account.isArchived }))
       onClose()

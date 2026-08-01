@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faBell,
-  faEye,
-  faEyeSlash,
   faChevronDown,
   faChevronUp,
   faChevronRight,
@@ -26,6 +24,8 @@ import { formatBalance, formatSigned, formatAmount } from '../lib/format'
 import { todayStr, parseDate, monthLabel, formatMd } from '../lib/date'
 import { getIcon, ACCOUNT_TYPE_ICON } from '../lib/icons'
 import useNetWorth from '../hooks/useNetWorth'
+import { useHiddenAmount, EyeButton } from '../components/HiddenAmountProvider'
+import EmptyState from '../components/EmptyState'
 import Sheet from '../components/Sheet'
 import LoanCard from '../components/loan/LoanCard'
 
@@ -50,8 +50,9 @@ export default function HomePage() {
   const txns = useCollection('transactions')
   const rules = useCollection('recurringRules')
   const stockTxns = useCollection('stockTransactions')
+  const snapshots = useCollection('netWorthSnapshots')
 
-  const [hidden, setHidden] = useState(false)
+  const { opt } = useHiddenAmount()
   const [compOpen, setCompOpen] = useState(false)
   const [collapsed, setCollapsed] = useState({})
   const [remindersOpen, setRemindersOpen] = useState(false)
@@ -85,8 +86,14 @@ export default function HomePage() {
 
   const balances = accountBalances(accounts, txns, asOf, stockTxns)
   const pending = pendingByAccount(accounts, txns, asOf, stockTxns)
-  // 「較上月」沿用今日 holdingsValue（缺歷史股價，口徑同既有實作，不回補）
-  const nwPrev = netWorth(accounts, txns, { holdingsValue, asOf: lastMonthEnd(), stockTxns })
+  // 「較上月」基準：優先取上月最後一天的淨資產快照，它含當時的持股市值，股價漲跌才看得出來。
+  // 沒有那天的快照（快照自啟用日起累積）才退回即時計算——那條路徑只能沿用今日 holdingsValue，
+  // 兩邊同值會互相抵銷，等於看不到這個月的股價變化。
+  const prevEnd = lastMonthEnd()
+  const prevSnapshot = snapshots.find((s) => s.date === prevEnd)
+  const nwPrev = prevSnapshot
+    ? prevSnapshot.total
+    : netWorth(accounts, txns, { holdingsValue, asOf: prevEnd, stockTxns })
   const change = nw - nwPrev
   const { income, expense, balance } = monthlySummary(txns, year, month)
 
@@ -104,19 +111,12 @@ export default function HomePage() {
     pay: loans.payable,
   }
 
-  const opt = { hidden }
-
   return (
     <div className="px-4 pt-4 pb-4 lg:px-7 lg:pt-6 max-w-3xl mx-auto">
       <header className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-semibold">首頁</h1>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setHidden((v) => !v)}
-            className="w-[38px] h-[38px] rounded-chip bg-surface border border-line text-text-secondary flex items-center justify-center"
-          >
-            <FontAwesomeIcon icon={hidden ? faEyeSlash : faEye} />
-          </button>
+          <EyeButton />
           <button
             onClick={() => setRemindersOpen(true)}
             className="relative w-[38px] h-[38px] rounded-chip bg-surface border border-line text-text-secondary flex items-center justify-center"
@@ -249,7 +249,7 @@ export default function HomePage() {
                         a.type === 'credit_card'
                           ? () => navigate(`/card/${a.id}`)
                           : a.type === 'securities'
-                            ? () => navigate('/transactions?tab=stock')
+                            ? () => navigate(`/transactions?tab=stock&accountId=${a.id}`)
                             : // 現金／銀行：進明細頁並直接篩出這個帳戶的交易
                               () => navigate(`/transactions?accountId=${a.id}`)
                       }
@@ -295,7 +295,7 @@ function NotificationsSheet({ open, reminders, cardDues, shortfalls, onClose }) 
   return (
     <Sheet open={open} onClose={onClose} title="通知" bodyClassName="overflow-y-auto p-3">
       {total === 0 ? (
-        <div className="py-10 text-center text-text-tertiary text-sm">目前沒有通知</div>
+        <EmptyState title="尚無通知" compact />
       ) : (
         <div className="flex flex-col gap-4">
           {cardDues.length > 0 && (

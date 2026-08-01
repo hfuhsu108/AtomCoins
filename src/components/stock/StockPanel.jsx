@@ -1,15 +1,19 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faChevronRight, faPen, faArrowsRotate, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons'
+import { faChevronRight, faPen, faArrowsRotate, faTriangleExclamation, faXmark } from '@fortawesome/free-solid-svg-icons'
 import { useCollection } from '../../db/DataProvider'
 import { computeHoldings, holdingsMarketValue } from '../../lib/stock'
 import { upsertStockPrice } from '../../db/repo'
 import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
 import useSyncPrices from '../../hooks/useSyncPrices'
+import { filterStockTxns, filterBySymbol } from '../../lib/search'
 import { formatNumber, formatBalance, formatSigned } from '../../lib/format'
 import { todayStr, formatMd, formatDateTime } from '../../lib/date'
 import Sheet from '../Sheet'
+import EmptyState from '../EmptyState'
+import LongPressable from '../LongPressable'
+import StockPreview from './StockPreview'
 
 const SUB_TABS = [
   { id: 'holdings', label: '持股' },
@@ -22,7 +26,13 @@ function pnlClass(n) {
   return n >= 0 ? 'text-[var(--color-stock-buy)]' : 'text-[var(--color-stock-sell)]'
 }
 
-export default function StockPanel({ hidden = false }) {
+export default function StockPanel({
+  hidden = false,
+  keyword = '',
+  accountId = null,
+  accountName = null,
+  onClearAccount,
+}) {
   const navigate = useNavigate()
   const stockTxns = useCollection('stockTransactions')
   const prices = useCollection('stockPrices')
@@ -31,6 +41,7 @@ export default function StockPanel({ hidden = false }) {
 
   const [subTab, setSubTab] = useState('holdings')
   const [editingPrice, setEditingPrice] = useState(null)
+  const [preview, setPreview] = useState(null) // 長按預覽：{ kind, item }
 
   const { sync, syncing, result, lastSyncAt } = useSyncPrices()
   const lastSync = formatDateTime(lastSyncAt)
@@ -43,10 +54,25 @@ export default function StockPanel({ hidden = false }) {
     [stockTxns, prices, asOf],
   )
 
-  const totalMarketValue = holdingsMarketValue(holdings)
-  const totalCost = holdings.reduce((s, h) => s + h.costBasis, 0)
-  const totalUnrealized = holdings.reduce((s, h) => s + (h.unrealizedPnl ?? 0), 0)
-  const totalRealized = realized.reduce((s, r) => s + r.pnl, 0)
+  // 帳戶篩選（首頁點證券帳戶進來）連統計一起收斂——那是「只看這個帳戶」的情境。
+  // 關鍵字則只濾清單、不動統計，否則打字過程中總市值會跟著跳動。
+  const scopedHoldings = useMemo(
+    () => (accountId ? holdings.filter((h) => h.securitiesAccountId === accountId) : holdings),
+    [holdings, accountId],
+  )
+  const scopedRealized = useMemo(
+    () => (accountId ? realized.filter((r) => r.securitiesAccountId === accountId) : realized),
+    [realized, accountId],
+  )
+  const scopedTxns = useMemo(
+    () => (accountId ? stockTxns.filter((t) => t.securitiesAccountId === accountId) : stockTxns),
+    [stockTxns, accountId],
+  )
+
+  const totalMarketValue = holdingsMarketValue(scopedHoldings)
+  const totalCost = scopedHoldings.reduce((s, h) => s + h.costBasis, 0)
+  const totalUnrealized = scopedHoldings.reduce((s, h) => s + (h.unrealizedPnl ?? 0), 0)
+  const totalRealized = scopedRealized.reduce((s, r) => s + r.pnl, 0)
   const totalReturnPct = totalCost > 0 ? ((totalMarketValue - totalCost) / totalCost) * 100 : 0
 
   const accMap = useMemo(() => {
@@ -61,34 +87,52 @@ export default function StockPanel({ hidden = false }) {
     return m
   }, [brokers])
 
-  // 交易紀錄依 tradeDate 新到舊
+  // 交易紀錄依 tradeDate 新到舊（再套關鍵字：代號／股名／備註／券商名）
   const sortedTxns = useMemo(
-    () => [...stockTxns].sort((a, b) => {
-      if (a.tradeDate !== b.tradeDate) return a.tradeDate < b.tradeDate ? 1 : -1
-      return (a.createdAt ?? '') < (b.createdAt ?? '') ? 1 : -1
-    }),
-    [stockTxns],
+    () => filterStockTxns(
+      [...scopedTxns].sort((a, b) => {
+        if (a.tradeDate !== b.tradeDate) return a.tradeDate < b.tradeDate ? 1 : -1
+        return (a.createdAt ?? '') < (b.createdAt ?? '') ? 1 : -1
+      }),
+      keyword,
+      brokerMap,
+    ),
+    [scopedTxns, keyword, brokerMap],
   )
 
   // 已實現依賣出日新到舊
   const sortedRealized = useMemo(
-    () => [...realized].sort((a, b) => (a.date < b.date ? 1 : -1)),
-    [realized],
+    () => filterBySymbol([...scopedRealized].sort((a, b) => (a.date < b.date ? 1 : -1)), keyword),
+    [scopedRealized, keyword],
   )
 
   // 持股依證券帳戶分組
   const holdingGroups = useMemo(() => {
     const map = new Map()
-    for (const h of holdings) {
+    for (const h of filterBySymbol(scopedHoldings, keyword)) {
       const key = h.securitiesAccountId
       if (!map.has(key)) map.set(key, [])
       map.get(key).push(h)
     }
     return [...map.entries()]
-  }, [holdings])
+  }, [scopedHoldings, keyword])
+
+  const searching = !!keyword.trim()
 
   return (
     <div>
+      {/* 帳戶篩選（首頁點證券帳戶進來）：可隨時清除回到全部帳戶 */}
+      {accountId && (
+        <div className="flex items-center mb-3">
+          <span className="flex items-center gap-2 h-8 px-3 rounded-chip bg-brand-light text-brand text-[13px] font-semibold">
+            僅顯示 {accountName ?? '此帳戶'}
+            <button onClick={onClearAccount} aria-label="清除帳戶篩選">
+              <FontAwesomeIcon icon={faXmark} className="text-xs" />
+            </button>
+          </span>
+        </div>
+      )}
+
       {/* 投資總覽 */}
       <div className="bg-surface border border-line rounded-card shadow-card p-4 mb-3">
         <div className="flex items-center justify-between">
@@ -143,8 +187,8 @@ export default function StockPanel({ hidden = false }) {
 
       {/* 持股 */}
       {subTab === 'holdings' && (
-        holdings.length === 0 ? (
-          <Empty>尚無持股</Empty>
+        holdingGroups.length === 0 ? (
+          <Empty>{searching ? '找不到符合的持股' : '尚無持股'}</Empty>
         ) : (
           holdingGroups.map(([acctId, items]) => (
             <div key={acctId} className="mb-3">
@@ -153,9 +197,10 @@ export default function StockPanel({ hidden = false }) {
               </div>
               <div className="bg-surface border border-line rounded-card shadow-card divide-y divide-line-light">
                 {items.map((h) => (
-                  <button
+                  <LongPressable
                     key={`${h.securitiesAccountId}-${h.symbol}`}
                     onClick={() => setEditingPrice(h)}
+                    onLongPress={() => setPreview({ kind: 'holding', item: h })}
                     className="flex items-center gap-3 w-full px-4 py-3 text-left"
                   >
                     <div className="flex-1 min-w-0">
@@ -184,7 +229,7 @@ export default function StockPanel({ hidden = false }) {
                       )}
                     </div>
                     <FontAwesomeIcon icon={faPen} className="text-text-tertiary text-[11px] flex-none" />
-                  </button>
+                  </LongPressable>
                 ))}
               </div>
             </div>
@@ -195,7 +240,7 @@ export default function StockPanel({ hidden = false }) {
       {/* 交易紀錄 */}
       {subTab === 'history' && (
         sortedTxns.length === 0 ? (
-          <Empty>尚無交易紀錄</Empty>
+          <Empty>{searching ? '找不到符合的交易' : '尚無交易紀錄'}</Empty>
         ) : (
           <div className="bg-surface border border-line rounded-card shadow-card divide-y divide-line-light">
             {sortedTxns.map((t) => {
@@ -205,9 +250,10 @@ export default function StockPanel({ hidden = false }) {
               const unsettled = t.settlementDate > asOf
               const broker = brokerMap[t.brokerId]
               return (
-                <button
+                <LongPressable
                   key={t.id}
                   onClick={() => navigate(`/add?stxId=${t.id}`)}
+                  onLongPress={() => setPreview({ kind: 'txn', item: t })}
                   className="flex items-center gap-3 w-full px-4 py-3 text-left"
                 >
                   <span className={`flex-none text-[11px] font-bold rounded-pill px-2.5 py-1 ${
@@ -242,7 +288,7 @@ export default function StockPanel({ hidden = false }) {
                     </div>
                   </div>
                   <FontAwesomeIcon icon={faChevronRight} className="text-text-tertiary text-[11px] flex-none" />
-                </button>
+                </LongPressable>
               )
             })}
           </div>
@@ -252,7 +298,7 @@ export default function StockPanel({ hidden = false }) {
       {/* 已實現損益 */}
       {subTab === 'realized' && (
         sortedRealized.length === 0 ? (
-          <Empty>尚無已實現損益</Empty>
+          <Empty>{searching ? '找不到符合的損益紀錄' : '尚無已實現損益'}</Empty>
         ) : (
           <>
             <div className="flex items-center justify-between px-1 mb-2">
@@ -265,7 +311,11 @@ export default function StockPanel({ hidden = false }) {
             </div>
             <div className="bg-surface border border-line rounded-card shadow-card divide-y divide-line-light">
               {sortedRealized.map((r) => (
-                <div key={r.stxId} className="flex items-center gap-3 px-4 py-3">
+                <LongPressable
+                  key={r.stxId}
+                  onLongPress={() => setPreview({ kind: 'realized', item: r })}
+                  className="flex items-center gap-3 w-full px-4 py-3 text-left"
+                >
                   <div className="flex-1 min-w-0">
                     <div className="text-[15px] font-medium">{r.symbol}</div>
                     <div className="text-xs text-text-tertiary tabular-nums mt-0.5">
@@ -277,7 +327,7 @@ export default function StockPanel({ hidden = false }) {
                   }`}>
                     {formatSigned(r.pnl, opt)}
                   </span>
-                </div>
+                </LongPressable>
               ))}
             </div>
           </>
@@ -290,12 +340,26 @@ export default function StockPanel({ hidden = false }) {
         prices={prices}
         onClose={() => setEditingPrice(null)}
       />
+
+      <StockPreview
+        item={preview?.item ?? null}
+        kind={preview?.kind}
+        accMap={accMap}
+        brokerMap={brokerMap}
+        hidden={hidden}
+        onClose={() => setPreview(null)}
+        onOpen={() => {
+          const id = preview?.item?.id
+          setPreview(null)
+          if (id) navigate(`/add?stxId=${id}`)
+        }}
+      />
     </div>
   )
 }
 
 function Empty({ children }) {
-  return <div className="py-16 text-center text-text-tertiary text-sm">{children}</div>
+  return <EmptyState title={children} />
 }
 
 function PriceSheet({ holding, prices, onClose }) {

@@ -50,6 +50,7 @@ import AccountPicker from './AccountPicker'
 import CounterpartyPicker from './CounterpartyPicker'
 import TagPicker from './TagPicker'
 import TagChip from '../TagChip'
+import Toggle from '../Toggle'
 import MerchantAliasSheet from '../settings/MerchantAliasSheet'
 import { STATUS } from './TransactionRow'
 import StockFields, { initStockState, stockCanSave, buildStockRecord } from './StockFields'
@@ -1305,7 +1306,7 @@ function SplitRows({
         <div className="flex items-center justify-between px-4 py-1.5 bg-surface-alt border-b border-line-light text-[12px]">
           <span className="text-text-tertiary tabular-nums">發票金額 NT$ {formatNumber(targetTotal)}</span>
           {diff === 0 ? (
-            <span className="text-income font-semibold">已湊平</span>
+            <span className="text-success font-semibold">已湊平</span>
           ) : diff > 0 ? (
             <span className="text-warning-text font-semibold tabular-nums">剩餘 NT$ {formatNumber(diff)}</span>
           ) : (
@@ -1342,7 +1343,8 @@ function SplitRows({
               {advance ? (
                 <div className="flex items-center gap-2">
                   <span className="text-[15px] font-medium">代墊</span>
-                  <span className="text-xs font-semibold text-income bg-brand-light rounded-pill px-2 py-0.5">
+                  {/* 對象名稱是標籤不是收入，用品牌色而非 income 色 */}
+                  <span className="text-xs font-semibold text-brand bg-brand-light rounded-pill px-2 py-0.5">
                     {cp?.name ?? '未指定'}
                   </span>
                 </div>
@@ -1521,20 +1523,6 @@ function PostingDateRow({ tradeDate, postingDate, onChange }) {
   )
 }
 
-function Switch({ on, disabled, onToggle }) {
-  return (
-    <button
-      disabled={disabled}
-      onClick={onToggle}
-      className={`w-11 h-6 rounded-pill flex items-center px-0.5 flex-none transition-colors ${
-        on ? 'bg-brand justify-end' : 'bg-surface-alt justify-start'
-      } ${disabled ? 'opacity-40' : ''}`}
-    >
-      <span className="w-5 h-5 rounded-full bg-white shadow-sm" />
-    </button>
-  )
-}
-
 function Chip({ active, onClick, children }) {
   return (
     <button
@@ -1552,7 +1540,7 @@ function ToggleRow({ label, on, onToggle }) {
   return (
     <div className="flex items-center justify-between px-4 py-3 bg-surface border border-line rounded-modal">
       <span className="text-sm text-text-secondary">{label}</span>
-      <Switch on={on} onToggle={onToggle} />
+      <Toggle checked={on} onChange={onToggle} label={label} />
     </div>
   )
 }
@@ -1592,7 +1580,7 @@ function InstallmentBox({ enabled, installment, total, fundingObj, onToggle, onS
           <span className="text-sm text-text-secondary">分期付款</span>
           {!enabled && <span className="block text-[11px] text-text-tertiary mt-0.5">僅信用卡帳戶可分期</span>}
         </div>
-        <Switch on={on} disabled={!enabled} onToggle={enabled ? onToggle : undefined} />
+        <Toggle checked={on} disabled={!enabled} onChange={onToggle} label="分期付款" />
       </div>
       {on && (
         <>
@@ -1655,7 +1643,7 @@ function RecurringBox({ recurring, onToggle, onSet }) {
     <div className="bg-surface border border-line rounded-modal p-3 flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <span className="text-sm text-text-secondary">設為週期性</span>
-        <Switch on={on} onToggle={onToggle} />
+        <Toggle checked={on} onChange={onToggle} label="設為週期性" />
       </div>
       {on && (
         <>

@@ -4,7 +4,7 @@ import { faChevronLeft, faChevronRight, faArrowUp, faArrowDown, faMinus } from '
 import { useCollection } from '../../db/DataProvider'
 import { categoryStatsRange, monthlyTrend, yearlySummary, dailyExpenseTotals } from '../../lib/engine'
 import { merchantStats } from '../../lib/merchant'
-import { formatAmount, formatNumber } from '../../lib/format'
+import { formatAmount, formatNumber, MASK, MASK_SHORT } from '../../lib/format'
 import { monthLabel, monthPrefix, addMonth, daysInMonth, todayStr, parseDate } from '../../lib/date'
 import { getIcon } from '../../lib/icons'
 import YearHeatmap from './YearHeatmap'
@@ -218,7 +218,7 @@ export default function FlowReport({ hidden }) {
                   <div className="absolute inset-0 rounded-full" style={{ background: hidden ? 'var(--color-surface-alt)' : donutBg }} />
                   <div className="absolute inset-[26px] rounded-full bg-surface flex flex-col items-center justify-center gap-0.5">
                     <div className="text-[11px] text-text-tertiary">{periodWord}{tabWord}</div>
-                    <div className="text-[22px] font-bold tabular-nums">{hidden ? '••••' : formatNumber(total)}</div>
+                    <div className="text-[22px] font-bold tabular-nums">{hidden ? MASK : formatNumber(total)}</div>
                     <div className="text-[11px] text-text-tertiary tabular-nums">{stats.count} 筆</div>
                   </div>
                 </div>
@@ -363,7 +363,7 @@ function RankRow({ slice, total, maxAmt, opt }) {
           <div className="flex-1 h-1.5 bg-surface-alt rounded-pill overflow-hidden">
             <div className="h-full rounded-pill" style={{ width: `${barW}%`, background: hidden ? 'var(--color-surface-alt)' : slice.color }} />
           </div>
-          <span className="text-[11px] text-text-tertiary tabular-nums w-8 text-right">{hidden ? '••' : `${pct.toFixed(0)}%`}</span>
+          <span className="text-[11px] text-text-tertiary tabular-nums w-8 text-right">{hidden ? MASK_SHORT : `${pct.toFixed(0)}%`}</span>
         </div>
       </div>
     </div>

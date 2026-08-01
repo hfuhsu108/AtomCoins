@@ -10,6 +10,8 @@ import useCloseView from '../hooks/useCloseView'
 import { formatAmount, formatBalance, formatNumber } from '../lib/format'
 import { todayStr, formatMd, addDays, monthLabel } from '../lib/date'
 import { accountIcon } from '../lib/icons'
+import { useHiddenAmount, EyeButton } from '../components/HiddenAmountProvider'
+import EmptyState from '../components/EmptyState'
 import TransactionRow from '../components/transaction/TransactionRow'
 import AccountPicker from '../components/transaction/AccountPicker'
 import Sheet from '../components/Sheet'
@@ -42,6 +44,8 @@ export default function CardDetailPage() {
   const [deferring, setDeferring] = useState(null) // 延後入帳：{ preselectId } 或 null
   const [idx, setIdx] = useState(FUTURE) // 目前瀏覽的期別索引；idx-- 往未來、idx++ 往過去
   const { run: runUndefer } = useAsyncAction()
+  // 頁面主體的金額跟隨全站遮蔽；繳費／延後面板內不遮，那是操作中必須看清的數字
+  const { hidden, opt } = useHiddenAmount()
 
   const card = accounts.find((a) => a.id === id)
   const asOf = todayStr()
@@ -98,20 +102,26 @@ export default function CardDetailPage() {
             </span>
             <h1 className="text-lg font-semibold">{card.name}</h1>
           </div>
+          <span className="flex-1" />
+          <EyeButton />
         </header>
 
         {/* 額度摘要 */}
         <div className="bg-surface border border-line rounded-card shadow-card p-[18px] mb-3">
           <div className="text-[13px] text-text-secondary">已用額度</div>
-          <div className="text-[30px] font-bold leading-tight tabular-nums mt-0.5">{formatAmount(used)}</div>
+          <div className="text-[30px] font-bold leading-tight tabular-nums mt-0.5">{formatAmount(used, opt)}</div>
           {limit > 0 && (
             <>
+              {/* 隱藏金額時進度條固定等寬淡色，不洩漏使用率比例（同首頁卡片列） */}
               <div className="h-1.5 bg-surface-alt rounded-pill my-3 overflow-hidden">
-                <div className="h-full bg-brand rounded-pill" style={{ width: `${pct}%` }} />
+                <div
+                  className="h-full rounded-pill"
+                  style={{ width: hidden ? '40%' : `${pct}%`, background: hidden ? 'var(--color-line)' : 'var(--color-brand)' }}
+                />
               </div>
               <div className="flex justify-between text-[13px] text-text-secondary tabular-nums">
-                <span>可用 {formatAmount(limit + balance)}</span>
-                <span>額度 {formatAmount(limit)}</span>
+                <span>可用 {formatAmount(limit + balance, opt)}</span>
+                <span>額度 {formatAmount(limit, opt)}</span>
               </div>
             </>
           )}
@@ -151,7 +161,7 @@ export default function CardDetailPage() {
                   <StatusBadge period={period} paid={isPaid} />
                 </div>
                 <div className="text-[26px] font-bold leading-tight tabular-nums mt-0.5">
-                  {formatAmount(period.total)}
+                  {formatAmount(period.total, opt)}
                 </div>
                 <div className="text-xs text-text-tertiary tabular-nums mt-0.5">
                   {period.isOpen
@@ -191,7 +201,7 @@ export default function CardDetailPage() {
               )}
             </div>
             {charges.length === 0 ? (
-              <div className="py-16 text-center text-text-tertiary text-sm">這期尚無消費</div>
+              <EmptyState title="這期尚無消費" />
             ) : (
               <div className="bg-surface border border-line rounded-card shadow-card px-4 divide-y divide-line-light">
                 {charges.map((t) => {
@@ -220,7 +230,7 @@ export default function CardDetailPage() {
           <>
             <div className="px-0.5 mt-4 mb-2 flex items-center justify-between">
               <span className="text-[15px] font-semibold">已延後至下期</span>
-              <span className="text-[13px] text-text-secondary tabular-nums">{formatAmount(deferredTotal)}</span>
+              <span className="text-[13px] text-text-secondary tabular-nums">{formatAmount(deferredTotal, opt)}</span>
             </div>
             <div className="bg-surface border border-line rounded-card shadow-card px-4 divide-y divide-line-light">
               {deferred.map((t) => (
