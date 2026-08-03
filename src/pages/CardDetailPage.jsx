@@ -17,6 +17,7 @@ import TransactionRow from '../components/transaction/TransactionRow'
 import TransactionPreview from '../components/transaction/TransactionPreview'
 import AccountPicker from '../components/transaction/AccountPicker'
 import Sheet from '../components/Sheet'
+import DateInput from '../components/DateInput'
 
 const FUTURE = 1 // 額外產生的未來期數：能翻到下一期，看見剛延後的消費落在哪
 const MONTHS = 12 // 往回可翻的期數
@@ -402,8 +403,7 @@ function DeferSheet({ request, charges, paid, lookups, defaultDate, onClose }) {
 
         <div>
           <div className="text-[13px] text-text-secondary mb-1.5">改為入帳日</div>
-          <input
-            type="date"
+          <DateInput
             value={date}
             min={minDate || undefined}
             onChange={(e) => e.target.value && setDate(e.target.value)}
@@ -492,8 +492,7 @@ function PaySheet({ period, card, defaultFundingId, accounts, onClose }) {
         </div>
         <div>
           <div className="text-[13px] text-text-secondary mb-1.5">繳款日</div>
-          <input
-            type="date"
+          <DateInput
             value={date}
             onChange={(e) => e.target.value && setDate(e.target.value)}
             className="w-full px-3.5 py-2.5 bg-surface border border-line rounded-modal text-[15px] outline-none"

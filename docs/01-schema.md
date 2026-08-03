@@ -51,7 +51,7 @@
 ## 3.6 Transaction 帳本記錄（核心）
 
 共用欄位：
-- `id` / `type` enum(`expense` `income` `transfer` `receivable` `payable`)
+- `id` / `type` enum(`expense` `income` `transfer` `receivable` `payable` `adjust`)
 - `amount` int（永遠正數，正負由 type 決定） / `currency`'TWD'
 - `tradeDate` date / `postingDate` date（預設=tradeDate；信用卡消費可手動延後，見 `docs/02 §4.1.1`）
 - `note?`（**明細寫這裡**） / `merchant?`（商家，交易層、不入拆帳列，僅 expense/income 適用，docs/09 批次 3） / `tagIds: array<ref→Tag>`（**平常留空**，真值在 `splits[].tagIds`；見 §3.3 的代墊例外） / `projectId` ref→Project?（未實作）
@@ -67,6 +67,11 @@
 - **transfer**：`fromAccountId` / `toAccountId` / `fee` int(預設0) / `feeCategoryId` ref→Category(預設=內建「金融手續費」類別，可改；**計入支出**)。本金無類別。
 - **receivable（借出）/ payable（借入）**：`accountId`(資金進出帳戶) / `counterpartyId` ref→Counterparty / `repayments: array<{date, amount, accountId}>`(還款/收款記錄) / `interestRate?` decimal(**保留，先無息**)。
   - 未結清 = amount − Σ repayments.amount；狀態（未結清/部分/已結清）由此推導。
+- **adjust（餘額調整，錨定型）**：`accountId` / `targetBalance` int(**有號，引擎唯一真值**＝該帳戶在基準日**日終**的實際餘額) / `snapshotDelta` int(建立當下的 `targetBalance − 當時餘額`，**純顯示**) / `note?`。無 `splits`／`categoryId`／`tagIds`／`merchant`。
+  - `tradeDate === postingDate ===` 基準日，**兩者必須永遠相等**（引擎走 postingDate、`statementPeriods` 走 `postingDate || tradeDate`、CSV 兩欄都印，分歧會生出三套口徑）；編輯時三欄同一次 patch 寫入。
+  - `amount` = `|snapshotDelta|`，僅為相容既有 UI（金額區間篩選讀 `amount`）。**引擎絕對不可讀 `amount` 或 `snapshotDelta`**——一讀就退化成固定差額，「之前增刪不影響餘額」的保證即失效。
+  - **差額是推導值，不是資料**：`snapshotDelta` 只是建立當下的快照，在基準日之前補記或刪除交易後就過期了。明細列、預覽、CSV 一律顯示 `engine.adjustDeltas` 算出的**現值**（`targetBalance −`「若沒有這筆錨點時該日的餘額」），`snapshotDelta` 僅作為 lookups 缺值時的退路。呼叫端把 `adjustDeltas` 的結果放進 `lookups.adjustDelta` 一次算完，逐列各算一次會是 O(n²)。
+  - 不進收支統計（`monthlySummary` 等皆為 expense/income 白名單，無需額外排除）。計算語義見 `docs/02 §4.1`。
   - **還款登錄**在首頁借貸卡 → 對象明細（逐筆登錄／刪除，或「一次結清」批次寫入）。**記帳表單不編輯 `repayments`**：編輯既有借還款時 `buildList()` 刻意不放這個 key，靠 `updateDoc` 的 patch 語義原樣保留（若讀回 state 再寫回，表單開著時他裝置新增的還款會被陳舊快照覆寫）。改變型別會清除還款，儲存前有確認框告知筆數。
   - **不得超額還款**（`Σ repayments.amount ≤ amount`）：`outstanding` 變負會讓淨資產算錯，UI 以未結清餘額為硬上限；多收的利息另記一筆 `income`。
   - 寫入一律先讀最新陣列再 append，**禁止 `arrayUnion`**（它會把「同日同額同帳戶還兩次」去重掉一筆）。
@@ -85,20 +90,26 @@
 
 ## 3.9 StockTransaction 股票交易
 
-`id` / `securitiesAccountId` ref→Account / `symbol`(代號如 2330) / `name`(股名，自快取帶入) / `instrumentType` enum(`stock` `etf`)(決定證交稅率) / `side` enum(`buy` `sell`) / `shares` int(含零股) / `price` decimal(成交價) / `fee` int(自動算可覆寫) / `tax` int(僅賣出，自動算) / `brokerId` ref→Broker / `settlementBankId` ref→Account(交割銀行，預設=證券戶 defaultSettlementBankId，可改) / `tradeDate` date(成交日) / `settlementDate` date(交割日=成交日+2 交易日，**跳週末，可手動改**) / `isOpening?` bool(**期初持股**，docs/09 需求4：新增證券帳戶時填的已持有部位，`stockPostings` 對其回空、不扣交割銀行現金；仍以 `side='buy'`、`price`=平均成本計入持股市值與成本) / `realizedPnl?` int(僅賣出) / `note?` / `createdAt` / `updatedAt`。
+`id` / `securitiesAccountId` ref→Account / `symbol`(代號如 2330) / `name`(股名，自快取帶入) / `instrumentType` enum(`stock` `etf`)(決定證交稅率；**配息不寫此欄**，見下) / `side` enum(`buy` `sell` `dividend`) / `shares` int(含零股；配息時為**配股股數**) / `price` decimal(成交價；配息固定 `0`) / `fee` int(自動算可覆寫；配息時為**匯費**，純手填) / `tax` int(僅賣出，自動算；配息時為**二代健保補充保費**，純手填) / `brokerId` ref→Broker / `settlementBankId` ref→Account(交割銀行，預設=證券戶 defaultSettlementBankId，可改；配息時為**入帳銀行**) / `tradeDate` date(成交日；配息時為**除權息日**) / `settlementDate` date(交割日=成交日+2 交易日，**跳週末，可手動改**；配息時為**發放日**，與除息日無 T+2 關係故不自動推算) / `cashPerShare?` decimal(**僅配息**，每股現金股利，供表單回推總額，引擎不讀) / `cashAmount?` int(**僅配息**，現金股利總額，**引擎唯一真值**) / `isOpening?` bool(**期初持股**，docs/09 需求4：新增證券帳戶時填的已持有部位，`stockPostings` 對其回空、不扣交割銀行現金；仍以 `side='buy'`、`price`=平均成本計入持股市值與成本) / `realizedPnl?` int(僅賣出，**未實作**：已實現損益執行期重算不落地) / `note?` / `createdAt` / `updatedAt`。
 
 衍生金額：
 - 買進交割金額 = `shares×price + fee`（交割日從交割銀行扣）
 - 賣出交割金額 = `shares×price − fee − tax`（交割日入交割銀行）
 - 證交稅 = `floor(shares×price × (instrumentType==='etf' ? 0.001 : 0.003))`
 - 賣出已實現損益 = 賣出交割金額 − `shares×`(當時移動加權平均成本/股)
+- **配息實入金額 = `cashAmount − fee − tax`**（`engine.dividendNetAmount`，發放日入帳；純配股時為 0，不產生 posting）
+
+> **配息（`side='dividend'`）三個要點**：① 現金股利**不調整持股成本**，計為投資收益（`docs/02 §4.5`）；② 股票股利只加 `shares`、`costBasis` 不變 → 均價自動下降，這是台股標準算法；③ `instrumentType` 刻意寫 `null`——`computeHoldings` 會以最新一筆的該欄覆寫持股類別，配息若寫死 `stock` 會把 ETF 的持股標錯類別（連帶影響證交稅率）。
 
 ## 3.10 持股 StockHolding（**不落地，執行期即時計算**）
 
 由 StockTransaction 算出，不存 table。**多券商買同一支，依帳戶分開算**（鍵 = securitiesAccountId + symbol）。
 - 移動加權平均：每次買進更新 avgCost；賣出只減 shares、不動 avgCost（賣出時用以算已實現損益）。
+- 配息：現金股利只累計 `cashDividend`、不動成本；股票股利加 shares、成本不變 → avgCost 下降。
 - 未實現損益 = (現價 − avgCost) × shares。
 - 現價來自 StockPrice 快取。
+- **同日處理順序＝買進 → 配息 → 賣出**（`stock.js` 的 `SIDE_ORDER`）。配息夾在中間，因為配股會拉低均價，同日賣出必須用「已含配股」的成本算已實現損益。
+- `computeHoldings` 回傳 `{ holdings, realized, dividends }`；`dividends` 每列 `{ stxId, securitiesAccountId, symbol, name, exDate, date(發放日), cash, shares }`，供投資報表按年統計。
 
 ## 3.11 StockPrice 股價快取
 
@@ -158,10 +169,10 @@
 |---|---|
 | Account.type | `cash` `bank` `credit_card` `securities` |
 | Category.kind | `expense` `income` |
-| Transaction.type | `expense` `income` `transfer` `receivable` `payable` |
+| Transaction.type | `expense` `income` `transfer` `receivable` `payable` `adjust` |
 | Invoice.status | `inbox` `recorded` `ignored` |
 | Invoice.source | `carrier_api` `manual` |
 | StockTransaction.instrumentType | `stock` `etf` |
-| StockTransaction.side | `buy` `sell` |
+| StockTransaction.side | `buy` `sell` `dividend` |
 | Broker.rounding | `floor` |
 | RecurringRule.postingMode | `immediate` `reminder` `deferred` |

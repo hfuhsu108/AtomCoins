@@ -29,7 +29,7 @@ export default function InvestReport({ hidden }) {
   const opt = { hidden }
   const asOf = todayStr()
 
-  const { realized } = useMemo(
+  const { realized, dividends } = useMemo(
     () => computeHoldings(stockTxns, prices, { asOf }),
     [stockTxns, prices, asOf],
   )
@@ -43,6 +43,14 @@ export default function InvestReport({ hidden }) {
   const yearCost = yearRealized.reduce((s, r) => s + r.cost, 0)
   const yearReturnPct = yearCost > 0 ? (yearPnl / yearCost) * 100 : null
   const lifetimePnl = realized.reduce((s, r) => s + r.pnl, 0)
+
+  // 股利依「發放日」歸年（現金實際入帳的那一年），與已實現用賣出日歸年同樣是「錢落地」的口徑
+  const yearDividends = useMemo(
+    () => dividends.filter((d) => d.date?.startsWith(`${year}-`)),
+    [dividends, year],
+  )
+  const yearDivCash = yearDividends.reduce((s, d) => s + d.cash, 0)
+  const yearDivShares = yearDividends.reduce((s, d) => s + d.shares, 0)
 
   // 各標的已實現排行（該年），賺最多在前
   const bySymbol = useMemo(() => {
@@ -95,6 +103,26 @@ export default function InvestReport({ hidden }) {
           <Stat label="累計已實現" value={formatSigned(lifetimePnl, opt)} cls={pnlClass(lifetimePnl)} />
         </div>
       </div>
+
+      {/* 年度股利：只有記過配息才顯示，沒配息的人不必多看一張永遠是 0 的卡 */}
+      {dividends.length > 0 && (
+        <div className="bg-surface border border-line rounded-card shadow-card p-4 mb-3">
+          <div className="text-[13px] text-text-secondary">{year} 年股利</div>
+          <div className="text-[30px] font-bold leading-tight tabular-nums mt-0.5 text-brand">
+            {formatSigned(yearDivCash, opt)}
+          </div>
+          <div className="grid grid-cols-3 mt-3.5 pt-3.5 border-t border-line">
+            <Stat label="配息筆數" value={`${yearDividends.length} 筆`} />
+            <Stat label="配股" value={yearDivShares > 0 ? `${yearDivShares} 股` : '—'} />
+            {/* 已實現與股利分開算再相加：報酬率公式維持只看買賣，避免口徑漂移 */}
+            <Stat
+              label="已實現＋股利"
+              value={formatSigned(yearPnl + yearDivCash, opt)}
+              cls={pnlClass(yearPnl + yearDivCash)}
+            />
+          </div>
+        </div>
+      )}
 
       {/* 投資佔淨資產 */}
       <div className="bg-surface border border-line rounded-card shadow-card p-4 mb-3">
@@ -149,6 +177,7 @@ export default function InvestReport({ hidden }) {
 
       <p className="text-[11px] text-text-tertiary mt-3 px-1 leading-relaxed">
         持股明細、現價與買賣操作在「明細 → 股票」。未實現損益隨股價浮動，不列入年度結算。
+        股利依發放日歸年、不計入收支報表；配股只增加股數不增加成本，反映在均價下降。
       </p>
     </>
   )

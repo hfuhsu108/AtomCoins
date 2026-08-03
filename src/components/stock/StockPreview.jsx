@@ -1,5 +1,6 @@
 import { formatAmount, formatBalance, formatSigned, formatNumber } from '../../lib/format'
 import { formatMd } from '../../lib/date'
+import { dividendNetAmount } from '../../lib/engine'
 import PreviewSheet, { PreviewRow } from '../PreviewSheet'
 
 // 損益上色：台股慣例，正=紅、負=綠
@@ -14,11 +15,12 @@ const TITLE = { holding: '持股', txn: '股票交易', realized: '已實現損�
 export default function StockPreview({ item, kind, accMap = {}, brokerMap = {}, hidden, onClose, onOpen }) {
   if (!item) return null
   const opt = { hidden }
+  const isDividend = kind === 'txn' && item.side === 'dividend'
 
   return (
     <PreviewSheet
       open={!!item}
-      title={TITLE[kind] ?? '預覽'}
+      title={isDividend ? '配息' : (TITLE[kind] ?? '預覽')}
       onClose={onClose}
       footer={
         kind === 'txn' ? (
@@ -47,6 +49,13 @@ export default function StockPreview({ item, kind, accMap = {}, brokerMap = {}, 
             value={item.hasPrice ? `${formatNumber(item.price, 2)}（${formatMd(item.priceDate)}）` : '未同步'}
           />
           <PreviewRow label="市值" value={formatBalance(item.marketValue, opt)} />
+          {item.cashDividend > 0 && (
+            <PreviewRow
+              label="累計配息"
+              value={formatBalance(item.cashDividend, opt)}
+              cls="font-semibold text-brand"
+            />
+          )}
           {item.unrealizedPnl != null && (
             <PreviewRow
               label="未實現損益"
@@ -61,7 +70,32 @@ export default function StockPreview({ item, kind, accMap = {}, brokerMap = {}, 
         </>
       )}
 
-      {kind === 'txn' && (
+      {isDividend && (
+        <>
+          <PreviewRow label="別" value="配息" cls="font-semibold text-brand" />
+          <PreviewRow label="除權息日" value={formatMd(item.tradeDate)} />
+          <PreviewRow label="發放日" value={formatMd(item.settlementDate)} />
+          {item.cashPerShare > 0 && (
+            <PreviewRow label="每股現金股利" value={formatNumber(item.cashPerShare, 2)} />
+          )}
+          <PreviewRow label="現金股利總額" value={formatAmount(item.cashAmount ?? 0, opt)} />
+          <PreviewRow label="匯費" value={formatAmount(item.fee ?? 0, opt)} />
+          <PreviewRow label="補充保費" value={formatAmount(item.tax ?? 0, opt)} />
+          <PreviewRow
+            label="實際入帳"
+            value={formatBalance(dividendNetAmount(item), opt)}
+            cls="font-semibold text-brand"
+          />
+          {item.shares > 0 && (
+            <PreviewRow label="配股" value={`${formatNumber(item.shares)} 股（不增加成本）`} />
+          )}
+          <PreviewRow label="證券帳戶" value={accMap[item.securitiesAccountId]?.name} />
+          <PreviewRow label="入帳銀行" value={accMap[item.settlementBankId]?.name} />
+          <PreviewRow label="註記" value={item.note} />
+        </>
+      )}
+
+      {kind === 'txn' && !isDividend && (
         <>
           <PreviewRow
             label="別"

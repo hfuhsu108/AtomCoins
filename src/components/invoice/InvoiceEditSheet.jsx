@@ -6,6 +6,7 @@ import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
 import { todayStr } from '../../lib/date'
 import { useConfirm } from '../ConfirmSheet'
 import Sheet from '../Sheet'
+import DateInput from '../DateInput'
 
 function initState(invoice) {
   return {
@@ -91,8 +92,7 @@ export default function InvoiceEditSheet({ open, invoice, onClose }) {
         </Field>
 
         <Field label="發票日期">
-          <input
-            type="date"
+          <DateInput
             value={s.invoiceDate}
             onChange={(e) => e.target.value && set({ invoiceDate: e.target.value })}
             className="w-full text-[15px] outline-none bg-transparent"

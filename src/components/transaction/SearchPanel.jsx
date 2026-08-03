@@ -9,6 +9,7 @@ import TransactionRow from './TransactionRow'
 import CategoryPicker from './CategoryPicker'
 import AccountPicker from './AccountPicker'
 import TagPicker from './TagPicker'
+import DateInput from '../DateInput'
 import { useCollection } from '../../db/DataProvider'
 
 const TYPE_OPTIONS = [
@@ -17,6 +18,7 @@ const TYPE_OPTIONS = [
   { id: 'transfer', label: '轉帳' },
   { id: 'receivable', label: '應收' },
   { id: 'payable', label: '應付' },
+  { id: 'adjust', label: '餘額調整' },
 ]
 
 const RANGE_OPTIONS = [
@@ -193,15 +195,13 @@ export default function SearchPanel({ txns, categories, accounts, lookups, hidde
             ))}
           </div>
           <div className="flex items-center gap-2">
-            <input
-              type="date"
+            <DateInput
               value={dateFrom}
               onChange={editDate(setDateFrom)}
               className="flex-1 min-w-0 h-9 px-2 bg-surface-alt rounded-btn text-[13px] tabular-nums outline-none"
             />
             <span className="text-text-tertiary text-xs">至</span>
-            <input
-              type="date"
+            <DateInput
               value={dateTo}
               onChange={editDate(setDateTo)}
               className="flex-1 min-w-0 h-9 px-2 bg-surface-alt rounded-btn text-[13px] tabular-nums outline-none"

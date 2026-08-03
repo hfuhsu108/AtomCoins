@@ -1,4 +1,4 @@
-import { useSearchParams } from 'react-router-dom'
+import { Navigate, useSearchParams } from 'react-router-dom'
 import { useCollection } from '../db/DataProvider'
 import useCloseView from '../hooks/useCloseView'
 import useDeleteTransaction from '../hooks/useDeleteTransaction'
@@ -27,6 +27,11 @@ export default function AddTransactionPage() {
   if (id && editTx === undefined) return null
   if (stxId && editStock === undefined) return null
   if (invoiceId && editInvoice === undefined) return null
+  // 餘額調整不是記帳表單認得的型別（沒有分類、沒有拆帳），硬進來會被當支出存回去而毀資料。
+  // 正常入口已分流到 BalanceAdjustSheet，這裡擋的是手打 URL 或舊書籤。
+  if (editTx?.type === 'adjust') return <Navigate to="/transactions" replace />
+
+  // 分期／代墊群組的刪除分支在 useDeleteTransaction 內判定，此處只負責交出目標與型別
 
   const handleDelete = async () => {
     const target = editStock ?? editTx

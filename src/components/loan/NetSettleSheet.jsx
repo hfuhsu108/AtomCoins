@@ -7,6 +7,7 @@ import { netSettlementPlan } from '../../lib/engine'
 import { formatNumber } from '../../lib/format'
 import { todayStr, formatMd } from '../../lib/date'
 import Sheet from '../Sheet'
+import DateInput from '../DateInput'
 import AccountPicker from '../transaction/AccountPicker'
 
 const EMPTY_PLAN = { entries: [], recvTotal: 0, payTotal: 0, net: 0 }
@@ -153,8 +154,7 @@ export default function NetSettleSheet({ open, counterpartyId, name, txns, accou
         </div>
         <div>
           <div className="text-[13px] text-text-secondary mb-1.5">結清日</div>
-          <input
-            type="date"
+          <DateInput
             value={date}
             onChange={(e) => e.target.value && setDate(e.target.value)}
             className="w-full px-3.5 py-2.5 bg-surface border border-line rounded-modal text-[15px] outline-none"

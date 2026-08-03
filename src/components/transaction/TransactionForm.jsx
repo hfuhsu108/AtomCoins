@@ -54,6 +54,7 @@ import Toggle from '../Toggle'
 import MerchantAliasSheet from '../settings/MerchantAliasSheet'
 import { STATUS } from './TransactionRow'
 import StockFields, { initStockState, stockCanSave, buildStockRecord } from './StockFields'
+import DateInput from '../DateInput'
 
 const TYPES = [
   { id: 'expense', label: '支出', sign: '−', color: 'text-expense' },
@@ -833,8 +834,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
               <label className={`${chipBase} relative cursor-pointer`}>
                 <FontAwesomeIcon icon={faCalendarDays} className="text-text-secondary text-xs" />
                 {state.tradeDate === todayStr() ? `今天 ${formatMd(state.tradeDate)}` : formatMd(state.tradeDate)}
-                <input
-                  type="date"
+                <DateInput
                   value={state.tradeDate}
                   onChange={(e) => e.target.value && set({ tradeDate: e.target.value })}
                   className="absolute inset-0 opacity-0 cursor-pointer"
@@ -1503,8 +1503,7 @@ function PostingDateRow({ tradeDate, postingDate, onChange }) {
         <label className="relative flex items-center gap-1.5 text-[15px] font-semibold cursor-pointer">
           <FontAwesomeIcon icon={faCalendarDays} className="text-text-secondary text-xs" />
           {postingDate ? formatMd(effective) : '與記錄日相同'}
-          <input
-            type="date"
+          <DateInput
             value={effective}
             min={tradeDate}
             onChange={(e) =>
@@ -1596,8 +1595,7 @@ function InstallmentBox({ enabled, installment, total, fundingObj, onToggle, onS
             <label className="relative font-semibold cursor-pointer flex items-center gap-1.5">
               <FontAwesomeIcon icon={faCalendarDays} className="text-text-secondary text-xs" />
               {formatMd(installment.startDate)}
-              <input
-                type="date"
+              <DateInput
                 value={installment.startDate}
                 onChange={(e) => e.target.value && onSet({ startDate: e.target.value })}
                 className="absolute inset-0 opacity-0 cursor-pointer"

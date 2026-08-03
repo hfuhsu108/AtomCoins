@@ -5,6 +5,7 @@
 //  - 本金不進收支：股票買賣不是 expense/income，損益走獨立投資報表
 //  - 移動加權平均成本，賣出只減股數、不動 avgCost；已實現損益執行期重算（不落地）
 import { parseDate, todayStr } from './date'
+import { dividendNetAmount } from './engine'
 
 // 證券交易稅率與手續費費率（現股）
 export const FEE_RATE = 0.001425 // 手續費率（未折）
@@ -62,12 +63,18 @@ function priceMap(prices) {
   return m
 }
 
+// 同日處理順序：買進 → 配息 → 賣出。配息夾在中間，是因為配股會拉低均價，
+// 同日賣出必須用「已含配股」的成本計算已實現損益。
+const SIDE_ORDER = { buy: 0, dividend: 1, sell: 2 }
+
 // 持股即時計算（docs/01 §3.10，不落地）。重播所有 stockTransactions：
 //  - 鍵 = securitiesAccountId + symbol（多券商同股分開算）
 //  - 移動加權平均：買進更新 avgCost（含買進手續費入成本）；賣出只減股數、不動 avgCost
-//  - 已實現損益於賣出當下用「當時 avgCost」算，故須依 tradeDate→createdAt 順序重播
-// asOf（'YYYY-MM-DD'，預設今天）以 tradeDate ≤ asOf 過濾 —— 成交日基準（買賣當下即進/出持股）。
-// 回傳 { holdings, realized }。
+//  - 配息：現金股利只累計不動成本；股票股利加股數、總成本不變 → 均價自動下降（台股口徑）
+//  - 已實現損益於賣出當下用「當時 avgCost」算，故須依 tradeDate→side→createdAt 順序重播
+// asOf（'YYYY-MM-DD'，預設今天）以 tradeDate ≤ asOf 過濾 —— 成交日基準（買賣當下即進/出持股，
+// 配息則為除權息日當下即除權）。
+// 回傳 { holdings, realized, dividends }。
 export function computeHoldings(stockTxns, prices, { asOf = todayStr() } = {}) {
   const pm = priceMap(prices)
   const sorted = (stockTxns ?? [])
@@ -75,13 +82,14 @@ export function computeHoldings(stockTxns, prices, { asOf = todayStr() } = {}) {
     .slice()
     .sort((a, b) => {
       if (a.tradeDate !== b.tradeDate) return a.tradeDate < b.tradeDate ? -1 : 1
-      // 同日 buy 先於 sell：補登交易 createdAt 反序時，避免賣出先於買進處理造成 avgCost=0、已實現損益全額錯算
-      if (a.side !== b.side) return a.side === 'buy' ? -1 : 1
+      // 同日依 SIDE_ORDER：補登交易 createdAt 反序時，避免賣出先於買進處理造成 avgCost=0、已實現損益全額錯算
+      if (a.side !== b.side) return (SIDE_ORDER[a.side] ?? 0) - (SIDE_ORDER[b.side] ?? 0)
       return (a.createdAt ?? '') < (b.createdAt ?? '') ? -1 : 1
     })
 
-  const lots = new Map() // key → { securitiesAccountId, symbol, name, instrumentType, shares, costBasis }
+  const lots = new Map() // key → { securitiesAccountId, symbol, name, instrumentType, shares, costBasis, cashDividend }
   const realized = []
+  const dividends = []
 
   for (const s of sorted) {
     const key = `${s.securitiesAccountId}__${s.symbol}`
@@ -94,12 +102,32 @@ export function computeHoldings(stockTxns, prices, { asOf = todayStr() } = {}) {
         instrumentType: s.instrumentType ?? 'stock',
         shares: 0,
         costBasis: 0,
+        cashDividend: 0,
       }
       lots.set(key, lot)
     }
     // 名稱/類別以最新一筆為準（事後補股名時生效）
     if (s.name) lot.name = s.name
     if (s.instrumentType) lot.instrumentType = s.instrumentType
+
+    if (s.side === 'dividend') {
+      const cash = dividendNetAmount(s)
+      const granted = s.shares ?? 0
+      // 配股：股數增加、costBasis 不動 → 均價自動下降。現金股利不調整成本，另計為投資收益。
+      lot.shares += granted
+      lot.cashDividend += cash
+      dividends.push({
+        stxId: s.id,
+        securitiesAccountId: s.securitiesAccountId,
+        symbol: s.symbol,
+        name: lot.name,
+        exDate: s.tradeDate,
+        date: s.settlementDate ?? s.tradeDate, // 發放日：年度歸屬與現金入帳同一天
+        cash,
+        shares: granted,
+      })
+      continue
+    }
 
     const gross = s.shares * s.price
     if (s.side === 'buy') {
@@ -144,6 +172,7 @@ export function computeHoldings(stockTxns, prices, { asOf = todayStr() } = {}) {
       shares: lot.shares,
       avgCost,
       costBasis: Math.round(lot.costBasis),
+      cashDividend: Math.round(lot.cashDividend),
       hasPrice,
       price,
       priceDate: hasPrice ? rec.priceDate : null,
@@ -154,7 +183,7 @@ export function computeHoldings(stockTxns, prices, { asOf = todayStr() } = {}) {
   }
   holdings.sort((a, b) => (a.symbol < b.symbol ? -1 : 1))
 
-  return { holdings, realized }
+  return { holdings, realized, dividends }
 }
 
 // 持股總市值（無現價者以成本價計），供 netWorth 與首頁投資組成

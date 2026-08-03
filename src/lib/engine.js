@@ -37,15 +37,34 @@ export function transactionPostings(tx) {
         postings.push({ accountId: r.accountId, amount: -r.amount, date: r.date })
       }
       break
+    case 'adjust':
+      // 餘額調整不產生 posting：它不是「一筆金額」而是「一個基準點」，
+      // 由 accountBalances 換掉累加起點來實現（見 latestAnchors）。明寫此 case 是為了
+      // 不依賴「未知 type 落空」的隱性行為——那會讓日後新增型別時默默算錯。
+      break
   }
   return postings
+}
+
+// 配息實入金額 = 現金股利總額 − 匯費 − 補充保費。
+// 定義在此而非 stock.js，是因為 stock.js 不在 copy-shared 的複製清單內，engine 不能 import 它；
+// 而 computeHoldings 的累計配息必須與這裡的入帳金額同口徑，故由 stock.js 反向 import 本函式。
+export function dividendNetAmount(stx) {
+  return (stx.cashAmount ?? 0) - (stx.fee ?? 0) - (stx.tax ?? 0)
 }
 
 // 把單筆股票交易攤成 postings：交割金額於 settlementDate 影響「交割銀行」（docs/02 §4.1）。
 // 買進 −(round(gross)+fee)、賣出 +(round(gross)−fee−tax)。本金不進收支統計。
 // 期初持股（isOpening）：追蹤前即已持有，只計入持股市值/成本，不影響交割銀行現金（docs/09 需求4）。
+// 配息（dividend）：現金股利於「發放日」（沿用 settlementDate 欄位）入帳；股票股利只加股數，
+// 不產生現金 posting。股利同樣不進收支統計，只影響資產與投資報表。
 export function stockPostings(stx) {
   if (stx.isOpening) return []
+  if (stx.side === 'dividend') {
+    const net = dividendNetAmount(stx)
+    if (!net) return []
+    return [{ accountId: stx.settlementBankId, amount: net, date: stx.settlementDate }]
+  }
   const gross = Math.round(stx.shares * stx.price)
   const amount =
     stx.side === 'buy'
@@ -54,31 +73,74 @@ export function stockPostings(stx) {
   return [{ accountId: stx.settlementBankId, amount, date: stx.settlementDate }]
 }
 
+// 各帳戶「≤ asOf 的最新餘額錨點」（type='adjust'）。回傳 { accountId: { date, target } }。
+//
+// 錨點＝使用者宣告「這個帳戶在這一天結束時實際上就是這麼多錢」，它取代 openingBalance 成為
+// 新的累加起點。這是「錨點日之前增刪任何記錄，都不改變該日起的餘額」的實作方式——
+// 差額型（存一個固定金額的調整交易）做不到，因為前面一改，總額就跟著漂。
+//
+// 同日多筆以 (date, createdAt, id) 字典序取最大：date 定寬、createdAt 為 ISO，字串比較即正確；
+// 補 id 是為了多裝置同秒寫入時仍有確定性的勝負。
+function latestAnchors(txns, asOf) {
+  const best = {}
+  for (const tx of txns) {
+    if (tx.type !== 'adjust') continue
+    const d = tx.postingDate || tx.tradeDate
+    if (!d || !tx.accountId || typeof tx.targetBalance !== 'number') continue
+    if (asOf && d > asOf) continue
+    const key = `${d}|${tx.createdAt ?? ''}|${tx.id ?? ''}`
+    const cur = best[tx.accountId]
+    if (!cur || key > cur.key) best[tx.accountId] = { date: d, key, target: tx.targetBalance }
+  }
+  return best
+}
+
 // 一次算出多帳戶餘額，回傳 { accountId: balance }。asOf 為 'YYYY-MM-DD'，null=全部。
 // stockTxns 為股票交易（交割金額於 settlementDate 計入交割銀行）；未傳則行為與階段2 相同。
+//
+// 起點：有錨點用錨點的 targetBalance（完全取代 openingBalance，非相加），否則用 openingBalance。
+// 錨點日「當天」的 postings 一律被吸收——錨點語義是該日**日終**餘額，這是「≤ 錨點日的增刪
+// 不影響餘額」的充要條件。代價：錨點當天稍後才補記的當日交易會被吃掉（表單有提示）。
 export function accountBalances(accounts, txns, asOf = null, stockTxns = []) {
+  const anchors = latestAnchors(txns, asOf)
   const map = {}
-  for (const a of accounts) map[a.id] = a.openingBalance ?? 0
-  for (const tx of txns) {
-    for (const p of transactionPostings(tx)) {
-      if (!(p.accountId in map)) continue
-      if (asOf && p.date > asOf) continue
-      map[p.accountId] += p.amount
-    }
+  for (const a of accounts) map[a.id] = anchors[a.id] ? anchors[a.id].target : (a.openingBalance ?? 0)
+  const add = (p) => {
+    if (!(p.accountId in map)) return
+    if (asOf && p.date > asOf) return
+    const an = anchors[p.accountId]
+    if (an && p.date <= an.date) return
+    map[p.accountId] += p.amount
   }
-  for (const stx of stockTxns) {
-    for (const p of stockPostings(stx)) {
-      if (!(p.accountId in map)) continue
-      if (asOf && p.date > asOf) continue
-      map[p.accountId] += p.amount
-    }
-  }
+  for (const tx of txns) for (const p of transactionPostings(tx)) add(p)
+  for (const stx of stockTxns) for (const p of stockPostings(stx)) add(p)
   return map
 }
 
 // 單一帳戶餘額
 export function accountBalance(account, txns, asOf = null, stockTxns = []) {
   return accountBalances([account], txns, asOf, stockTxns)[account.id]
+}
+
+// 各餘額調整的「現在的差額」：targetBalance − 若沒有這筆錨點時該日的餘額。回傳 { txId: delta }。
+//
+// 差額是推導值，不是資料。存下來的 snapshotDelta 只是建立當下的快照——之後在錨點日之前補記
+// 或刪除交易，真正的差額就變了。列表若顯示過期的快照，會出現「差額 +500 但帳面對不上」的矛盾，
+// 所以顯示端一律用這裡算的動態值（snapshotDelta 只當缺資料時的退路）。
+//
+// 錨點筆數通常個位數，對每筆各跑一次 accountBalances 的成本可以接受；呼叫端請包 useMemo。
+export function adjustDeltas(accounts, txns, stockTxns = []) {
+  const out = {}
+  for (const tx of txns) {
+    if (tx.type !== 'adjust') continue
+    const d = tx.postingDate || tx.tradeDate
+    if (!d) continue
+    // 排除自己、保留其他錨點：較早的錨點仍應作為起點，較晚的會被 asOf 過濾掉
+    const others = txns.filter((t) => t.id !== tx.id)
+    const before = accountBalances(accounts, others, d, stockTxns)[tx.accountId] ?? 0
+    out[tx.id] = (tx.targetBalance ?? 0) - before
+  }
+  return out
 }
 
 // 交割銀行於 settleDate 的可用餘額（docs/02 §4.2）。已含所有「未交割」買賣的影響，
@@ -97,20 +159,20 @@ export function isPending(tx, asOf = todayStr()) {
 // postings 加總（帶正負）。用於帳戶列在現餘額外另顯示「未入帳 ±X」。
 // 回傳 { accountId: pendingAmount }。
 export function pendingByAccount(accounts, txns, asOf = todayStr(), stockTxns = []) {
+  // 被錨點吸收的 postings 不算「未入帳」——它們永遠不會再影響餘額。正常情況下錨點 ≤ asOf、
+  // 與這裡的 date > asOf 無交集，此判斷是防未來日期的錨點（他裝置寫入或舊資料）造成誤報。
+  const anchors = latestAnchors(txns, null)
   const map = {}
   for (const a of accounts) map[a.id] = 0
-  for (const tx of txns) {
-    for (const p of transactionPostings(tx)) {
-      if (!(p.accountId in map)) continue
-      if (p.date > asOf) map[p.accountId] += p.amount
-    }
+  const add = (p) => {
+    if (!(p.accountId in map)) return
+    if (p.date <= asOf) return
+    const an = anchors[p.accountId]
+    if (an && p.date <= an.date) return
+    map[p.accountId] += p.amount
   }
-  for (const stx of stockTxns) {
-    for (const p of stockPostings(stx)) {
-      if (!(p.accountId in map)) continue
-      if (p.date > asOf) map[p.accountId] += p.amount
-    }
-  }
+  for (const tx of txns) for (const p of transactionPostings(tx)) add(p)
+  for (const stx of stockTxns) for (const p of stockPostings(stx)) add(p)
   return map
 }
 

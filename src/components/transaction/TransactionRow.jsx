@@ -5,6 +5,7 @@ import {
   faArrowsSplitUpAndLeft,
   faCircleCheck,
   faLayerGroup,
+  faScaleBalanced,
 } from '@fortawesome/free-solid-svg-icons'
 import { getIcon } from '../../lib/icons'
 import { formatNumber, formatAmount, MASK } from '../../lib/format'
@@ -77,6 +78,23 @@ function describe(tx, lookups, hidden) {
       amount: tx.amount,
       amountColor: 'text-text-primary',
       sign: '',
+    }
+  }
+  if (tx.type === 'adjust') {
+    // 真值是 targetBalance；差額是推導值，取 lookups 算好的現值（見 engine.adjustDeltas）——
+    // 在基準日之前補記或刪帳後差額會變，顯示存下來的 snapshotDelta 會與帳面矛盾。
+    // 用中性色：它不是收入也不是支出。
+    const acct = lookups.acc[tx.accountId]
+    const d = lookups.adjustDelta?.[tx.id] ?? tx.snapshotDelta ?? 0
+    return {
+      icon: faScaleBalanced,
+      title: '餘額調整',
+      acct: acct?.name,
+      tags: [],
+      note: `調整為 ${formatAmount(tx.targetBalance ?? 0, { hidden })}${tx.note ? ' · ' + tx.note : ''}`,
+      amount: Math.abs(d),
+      amountColor: 'text-text-primary',
+      sign: d === 0 ? '' : d > 0 ? '+' : '−',
     }
   }
   // receivable / payable

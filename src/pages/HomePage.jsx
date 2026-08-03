@@ -9,6 +9,7 @@ import {
   faArrowTrendUp,
   faArrowTrendDown,
   faCheck,
+  faScaleBalanced,
 } from '@fortawesome/free-solid-svg-icons'
 import { useCollection } from '../db/DataProvider'
 import {
@@ -27,7 +28,9 @@ import useNetWorth from '../hooks/useNetWorth'
 import { useHiddenAmount, EyeButton } from '../components/HiddenAmountProvider'
 import EmptyState from '../components/EmptyState'
 import Sheet from '../components/Sheet'
+import SwipeRow from '../components/SwipeRow'
 import LoanCard from '../components/loan/LoanCard'
+import BalanceAdjustSheet from '../components/settings/BalanceAdjustSheet'
 
 const GROUPS = [
   { type: 'cash', label: '現金' },
@@ -56,6 +59,7 @@ export default function HomePage() {
   const [compOpen, setCompOpen] = useState(false)
   const [collapsed, setCollapsed] = useState({})
   const [remindersOpen, setRemindersOpen] = useState(false)
+  const [adjustAccount, setAdjustAccount] = useState(null)
 
   const reminders = dueReminders(rules)
 
@@ -197,7 +201,8 @@ export default function HomePage() {
         <div className="flex items-center justify-between px-0.5 pt-1">
           <span className="text-[15px] font-semibold">帳戶</span>
         </div>
-        <div className="bg-surface border border-line rounded-card shadow-card px-3.5">
+        {/* overflow-hidden＋把 px 移到列上：左滑抽屜是方角的，padding 留在容器會讓抽屜從圓角外露出來 */}
+        <div className="bg-surface border border-line rounded-card shadow-card overflow-hidden">
           {GROUPS.map((g, gi) => {
             const list = live
               .filter((a) => a.type === g.type)
@@ -211,7 +216,7 @@ export default function HomePage() {
               <div key={g.type} className={gi > 0 ? 'border-t border-line-light' : ''}>
                 <button
                   onClick={() => setCollapsed((c) => ({ ...c, [g.type]: open }))}
-                  className="flex items-center gap-2 w-full py-3"
+                  className="flex items-center gap-2 w-full px-3.5 py-3"
                 >
                   <FontAwesomeIcon
                     icon={open ? faChevronDown : faChevronRight}
@@ -228,9 +233,22 @@ export default function HomePage() {
                   </span>
                 </button>
                 {open &&
-                  list.map((a) => (
-                    <AccountRow
+                  list.map((a) => {
+                    // 只有現金/銀行能調餘額（信用卡會與帳單分岔、證券不計入淨資產，見 engine.latestAnchors）
+                    const canAdjust = a.type === 'cash' || a.type === 'bank'
+                    return (
+                    <SwipeRow
                       key={a.id}
+                      disabled={!canAdjust}
+                      actions={canAdjust ? [{
+                        key: 'adjust',
+                        label: '調整餘額',
+                        icon: faScaleBalanced,
+                        tone: 'brand',
+                        onClick: () => setAdjustAccount(a),
+                      }] : []}
+                    >
+                    <AccountRow
                       account={a}
                       balance={a.type === 'securities' ? (holdingsByAcct[a.id] ?? 0) : balances[a.id]}
                       pending={pending[a.id]}
@@ -254,7 +272,9 @@ export default function HomePage() {
                               () => navigate(`/transactions?accountId=${a.id}`)
                       }
                     />
-                  ))}
+                    </SwipeRow>
+                    )
+                  })}
               </div>
             )
           })}
@@ -263,6 +283,12 @@ export default function HomePage() {
         {/* 借貸卡（沒有未結清借還款時自己隱藏）*/}
         <LoanCard txns={txns} accounts={accounts} asOf={asOf} opt={opt} />
       </div>
+
+      <BalanceAdjustSheet
+        open={!!adjustAccount}
+        account={adjustAccount}
+        onClose={() => setAdjustAccount(null)}
+      />
 
       <NotificationsSheet
         open={remindersOpen}
@@ -394,7 +420,7 @@ function AccountRow({ account, balance, pending = 0, opt, onClick, settlementBan
   return (
     <div
       onClick={onClick}
-      className={`flex items-start gap-3 py-2 ${onClick ? 'cursor-pointer' : ''}`}
+      className={`flex items-start gap-3 px-3.5 py-2 bg-surface ${onClick ? 'cursor-pointer' : ''}`}
     >
       <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center text-[15px]">
         <FontAwesomeIcon icon={getIcon(account.icon ?? ACCOUNT_TYPE_ICON[account.type])} />

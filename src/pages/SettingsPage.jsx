@@ -194,6 +194,7 @@ export default function SettingsPage() {
         tags: allData.tags,
         projects: allData.projects,
         counterparties: allData.counterparties,
+        stockTransactions: allData.stockTransactions,
       }),
       'text/csv;charset=utf-8',
     )

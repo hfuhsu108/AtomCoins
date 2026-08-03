@@ -4,13 +4,14 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faChevronLeft, faChevronRight, faMagnifyingGlass, faList, faCalendarDays, faReceipt, faXmark, faPen, faTrash } from '@fortawesome/free-solid-svg-icons'
 import { useCollection } from '../db/DataProvider'
 import useDeleteTransaction from '../hooks/useDeleteTransaction'
-import { monthlySummary } from '../lib/engine'
+import { monthlySummary, adjustDeltas } from '../lib/engine'
 import { formatAmount, formatSigned } from '../lib/format'
 import { todayStr, parseDate, monthLabel, monthPrefix, addMonth, formatMd, weekday } from '../lib/date'
 import { useHiddenAmount, EyeButton } from '../components/HiddenAmountProvider'
 import EmptyState from '../components/EmptyState'
 import TransactionRow from '../components/transaction/TransactionRow'
 import TransactionPreview from '../components/transaction/TransactionPreview'
+import BalanceAdjustSheet from '../components/settings/BalanceAdjustSheet'
 import SearchPanel from '../components/transaction/SearchPanel'
 import CalendarView from '../components/transaction/CalendarView'
 import StockPanel from '../components/stock/StockPanel'
@@ -26,6 +27,8 @@ export default function TransactionsPage() {
   const navigate = useNavigate()
   const accounts = useCollection('accounts')
   const txns = useCollection('transactions')
+  // 餘額調整的差額要動態算，交割銀行的股票 posting 也要算進去，否則證券戶差額會失真
+  const stockTxns = useCollection('stockTransactions')
   const categories = useCollection('categories')
   const counterparties = useCollection('counterparties')
   const tags = useCollection('tags')
@@ -70,11 +73,18 @@ export default function TransactionsPage() {
   }
   const [ledgerView, setLedgerView] = useState('list') // list | calendar
   const [previewTx, setPreviewTx] = useState(null) // 單擊預覽中的交易
+  const [adjustTx, setAdjustTx] = useState(null) // 編輯中的餘額調整
 
   // 帳本列表、日曆、搜尋結果三處共用同一份刪除流程與同一個 confirmElement
   const { requestDelete, confirmElement, busy: deleteBusy } = useDeleteTransaction()
+  // 餘額調整沒有分類也沒有拆帳，記帳表單不認得它——送進去會被當成支出存回來，資料就毀了。
+  // 它的編輯一律走自己的 sheet（新增入口在設定＞帳戶）。
+  const openEdit = (t) => {
+    if (t.type === 'adjust') setAdjustTx(t)
+    else navigate(`/add?id=${t.id}`)
+  }
   const rowActions = (t) => [
-    { key: 'edit', label: '編輯', icon: faPen, tone: 'brand', onClick: () => navigate(`/add?id=${t.id}`) },
+    { key: 'edit', label: '編輯', icon: faPen, tone: 'brand', onClick: () => openEdit(t) },
     { key: 'delete', label: '刪除', icon: faTrash, tone: 'danger', disabled: deleteBusy, onClick: () => requestDelete(t) },
   ]
 
@@ -84,8 +94,9 @@ export default function TransactionsPage() {
     for (const a of accounts) acc[a.id] = a
     for (const c of counterparties) cp[c.id] = c
     for (const t of tags) tag[t.id] = t
-    return { cat, acc, cp, tag }
-  }, [categories, accounts, counterparties, tags])
+    // 一次算完所有餘額調整的現值差額，逐列各算一次會是 O(n²)
+    return { cat, acc, cp, tag, adjustDelta: adjustDeltas(accounts, txns, stockTxns) }
+  }, [categories, accounts, counterparties, tags, txns, stockTxns])
 
   const prefix = monthPrefix(ym.year, ym.month)
   const monthTxns = txns.filter((t) => t.tradeDate?.startsWith(prefix))
@@ -282,10 +293,17 @@ export default function TransactionsPage() {
         hidden={hidden}
         onClose={() => setPreviewTx(null)}
         onOpen={() => {
-          const id = previewTx?.id
+          const t = previewTx
           setPreviewTx(null)
-          if (id) navigate(`/add?id=${id}`)
+          if (t) openEdit(t)
         }}
+      />
+
+      <BalanceAdjustSheet
+        open={!!adjustTx}
+        account={accounts.find((a) => a.id === adjustTx?.accountId) ?? null}
+        tx={adjustTx}
+        onClose={() => setAdjustTx(null)}
       />
       {confirmElement}
     </div>

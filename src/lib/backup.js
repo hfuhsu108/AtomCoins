@@ -1,6 +1,7 @@
 // 備份匯出（階段 7）：JSON 全量＋CSV 交易明細。只匯出、不做還原——
 // Firestore 本身即雲端源，匯出目的是資料自主權與離線留存。
 import { COLLECTIONS } from '../db/DataProvider'
+import { adjustDeltas } from './engine'
 
 export function downloadFile(filename, content, mime) {
   const blob = new Blob([content], { type: mime })
@@ -28,7 +29,7 @@ export function buildJsonBackup(data, uid) {
 // 拆帳展開：每個拆帳列各自成列（沿用「報表對拆帳列聚合」口徑）；
 // 轉帳手續費、應收/應付的還款記錄也各自成列，讓 Excel 加總能對上帳。
 
-const TYPE_LABEL = { expense: '支出', income: '收入', transfer: '轉帳', receivable: '應收', payable: '應付' }
+const TYPE_LABEL = { expense: '支出', income: '收入', transfer: '轉帳', receivable: '應收', payable: '應付', adjust: '餘額調整' }
 
 const HEADER = ['交易ID', '類型', '記錄日', '入帳日', '帳戶', '轉入帳戶', '母分類', '子分類', '金額', '商家', '備註', '標籤', '專案', '對象']
 
@@ -43,7 +44,9 @@ function byId(list) {
   return m
 }
 
-export function buildTransactionsCsv({ transactions, accounts, categories, tags, projects, counterparties }) {
+export function buildTransactionsCsv({ transactions, accounts, categories, tags, projects, counterparties, stockTransactions = [] }) {
+  // 餘額調整的差額取現值而非建立當下的快照，Excel 逐列累加才仍等於帳戶餘額
+  const deltas = adjustDeltas(accounts, transactions, stockTransactions)
   const accs = byId(accounts)
   const cats = byId(categories)
   const tagM = byId(tags)
@@ -113,6 +116,14 @@ export function buildTransactionsCsv({ transactions, accounts, categories, tags,
           '', '', rp.amount, '', '', '', '', cp,
         ])
       }
+    } else if (tx.type === 'adjust') {
+      // 金額輸出有號差額（不是 tx.amount 的絕對值），Excel 逐列累加才仍等於帳戶餘額。
+      // 目標餘額放備註，因為 CSV 沒有、也不該為單一型別新增欄位（欄序要與舊檔相容）。
+      rows.push([
+        tx.id, label, tx.tradeDate, tx.postingDate, accName(tx.accountId), '',
+        '', '', deltas[tx.id] ?? tx.snapshotDelta ?? 0, '',
+        `目標餘額 ${tx.targetBalance ?? 0}${tx.note ? ` · ${tx.note}` : ''}`, '', '', '',
+      ])
     }
   }
 

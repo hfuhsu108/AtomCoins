@@ -7,6 +7,7 @@ import { outstanding } from '../../lib/engine'
 import { formatNumber } from '../../lib/format'
 import { todayStr } from '../../lib/date'
 import Sheet from '../Sheet'
+import DateInput from '../DateInput'
 import AccountPicker from '../transaction/AccountPicker'
 
 // 登錄一筆還款（docs/01 §3.6）。應收＝錢回到帳戶、應付＝錢離開帳戶，方向由引擎依型別決定。
@@ -73,8 +74,7 @@ export default function RepaymentSheet({ open, tx, accounts, onClose }) {
         </div>
         <div>
           <div className="text-[13px] text-text-secondary mb-1.5">日期</div>
-          <input
-            type="date"
+          <DateInput
             value={date}
             min={tx?.postingDate}
             onChange={(e) => e.target.value && setDate(e.target.value)}

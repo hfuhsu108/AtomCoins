@@ -1,4 +1,4 @@
-import { formatAmount, formatNumber } from '../../lib/format'
+import { formatAmount, formatNumber, formatSigned } from '../../lib/format'
 import { formatMd, weekday } from '../../lib/date'
 import { settlementStatus, outstanding, isPending } from '../../lib/engine'
 import { STATUS } from './TransactionRow'
@@ -11,6 +11,7 @@ const TYPE_LABEL = {
   transfer: '轉帳',
   receivable: '應收',
   payable: '應付',
+  adjust: '餘額調整',
 }
 
 // 「母·子」分類名（同 TransactionRow 口徑）
@@ -28,6 +29,9 @@ export default function TransactionPreview({ tx, lookups, hidden, onClose, onOpe
   const opt = { hidden }
   const isFlow = tx.type === 'expense' || tx.type === 'income'
   const isLoan = tx.type === 'receivable' || tx.type === 'payable'
+  const isAdjust = tx.type === 'adjust'
+  // 差額取現值（engine.adjustDeltas），snapshotDelta 只是建立當下的快照、會過期
+  const adjustDelta = lookups.adjustDelta?.[tx.id] ?? tx.snapshotDelta ?? 0
   const splits = tx.splits ?? []
   const toTags = (ids) => (ids ?? []).map((id) => lookups.tag[id]).filter(Boolean)
   // 標籤取用口徑同 search.js：拆帳列有就用它，沒有才看交易層
@@ -61,8 +65,9 @@ export default function TransactionPreview({ tx, lookups, hidden, onClose, onOpe
     >
       {/* 金額 */}
       <div className="text-center pb-1">
+        {/* 餘額調整顯示「差額」而非金額——它沒有絕對值意義，重點是校正了多少 */}
         <div className={`text-[32px] font-bold leading-tight tabular-nums ${amountCls}`}>
-          {formatAmount(tx.amount, opt)}
+          {isAdjust ? formatSigned(adjustDelta, opt) : formatAmount(tx.amount, opt)}
         </div>
         <div className="flex items-center justify-center gap-1.5 mt-1.5 flex-wrap">
           {status && (
@@ -70,7 +75,7 @@ export default function TransactionPreview({ tx, lookups, hidden, onClose, onOpe
               {status.label}
             </span>
           )}
-          {isPending(tx) && (
+          {!isAdjust && isPending(tx) && (
             <span className="text-[11px] font-medium text-warning-text bg-warning-bg rounded-pill px-2 py-0.5">
               未入帳
             </span>
@@ -101,6 +106,17 @@ export default function TransactionPreview({ tx, lookups, hidden, onClose, onOpe
         </>
       ) : (
         <PreviewRow label="帳戶" value={lookups.acc[tx.accountId]?.name ?? '—'} />
+      )}
+
+      {isAdjust && (
+        <>
+          <PreviewRow
+            label="調整後餘額"
+            value={formatAmount(tx.targetBalance ?? 0, opt)}
+            cls="font-semibold"
+          />
+          <PreviewRow label="說明" value={`此帳戶自 ${formatMd(tx.tradeDate)} 起以此金額為準`} />
+        </>
       )}
 
       {isLoan && (

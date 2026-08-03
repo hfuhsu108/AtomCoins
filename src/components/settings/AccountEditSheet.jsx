@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faCheck, faXmark, faChevronDown, faBoxArchive, faBoxOpen, faPercent, faPlus, faTrashCan } from '@fortawesome/free-solid-svg-icons'
+import { faCheck, faXmark, faChevronDown, faBoxArchive, faBoxOpen, faPercent, faPlus, faTrashCan, faScaleBalanced } from '@fortawesome/free-solid-svg-icons'
 import { createAccount, updateAccount, createStockTransaction, deleteAccountCascade } from '../../db/repo'
 import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
 import { useCollection } from '../../db/DataProvider'
@@ -11,6 +11,8 @@ import { formatBalance } from '../../lib/format'
 import { todayStr } from '../../lib/date'
 import Sheet from '../Sheet'
 import AccountPicker from '../transaction/AccountPicker'
+import DateInput from '../DateInput'
+import BalanceAdjustSheet from './BalanceAdjustSheet'
 
 const TYPES = [
   { id: 'cash', label: '現金' },
@@ -48,6 +50,7 @@ export default function AccountEditSheet({ open, account, accounts, brokers = []
   const [s, setS] = useState(() => initState(account))
   // 'debit' | 'settlementBank' | 'broker' | null
   const [pickerTarget, setPickerTarget] = useState(null)
+  const [adjustOpen, setAdjustOpen] = useState(false)
   const set = (patch) => setS((prev) => ({ ...prev, ...patch }))
 
   // account 變更（切換編輯對象）時重置表單
@@ -79,6 +82,14 @@ export default function AccountEditSheet({ open, account, accounts, brokers = []
       ).length +
       stockTxns.filter((t) => t.securitiesAccountId === account.id || t.settlementBankId === account.id).length +
       statements.filter((st) => st.accountId === account.id).length
+    : 0
+
+  // 餘額調整入口只開放現金/銀行：信用卡的帳單期別不走 accountBalances，下錨點會讓卡片餘額與
+  // 各期帳單、繳費推播永久分岔；證券帳戶則被 netWorth 整個跳過，錨了對淨資產沒有任何效果。
+  // 判定用已存的 account.type 而非表單值，避免改了型別還沒儲存就先讓入口跳出來。
+  const canAdjust = !!account && (account.type === 'cash' || account.type === 'bank')
+  const currentBalance = account
+    ? accountBalances(accounts, txns, todayStr(), stockTxns)[account.id] ?? 0
     : 0
 
   const handleDelete = async () => {
@@ -229,14 +240,32 @@ export default function AccountEditSheet({ open, account, accounts, brokers = []
             </div>
           </Field>
           <Field label="起始日" className="flex-1">
-            <input
-              type="date"
+            <DateInput
               value={s.openingDate}
               onChange={(e) => e.target.value && set({ openingDate: e.target.value })}
               className="w-full text-[15px] outline-none bg-transparent"
             />
           </Field>
         </div>
+
+        {/* 餘額調整：期初餘額是「開始記帳那天」的錢，這裡是「對帳當下」的錢，兩者不同 */}
+        {canAdjust && (
+          <div>
+            <button
+              onClick={() => setAdjustOpen(true)}
+              className="w-full flex items-center justify-between px-4 py-3.5 bg-surface border border-line rounded-modal"
+            >
+              <span className="text-sm text-text-secondary">調整餘額</span>
+              <span className="flex items-center gap-2 text-[15px] font-semibold tabular-nums">
+                {formatBalance(currentBalance)}
+                <FontAwesomeIcon icon={faScaleBalanced} className="text-text-tertiary text-[11px]" />
+              </span>
+            </button>
+            <p className="text-[11px] text-text-tertiary mt-1.5 px-1">
+              校正成對帳當下的實際金額。設定後，補記或刪除該日以前的交易都不會再改變它。
+            </p>
+          </div>
+        )}
 
         {/* 信用卡專屬 */}
         {isCard && (
@@ -457,6 +486,12 @@ export default function AccountEditSheet({ open, account, accounts, brokers = []
           if (pickerTarget === 'settlementBank') set({ defaultSettlementBankId: id })
           else set({ linkedDebitAccountId: id })
         }}
+      />
+
+      <BalanceAdjustSheet
+        open={adjustOpen}
+        account={account}
+        onClose={() => setAdjustOpen(false)}
       />
 
       {pickerTarget === 'broker' && (

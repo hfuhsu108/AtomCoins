@@ -4,6 +4,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPen, faArrowsRotate, faTriangleExclamation, faXmark, faTrash, faTag } from '@fortawesome/free-solid-svg-icons'
 import { useCollection } from '../../db/DataProvider'
 import { computeHoldings, holdingsMarketValue } from '../../lib/stock'
+import { dividendNetAmount } from '../../lib/engine'
 import { upsertStockPrice } from '../../db/repo'
 import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
 import useSyncPrices from '../../hooks/useSyncPrices'
@@ -12,6 +13,7 @@ import { formatNumber, formatBalance, formatSigned } from '../../lib/format'
 import { todayStr, formatMd, formatDateTime } from '../../lib/date'
 import useDeleteTransaction from '../../hooks/useDeleteTransaction'
 import Sheet from '../Sheet'
+import DateInput from '../DateInput'
 import EmptyState from '../EmptyState'
 import SwipeRow from '../SwipeRow'
 import StockPreview from './StockPreview'
@@ -51,7 +53,7 @@ export default function StockPanel({
   const asOf = todayStr()
   const opt = { hidden }
 
-  const { holdings, realized } = useMemo(
+  const { holdings, realized, dividends } = useMemo(
     () => computeHoldings(stockTxns, prices, { asOf }),
     [stockTxns, prices, asOf],
   )
@@ -70,6 +72,12 @@ export default function StockPanel({
     () => (accountId ? stockTxns.filter((t) => t.securitiesAccountId === accountId) : stockTxns),
     [stockTxns, accountId],
   )
+
+  const scopedDividends = useMemo(
+    () => (accountId ? dividends.filter((d) => d.securitiesAccountId === accountId) : dividends),
+    [dividends, accountId],
+  )
+  const totalDividend = scopedDividends.reduce((s, d) => s + d.cash, 0)
 
   const totalMarketValue = holdingsMarketValue(scopedHoldings)
   const totalCost = scopedHoldings.reduce((s, h) => s + h.costBasis, 0)
@@ -159,6 +167,10 @@ export default function StockPanel({
           <span className={pnlClass(totalRealized)}>
             已實現 {formatSigned(totalRealized, opt)}
           </span>
+          {/* 配息不是損益、不套紅綠，用品牌色與前兩者區隔 */}
+          {totalDividend > 0 && (
+            <span className="text-brand">配息 {formatSigned(totalDividend, opt)}</span>
+          )}
         </div>
         {(lastSync || (result && !result.ok)) && (
           <div className="text-[11px] text-text-tertiary tabular-nums mt-1.5">
@@ -252,11 +264,17 @@ export default function StockPanel({
         ) : (
           <div className="bg-surface border border-line rounded-card shadow-card overflow-hidden divide-y divide-line-light">
             {sortedTxns.map((t) => {
+              const isDiv = t.side === 'dividend'
               const isBuy = t.side === 'buy'
               const gross = Math.round(t.shares * t.price)
-              const cash = isBuy ? gross + (t.fee ?? 0) : gross - (t.fee ?? 0) - (t.tax ?? 0)
+              const cash = isDiv
+                ? dividendNetAmount(t)
+                : isBuy ? gross + (t.fee ?? 0) : gross - (t.fee ?? 0) - (t.tax ?? 0)
+              // 配息的 settlementDate 是「發放日」，未到就是股利還沒進帳
               const unsettled = t.settlementDate > asOf
               const broker = brokerMap[t.brokerId]
+              // 純配股（沒有現金股利）顯示股數比顯示 NT$0 有意義
+              const sharesOnly = isDiv && cash === 0 && t.shares > 0
               return (
                 <SwipeRow
                   key={t.id}
@@ -269,35 +287,53 @@ export default function StockPanel({
                   onClick={() => setPreview({ kind: 'txn', item: t })}
                   className="flex items-center gap-3 w-full px-4 py-3 text-left"
                 >
-                  <span className={`flex-none text-[11px] font-bold rounded-pill px-2.5 py-1 ${
-                    isBuy
-                      ? 'text-white bg-[var(--color-stock-buy)]'
-                      : 'text-white bg-[var(--color-stock-sell)]'
+                  <span className={`flex-none text-[11px] font-bold rounded-pill px-2.5 py-1 text-white ${
+                    isDiv
+                      ? 'bg-brand'
+                      : isBuy
+                        ? 'bg-[var(--color-stock-buy)]'
+                        : 'bg-[var(--color-stock-sell)]'
                   }`}>
-                    {isBuy ? '買' : '賣'}
+                    {isDiv ? '息' : isBuy ? '買' : '賣'}
                   </span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-[15px] font-medium">{t.symbol}</span>
                       {unsettled && (
                         <span className="text-[11px] font-medium text-warning-text bg-warning-bg rounded-pill px-2 py-0.5">
-                          未交割 {formatMd(t.settlementDate)}
+                          {isDiv ? '未發放' : '未交割'} {formatMd(t.settlementDate)}
                         </span>
                       )}
                     </div>
                     <div className="text-xs text-text-tertiary tabular-nums mt-0.5">
-                      {formatMd(t.tradeDate)} · {formatNumber(t.shares)} 股 @ {formatNumber(t.price, 2)}
-                      {broker ? ` · ${broker.name}` : ''}
+                      {isDiv ? (
+                        <>
+                          {formatMd(t.tradeDate)} 除息
+                          {t.cashPerShare ? ` · 每股 ${formatNumber(t.cashPerShare, 2)}` : ''}
+                          {t.shares > 0 ? ` · 配股 ${formatNumber(t.shares)} 股` : ''}
+                        </>
+                      ) : (
+                        <>
+                          {formatMd(t.tradeDate)} · {formatNumber(t.shares)} 股 @ {formatNumber(t.price, 2)}
+                          {broker ? ` · ${broker.name}` : ''}
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="text-right flex-none">
                     <div className={`text-[15px] font-semibold tabular-nums ${
-                      isBuy ? 'text-[var(--color-stock-buy)]' : 'text-[var(--color-stock-sell)]'
+                      isDiv
+                        ? 'text-brand'
+                        : isBuy ? 'text-[var(--color-stock-buy)]' : 'text-[var(--color-stock-sell)]'
                     }`}>
-                      {isBuy ? '−' : '+'}NT$ {formatNumber(cash)}
+                      {sharesOnly
+                        ? `+${formatNumber(t.shares)} 股`
+                        : `${isBuy ? '−' : '+'}NT$ ${formatNumber(cash)}`}
                     </div>
                     <div className="text-[11px] text-text-tertiary tabular-nums mt-0.5">
-                      手續費 {formatNumber(t.fee ?? 0)}{!isBuy ? ` · 稅 ${formatNumber(t.tax ?? 0)}` : ''}
+                      {isDiv
+                        ? `匯費 ${formatNumber(t.fee ?? 0)}${t.tax ? ` · 補充保費 ${formatNumber(t.tax)}` : ''}`
+                        : `手續費 ${formatNumber(t.fee ?? 0)}${!isBuy ? ` · 稅 ${formatNumber(t.tax ?? 0)}` : ''}`}
                     </div>
                   </div>
                 </button>
@@ -420,8 +456,7 @@ function PriceSheet({ holding, prices, onClose }) {
         </div>
         <div>
           <div className="text-[13px] text-text-secondary mb-1.5">報價日期</div>
-          <input
-            type="date"
+          <DateInput
             value={dateStr}
             onChange={(e) => e.target.value && setDateStr(e.target.value)}
             className="w-full px-3.5 py-2.5 bg-surface border border-line rounded-modal text-[15px] outline-none"
