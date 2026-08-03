@@ -9,7 +9,7 @@ function pnlClass(n) {
 
 const TITLE = { holding: '持股', txn: '股票交易', realized: '已實現損益' }
 
-// 長按股票分頁任一列的預覽。三個子分頁的列各有不同欄位，用 kind 分流；
+// 單擊股票分頁任一列的預覽。三個子分頁的列各有不同欄位，用 kind 分流；
 // 只有交易紀錄可以進編輯（持股與已實現都是算出來的，沒有可編輯的來源列）。
 export default function StockPreview({ item, kind, accMap = {}, brokerMap = {}, hidden, onClose, onOpen }) {
   if (!item) return null

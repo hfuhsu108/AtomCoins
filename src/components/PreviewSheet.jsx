@@ -1,6 +1,6 @@
 import Sheet from './Sheet'
 
-// 長按預覽卡。唯讀——用途是「不離開清單就看清楚這一筆」，要編輯仍是點進去。
+// 單擊列開的預覽卡。唯讀——用途是「不離開清單就看清楚這一筆」，要編輯走左滑抽屜。
 // 直接包 Sheet：點背景關閉、× 鈕、max-h-[80vh] 可捲都已具備，放手不關是它的天然行為。
 export default function PreviewSheet({ open, title, onClose, children, footer }) {
   return (

@@ -21,7 +21,7 @@ function catName(categoryId, lookups) {
   return cat.parentId ? `${parent?.name ?? ''}·${cat.name}` : parent.name
 }
 
-// 長按帳本列的預覽：一次看完這筆的全部欄位（拆帳列、標籤、入帳日），不必進編輯頁。
+// 單擊帳本列的預覽：一次看完這筆的全部欄位（拆帳列、標籤、入帳日），不必進編輯頁。
 export default function TransactionPreview({ tx, lookups, hidden, onClose, onOpen }) {
   if (!tx) return null
 

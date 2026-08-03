@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faChevronLeft, faChevronRight, faMagnifyingGlass, faList, faCalendarDays, faReceipt, faXmark } from '@fortawesome/free-solid-svg-icons'
+import { faChevronLeft, faChevronRight, faMagnifyingGlass, faList, faCalendarDays, faReceipt, faXmark, faPen, faTrash } from '@fortawesome/free-solid-svg-icons'
 import { useCollection } from '../db/DataProvider'
+import useDeleteTransaction from '../hooks/useDeleteTransaction'
 import { monthlySummary } from '../lib/engine'
 import { formatAmount, formatSigned } from '../lib/format'
 import { todayStr, parseDate, monthLabel, monthPrefix, addMonth, formatMd, weekday } from '../lib/date'
@@ -68,7 +69,14 @@ export default function TransactionsPage() {
     if (searchParams.get('accountId')) setSearchParams({ tab: 'stock' }, { replace: true })
   }
   const [ledgerView, setLedgerView] = useState('list') // list | calendar
-  const [previewTx, setPreviewTx] = useState(null) // 長按預覽中的交易
+  const [previewTx, setPreviewTx] = useState(null) // 單擊預覽中的交易
+
+  // 帳本列表、日曆、搜尋結果三處共用同一份刪除流程與同一個 confirmElement
+  const { requestDelete, confirmElement, busy: deleteBusy } = useDeleteTransaction()
+  const rowActions = (t) => [
+    { key: 'edit', label: '編輯', icon: faPen, tone: 'brand', onClick: () => navigate(`/add?id=${t.id}`) },
+    { key: 'delete', label: '刪除', icon: faTrash, tone: 'danger', disabled: deleteBusy, onClick: () => requestDelete(t) },
+  ]
 
   const lookups = useMemo(() => {
     const cat = {}, acc = {}, cp = {}, tag = {}
@@ -132,6 +140,8 @@ export default function TransactionsPage() {
           hidden={hidden}
           initialAccountId={initialAccountId}
           onClose={closeSearch}
+          onRowClick={setPreviewTx}
+          rowActions={rowActions}
         />
       ) : (
         <>
@@ -225,8 +235,8 @@ export default function TransactionsPage() {
               days={days}
               lookups={lookups}
               hidden={hidden}
-              onRowClick={(t) => navigate(`/add?id=${t.id}`)}
-              onRowLongPress={setPreviewTx}
+              onRowClick={setPreviewTx}
+              rowActions={rowActions}
             />
           ) : days.length === 0 ? (
             <EmptyState
@@ -247,14 +257,14 @@ export default function TransactionsPage() {
                     {d.dayOut > 0 && <span className="text-expense">{formatAmount(d.dayOut, opt)}</span>}
                   </div>
                 </div>
-                <div className="bg-surface border border-line rounded-card shadow-card px-4 divide-y divide-line-light">
+                <div className="bg-surface border border-line rounded-card shadow-card overflow-hidden divide-y divide-line-light">
                   {d.items.map((t) => (
                     <TransactionRow
                       key={t.id}
                       tx={t}
                       lookups={lookups}
-                      onClick={() => navigate(`/add?id=${t.id}`)}
-                      onLongPress={setPreviewTx}
+                      onClick={() => setPreviewTx(t)}
+                      actions={rowActions(t)}
                     />
                   ))}
                 </div>
@@ -277,6 +287,7 @@ export default function TransactionsPage() {
           if (id) navigate(`/add?id=${id}`)
         }}
       />
+      {confirmElement}
     </div>
   )
 }

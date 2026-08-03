@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faCircleCheck, faTriangleExclamation, faRotate, faRotateLeft, faWandMagicSparkles, faReceipt } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faCircleCheck, faTriangleExclamation, faRotate, faRotateLeft, faWandMagicSparkles, faReceipt, faXmark, faPen, faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons'
 import { httpsCallable } from 'firebase/functions'
 import { functions } from '../../lib/firebase'
 import { useCollection } from '../../db/DataProvider'
@@ -12,6 +12,7 @@ import { updateInvoice, unrecordInvoice } from '../../db/repo'
 import { formatDateTime } from '../../lib/date'
 import { useConfirm } from '../ConfirmSheet'
 import EmptyState from '../EmptyState'
+import SwipeRow from '../SwipeRow'
 import InvoiceRow from './InvoiceRow'
 import InvoiceEditSheet from './InvoiceEditSheet'
 import InvoicePreview from './InvoicePreview'
@@ -30,7 +31,7 @@ export default function InvoicePanel({ hidden, keyword = '' }) {
   const suggestions = useCollection('invoiceSuggestions')
   const status = useScraperStatus()
   const [sub, setSub] = useState('inbox') // inbox | processed
-  const [preview, setPreview] = useState(null) // 長按預覽中的發票
+  const [preview, setPreview] = useState(null) // 單擊預覽中的發票
   // 發票編輯 sheet：undefined=關閉、null=手動新增、發票物件=編輯
   const [editTarget, setEditTarget] = useState(undefined)
 
@@ -116,6 +117,33 @@ export default function InvoicePanel({ hidden, keyword = '' }) {
     run(async () => { await settle(unrecordInvoice(inv)) })
   }
 
+  // 左滑抽屜。列上只留「歸帳」那顆高頻正向動作，其餘按 status 收進這裡
+  const rowActions = (inv) => {
+    if (inv.status === 'recorded') {
+      return [
+        {
+          key: 'open',
+          label: '看記帳',
+          icon: faArrowUpRightFromSquare,
+          tone: 'brand',
+          disabled: !inv.transactionId,
+          onClick: () => inv.transactionId && navigate(`/add?id=${inv.transactionId}`),
+        },
+        { key: 'unrecord', label: '取消歸帳', icon: faRotateLeft, tone: 'danger', onClick: () => onUnrecord(inv) },
+      ]
+    }
+    if (inv.status === 'ignored') {
+      return [{ key: 'restore', label: '復原', icon: faRotateLeft, tone: 'brand', onClick: () => onRestore(inv) }]
+    }
+    // inbox：手動新增的才可編輯／刪除（誤加時用），爬蟲抓來的每日覆寫、改了也會被洗掉
+    return [
+      inv.source === 'manual'
+        ? { key: 'edit', label: '編輯', icon: faPen, tone: 'brand', onClick: () => setEditTarget(inv) }
+        : null,
+      { key: 'ignore', label: '略過', icon: faXmark, onClick: () => onIgnore(inv) },
+    ]
+  }
+
   return (
     <>
       {/* 爬蟲同步狀態條 */}
@@ -162,22 +190,18 @@ export default function InvoicePanel({ hidden, keyword = '' }) {
           />
         )
       ) : (
-        <div className="bg-surface border border-line rounded-card shadow-card px-4">
+        <div className="bg-surface border border-line rounded-card shadow-card overflow-hidden divide-y divide-line-light">
           {list.map((inv) => (
-            <InvoiceRow
-              key={inv.id}
-              invoice={inv}
-              aliases={merchantAliases}
-              suggestion={inv.status === 'inbox' ? (suggestionView.get(inv.id) ?? null) : null}
-              hidden={hidden}
-              onRecord={() => navigate(`/add?invoiceId=${inv.id}`)}
-              onIgnore={() => onIgnore(inv)}
-              onRestore={() => onRestore(inv)}
-              onUnrecord={() => onUnrecord(inv)}
-              onOpenTx={() => inv.transactionId && navigate(`/add?id=${inv.transactionId}`)}
-              onEdit={setEditTarget}
-              onLongPress={setPreview}
-            />
+            <SwipeRow key={inv.id} actions={rowActions(inv)}>
+              <InvoiceRow
+                invoice={inv}
+                aliases={merchantAliases}
+                suggestion={inv.status === 'inbox' ? (suggestionView.get(inv.id) ?? null) : null}
+                hidden={hidden}
+                onRecord={() => navigate(`/add?invoiceId=${inv.id}`)}
+                onPreview={() => setPreview(inv)}
+              />
+            </SwipeRow>
           ))}
         </div>
       )}

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faChevronRight, faPen, faArrowsRotate, faTriangleExclamation, faXmark } from '@fortawesome/free-solid-svg-icons'
+import { faPen, faArrowsRotate, faTriangleExclamation, faXmark, faTrash, faTag } from '@fortawesome/free-solid-svg-icons'
 import { useCollection } from '../../db/DataProvider'
 import { computeHoldings, holdingsMarketValue } from '../../lib/stock'
 import { upsertStockPrice } from '../../db/repo'
@@ -10,9 +10,10 @@ import useSyncPrices from '../../hooks/useSyncPrices'
 import { filterStockTxns, filterBySymbol } from '../../lib/search'
 import { formatNumber, formatBalance, formatSigned } from '../../lib/format'
 import { todayStr, formatMd, formatDateTime } from '../../lib/date'
+import useDeleteTransaction from '../../hooks/useDeleteTransaction'
 import Sheet from '../Sheet'
 import EmptyState from '../EmptyState'
-import LongPressable from '../LongPressable'
+import SwipeRow from '../SwipeRow'
 import StockPreview from './StockPreview'
 
 const SUB_TABS = [
@@ -41,7 +42,8 @@ export default function StockPanel({
 
   const [subTab, setSubTab] = useState('holdings')
   const [editingPrice, setEditingPrice] = useState(null)
-  const [preview, setPreview] = useState(null) // 長按預覽：{ kind, item }
+  const [preview, setPreview] = useState(null) // 單擊預覽：{ kind, item }
+  const { requestDelete, confirmElement, busy: deleteBusy } = useDeleteTransaction()
 
   const { sync, syncing, result, lastSyncAt } = useSyncPrices()
   const lastSync = formatDateTime(lastSyncAt)
@@ -197,10 +199,15 @@ export default function StockPanel({
               </div>
               <div className="bg-surface border border-line rounded-card shadow-card divide-y divide-line-light">
                 {items.map((h) => (
-                  <LongPressable
+                  // 持股是由交易推導出來的聚合，不能刪；抽屜只放「改現價」
+                  <SwipeRow
                     key={`${h.securitiesAccountId}-${h.symbol}`}
-                    onClick={() => setEditingPrice(h)}
-                    onLongPress={() => setPreview({ kind: 'holding', item: h })}
+                    actions={[
+                      { key: 'price', label: '改現價', icon: faTag, tone: 'brand', onClick: () => setEditingPrice(h) },
+                    ]}
+                  >
+                  <button
+                    onClick={() => setPreview({ kind: 'holding', item: h })}
                     className="flex items-center gap-3 w-full px-4 py-3 text-left"
                   >
                     <div className="flex-1 min-w-0">
@@ -228,8 +235,8 @@ export default function StockPanel({
                         </div>
                       )}
                     </div>
-                    <FontAwesomeIcon icon={faPen} className="text-text-tertiary text-[11px] flex-none" />
-                  </LongPressable>
+                  </button>
+                  </SwipeRow>
                 ))}
               </div>
             </div>
@@ -250,10 +257,15 @@ export default function StockPanel({
               const unsettled = t.settlementDate > asOf
               const broker = brokerMap[t.brokerId]
               return (
-                <LongPressable
+                <SwipeRow
                   key={t.id}
-                  onClick={() => navigate(`/add?stxId=${t.id}`)}
-                  onLongPress={() => setPreview({ kind: 'txn', item: t })}
+                  actions={[
+                    { key: 'edit', label: '編輯', icon: faPen, tone: 'brand', onClick: () => navigate(`/add?stxId=${t.id}`) },
+                    { key: 'delete', label: '刪除', icon: faTrash, tone: 'danger', disabled: deleteBusy, onClick: () => requestDelete(t, 'stock') },
+                  ]}
+                >
+                <button
+                  onClick={() => setPreview({ kind: 'txn', item: t })}
                   className="flex items-center gap-3 w-full px-4 py-3 text-left"
                 >
                   <span className={`flex-none text-[11px] font-bold rounded-pill px-2.5 py-1 ${
@@ -287,8 +299,8 @@ export default function StockPanel({
                       手續費 {formatNumber(t.fee ?? 0)}{!isBuy ? ` · 稅 ${formatNumber(t.tax ?? 0)}` : ''}
                     </div>
                   </div>
-                  <FontAwesomeIcon icon={faChevronRight} className="text-text-tertiary text-[11px] flex-none" />
-                </LongPressable>
+                </button>
+                </SwipeRow>
               )
             })}
           </div>
@@ -310,10 +322,11 @@ export default function StockPanel({
               </span>
             </div>
             <div className="bg-surface border border-line rounded-card shadow-card divide-y divide-line-light">
+              {/* 已實現損益是賣出時算出來的衍生資料，不可編不可刪，故不掛 SwipeRow */}
               {sortedRealized.map((r) => (
-                <LongPressable
+                <button
                   key={r.stxId}
-                  onLongPress={() => setPreview({ kind: 'realized', item: r })}
+                  onClick={() => setPreview({ kind: 'realized', item: r })}
                   className="flex items-center gap-3 w-full px-4 py-3 text-left"
                 >
                   <div className="flex-1 min-w-0">
@@ -327,7 +340,7 @@ export default function StockPanel({
                   }`}>
                     {formatSigned(r.pnl, opt)}
                   </span>
-                </LongPressable>
+                </button>
               ))}
             </div>
           </>
@@ -354,6 +367,7 @@ export default function StockPanel({
           if (id) navigate(`/add?stxId=${id}`)
         }}
       />
+      {confirmElement}
     </div>
   )
 }

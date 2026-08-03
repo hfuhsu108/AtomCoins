@@ -11,7 +11,7 @@ import { formatNumber, formatAmount, MASK } from '../../lib/format'
 import { formatMd } from '../../lib/date'
 import { settlementStatus, outstanding, isPending } from '../../lib/engine'
 import { useHiddenAmount } from '../HiddenAmountProvider'
-import useLongPress, { LONG_PRESS_CLASS } from '../../hooks/useLongPress'
+import SwipeRow from '../SwipeRow'
 import TagChip from '../TagChip'
 
 // 借還款三態 badge：export 供記帳表單與借貸明細共用，避免各寫一份導致配色漂移
@@ -117,10 +117,10 @@ function splitView(tx, split, index, count, lookups) {
   }
 }
 
-// onLongPress 是可選的：只有明細頁的帳本清單接預覽，卡片頁與搜尋結果維持單純點擊
-export default function TransactionRow({ tx, lookups, onClick, onLongPress }) {
+// onClick＝開預覽（最低成本的動作）；編輯與刪除收進左滑抽屜，由呼叫端以 actions 傳入
+// （卡片頁還要多塞一顆「延後／收回」，故用泛用陣列而非固定的 onEdit/onDelete）。
+export default function TransactionRow({ tx, lookups, onClick, actions }) {
   const { hidden } = useHiddenAmount()
-  const { enabled: lpOn, handlers: lp } = useLongPress(onLongPress ? () => onLongPress(tx) : null)
   const pending = isPending(tx)
   const installment = !!tx.installmentPlanId
 
@@ -128,44 +128,36 @@ export default function TransactionRow({ tx, lookups, onClick, onLongPress }) {
   const isSplitExpanded =
     (tx.type === 'expense' || tx.type === 'income') && (tx.splits?.length ?? 0) > 1
 
+  const common = {
+    hidden,
+    pending,
+    installment,
+    reconciled: tx.isReconciled,
+    pendingDate: tx.postingDate,
+    onClick,
+  }
+
   if (isSplitExpanded) {
+    // 每列各包一層 SwipeRow：抽屜的動作對整筆生效，但視覺上開的是被滑的那一列
     return tx.splits.map((sp, i) => (
-      <Row
-        key={`${tx.id}:${i}`}
-        view={splitView(tx, sp, i, tx.splits.length, lookups)}
-        hidden={hidden}
-        pending={pending}
-        installment={installment}
-        reconciled={tx.isReconciled}
-        pendingDate={tx.postingDate}
-        onClick={onClick}
-        lp={lp}
-        lpOn={lpOn}
-      />
+      <SwipeRow key={`${tx.id}:${i}`} actions={actions}>
+        <Row view={splitView(tx, sp, i, tx.splits.length, lookups)} {...common} />
+      </SwipeRow>
     ))
   }
 
   return (
-    <Row
-      view={describe(tx, lookups, hidden)}
-      hidden={hidden}
-      pending={pending}
-      installment={installment}
-      reconciled={tx.isReconciled}
-      pendingDate={tx.postingDate}
-      onClick={onClick}
-      lp={lp}
-      lpOn={lpOn}
-    />
+    <SwipeRow actions={actions}>
+      <Row view={describe(tx, lookups, hidden)} {...common} />
+    </SwipeRow>
   )
 }
 
-function Row({ view: d, hidden, pending, installment, reconciled, pendingDate, onClick, lp = {}, lpOn = false }) {
+function Row({ view: d, hidden, pending, installment, reconciled, pendingDate, onClick }) {
   return (
     <button
       onClick={onClick}
-      {...lp}
-      className={`flex items-center gap-3 w-full py-3 text-left ${lpOn ? LONG_PRESS_CLASS : ''}`}
+      className="flex items-center gap-3 w-full px-4 py-3 text-left"
     >
       <span
         className={`w-9 h-9 flex-none rounded-btn flex items-center justify-center ${d.color ? '' : 'bg-surface-alt text-text-secondary'}`}

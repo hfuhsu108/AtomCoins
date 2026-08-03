@@ -1,18 +1,20 @@
 import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faChevronLeft, faChevronRight, faChevronDown, faCheck, faClockRotateLeft, faRotateLeft } from '@fortawesome/free-solid-svg-icons'
+import { faChevronLeft, faChevronRight, faChevronDown, faCheck, faClockRotateLeft, faRotateLeft, faPen, faTrash } from '@fortawesome/free-solid-svg-icons'
 import { useCollection, useSettings } from '../db/DataProvider'
 import { accountBalances, statementPeriods, deferredCharges, paidStatementSet } from '../lib/engine'
 import { payCreditCardStatement, setPostingDates } from '../db/repo'
 import { useAsyncAction, settle } from '../hooks/useAsyncAction'
 import useCloseView from '../hooks/useCloseView'
+import useDeleteTransaction from '../hooks/useDeleteTransaction'
 import { formatAmount, formatBalance, formatNumber } from '../lib/format'
 import { todayStr, formatMd, addDays, monthLabel } from '../lib/date'
 import { accountIcon } from '../lib/icons'
 import { useHiddenAmount, EyeButton } from '../components/HiddenAmountProvider'
 import EmptyState from '../components/EmptyState'
 import TransactionRow from '../components/transaction/TransactionRow'
+import TransactionPreview from '../components/transaction/TransactionPreview'
 import AccountPicker from '../components/transaction/AccountPicker'
 import Sheet from '../components/Sheet'
 
@@ -43,7 +45,9 @@ export default function CardDetailPage() {
   const [paying, setPaying] = useState(null) // 繳費中的 period 物件
   const [deferring, setDeferring] = useState(null) // 延後入帳：{ preselectId } 或 null
   const [idx, setIdx] = useState(FUTURE) // 目前瀏覽的期別索引；idx-- 往未來、idx++ 往過去
+  const [previewTx, setPreviewTx] = useState(null) // 單擊預覽中的消費
   const { run: runUndefer } = useAsyncAction()
+  const { requestDelete, confirmElement, busy: deleteBusy } = useDeleteTransaction()
   // 頁面主體的金額跟隨全站遮蔽；繳費／延後面板內不遮，那是操作中必須看清的數字
   const { hidden, opt } = useHiddenAmount()
 
@@ -85,6 +89,21 @@ export default function CardDetailPage() {
   const undefer = (tx) => runUndefer(async () => {
     await settle(setPostingDates([{ id: tx.id, postingDate: tx.tradeDate }]))
   })
+
+  // 左滑抽屜。延後／收回是這一頁對帳時的主要動作，排在最前面
+  const rowActions = (t) => {
+    const isDeferred = !!t.postingDate && t.postingDate > t.tradeDate
+    return [
+      {
+        key: 'defer',
+        label: isDeferred ? '收回' : '延後',
+        icon: isDeferred ? faRotateLeft : faClockRotateLeft,
+        onClick: () => (isDeferred ? undefer(t) : setDeferring({ preselectId: t.id })),
+      },
+      { key: 'edit', label: '編輯', icon: faPen, tone: 'brand', onClick: () => navigate(`/add?id=${t.id}`) },
+      { key: 'delete', label: '刪除', icon: faTrash, tone: 'danger', disabled: deleteBusy, onClick: () => requestDelete(t) },
+    ]
+  }
 
   return (
     <div className="fixed inset-0 z-40 bg-app-bg overflow-y-auto">
@@ -203,23 +222,16 @@ export default function CardDetailPage() {
             {charges.length === 0 ? (
               <EmptyState title="這期尚無消費" />
             ) : (
-              <div className="bg-surface border border-line rounded-card shadow-card px-4 divide-y divide-line-light">
-                {charges.map((t) => {
-                  const isDeferred = !!t.postingDate && t.postingDate > t.tradeDate
-                  return (
-                    <div key={t.id} className="flex items-center gap-2">
-                      <div className="flex-1 min-w-0">
-                        <TransactionRow tx={t} lookups={lookups} onClick={() => navigate(`/add?id=${t.id}`)} />
-                      </div>
-                      <button
-                        onClick={() => (isDeferred ? undefer(t) : setDeferring({ preselectId: t.id }))}
-                        className="flex-none h-[28px] px-2.5 rounded-chip bg-surface-alt text-[12px] text-text-secondary"
-                      >
-                        {isDeferred ? '收回' : '延後'}
-                      </button>
-                    </div>
-                  )
-                })}
+              <div className="bg-surface border border-line rounded-card shadow-card overflow-hidden divide-y divide-line-light">
+                {charges.map((t) => (
+                  <TransactionRow
+                    key={t.id}
+                    tx={t}
+                    lookups={lookups}
+                    onClick={() => setPreviewTx(t)}
+                    actions={rowActions(t)}
+                  />
+                ))}
               </div>
             )}
           </>
@@ -232,19 +244,15 @@ export default function CardDetailPage() {
               <span className="text-[15px] font-semibold">已延後至下期</span>
               <span className="text-[13px] text-text-secondary tabular-nums">{formatAmount(deferredTotal, opt)}</span>
             </div>
-            <div className="bg-surface border border-line rounded-card shadow-card px-4 divide-y divide-line-light">
+            <div className="bg-surface border border-line rounded-card shadow-card overflow-hidden divide-y divide-line-light">
               {deferred.map((t) => (
-                <div key={t.id} className="flex items-center gap-2">
-                  <div className="flex-1 min-w-0">
-                    <TransactionRow tx={t} lookups={lookups} onClick={() => navigate(`/add?id=${t.id}`)} />
-                  </div>
-                  <button
-                    onClick={() => undefer(t)}
-                    className="flex-none flex items-center gap-1 h-[28px] px-2.5 rounded-chip bg-surface-alt text-[12px] text-text-secondary"
-                  >
-                    <FontAwesomeIcon icon={faRotateLeft} className="text-[10px]" /> 收回
-                  </button>
-                </div>
+                <TransactionRow
+                  key={t.id}
+                  tx={t}
+                  lookups={lookups}
+                  onClick={() => setPreviewTx(t)}
+                  actions={rowActions(t)}
+                />
               ))}
             </div>
             <p className="text-[11px] text-text-tertiary mt-2 px-1">
@@ -271,6 +279,19 @@ export default function CardDetailPage() {
         defaultDate={period ? addDays(period.periodEnd, 1) : todayStr()}
         onClose={() => setDeferring(null)}
       />
+
+      <TransactionPreview
+        tx={previewTx}
+        lookups={lookups}
+        hidden={hidden}
+        onClose={() => setPreviewTx(null)}
+        onOpen={() => {
+          const txId = previewTx?.id
+          setPreviewTx(null)
+          if (txId) navigate(`/add?id=${txId}`)
+        }}
+      />
+      {confirmElement}
     </div>
   )
 }

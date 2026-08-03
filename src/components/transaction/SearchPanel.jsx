@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faMagnifyingGlass, faXmark, faChevronRight } from '@fortawesome/free-solid-svg-icons'
 import { filterTransactions, searchTotals } from '../../lib/search'
@@ -60,8 +59,7 @@ function groupByDate(list) {
 }
 
 // initialAccountId：由首頁點帳戶進來時預填的帳戶篩選（僅作初值，之後由使用者自由改）
-export default function SearchPanel({ txns, categories, accounts, lookups, hidden, initialAccountId = null, onClose }) {
-  const navigate = useNavigate()
+export default function SearchPanel({ txns, categories, accounts, lookups, hidden, initialAccountId = null, onClose, onRowClick, rowActions }) {
   const tags = useCollection('tags')
 
   const [keyword, setKeyword] = useState('')
@@ -254,13 +252,14 @@ export default function SearchPanel({ txns, categories, accounts, lookups, hidde
                 <span className="text-[15px] font-semibold">{formatMd(d.date)}</span>
                 <span className="text-[13px] text-text-tertiary">{weekday(d.date)}</span>
               </div>
-              <div className="bg-surface border border-line rounded-card shadow-card px-4 divide-y divide-line-light">
+              <div className="bg-surface border border-line rounded-card shadow-card overflow-hidden divide-y divide-line-light">
                 {d.items.map((t) => (
                   <TransactionRow
                     key={t.id}
                     tx={t}
                     lookups={lookups}
-                    onClick={() => navigate(`/add?id=${t.id}`)}
+                    onClick={() => onRowClick(t)}
+                    actions={rowActions?.(t)}
                   />
                 ))}
               </div>

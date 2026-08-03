@@ -1,170 +1,83 @@
-import { useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import {
-  faArrowDown,
-  faXmark,
-  faRotateLeft,
-  faReceipt,
-  faChevronDown,
-  faChevronUp,
-  faPen,
-} from '@fortawesome/free-solid-svg-icons'
-import { formatAmount, formatNumber, MASK_SHORT } from '../../lib/format'
+import { faArrowDown, faReceipt } from '@fortawesome/free-solid-svg-icons'
+import { formatAmount } from '../../lib/format'
 import { formatMd } from '../../lib/date'
 import { resolveMerchant } from '../../lib/merchant'
 import { getIcon } from '../../lib/icons'
-import LongPressable from '../LongPressable'
 
-// 單張發票列。動作按鈕依 status 而異（inbox 歸帳/略過、recorded 取消歸帳、ignored 復原）。
-// 有 lineItems 時可點列展開唯讀明細（含已歸帳）；手動新增的發票可編輯/刪除（誤加時用）。
+// 單張發票列。列上只留「歸帳」這顆高頻正向動作，其餘（略過／編輯／取消歸帳／復原／
+// 查看記帳）收進左滑抽屜，由 InvoicePanel 依 status 組好用 actions 傳入。
+// 單擊＝開預覽（品項明細、發票號碼都在裡面，故列上不再做展開）。
 // 顯示名稱套用商家別名（原始名 invoice.merchant 永不改寫）。
 // suggestion＝自動分類建議 { label, icon, color, source }，僅未歸帳列顯示，點歸帳時會預填。
-export default function InvoiceRow({ invoice, aliases, suggestion = null, hidden, onRecord, onIgnore, onRestore, onUnrecord, onOpenTx, onEdit, onLongPress }) {
-  const [open, setOpen] = useState(false)
+export default function InvoiceRow({ invoice, aliases, suggestion = null, hidden, onRecord, onPreview }) {
   const displayName = resolveMerchant(invoice.merchant, aliases)
   const items = invoice.lineItems ?? []
-  const hasItems = items.length > 0
   const status = invoice.status
 
-  // 有明細一律可展開（含已歸帳）；無明細的已歸帳點列跳對應交易
-  const onRowClick = () => {
-    if (hasItems) setOpen((v) => !v)
-    else if (status === 'recorded') onOpenTx?.()
-  }
-
   return (
-    <div className="border-b border-line-light last:border-b-0">
-      <div className="flex items-center gap-3 py-3">
-        <LongPressable
-          onClick={onRowClick}
-          onLongPress={onLongPress ? () => onLongPress(invoice) : undefined}
-          className="flex items-center gap-3 flex-1 min-w-0 text-left"
-        >
-          <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
-            <FontAwesomeIcon icon={faReceipt} />
-          </span>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[15px] font-medium truncate">{displayName || '未知商家'}</span>
-              {hasItems && (
-                <span className="flex-none text-[11px] text-text-tertiary bg-surface-alt rounded-pill px-1.5 py-0.5">
-                  {items.length} 品項
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2 mt-0.5 text-xs text-text-tertiary min-w-0">
-              <span className="flex-none">{formatMd(invoice.invoiceDate)}</span>
-              {suggestion && (
-                <span
-                  className={`flex-none flex items-center gap-1 px-1.5 py-0.5 rounded-pill text-[11px] ${
-                    suggestion.color ? '' : 'bg-surface-alt text-text-secondary'
-                  }`}
-                  style={
-                    suggestion.color
-                      ? { background: `color-mix(in srgb, ${suggestion.color} 15%, transparent)`, color: suggestion.color }
-                      : undefined
-                  }
-                  title={suggestion.source === 'ai' ? 'AI 建議的分類，歸帳時可改' : '依你的歷史記錄建議，歸帳時可改'}
-                >
-                  <FontAwesomeIcon icon={getIcon(suggestion.icon)} />
-                  {suggestion.label}
-                  <span className="opacity-60">{suggestion.source === 'ai' ? 'AI' : '歷史'}</span>
-                </span>
-              )}
-              {invoice.carrierId && <span className="truncate">{invoice.carrierId}</span>}
-            </div>
+    <div className="flex items-center gap-3 px-4 py-3">
+      <button onClick={onPreview} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+        <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
+          <FontAwesomeIcon icon={faReceipt} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[15px] font-medium truncate">{displayName || '未知商家'}</span>
+            {items.length > 0 && (
+              <span className="flex-none text-[11px] text-text-tertiary bg-surface-alt rounded-pill px-1.5 py-0.5">
+                {items.length} 品項
+              </span>
+            )}
           </div>
-          <span className="text-[15px] font-semibold tabular-nums whitespace-nowrap text-text-primary">
-            {formatAmount(invoice.totalAmount, { hidden })}
+          <div className="flex items-center gap-2 mt-0.5 text-xs text-text-tertiary min-w-0">
+            <span className="flex-none">{formatMd(invoice.invoiceDate)}</span>
+            {suggestion && (
+              <span
+                className={`flex-none flex items-center gap-1 px-1.5 py-0.5 rounded-pill text-[11px] ${
+                  suggestion.color ? '' : 'bg-surface-alt text-text-secondary'
+                }`}
+                style={
+                  suggestion.color
+                    ? { background: `color-mix(in srgb, ${suggestion.color} 15%, transparent)`, color: suggestion.color }
+                    : undefined
+                }
+                title={suggestion.source === 'ai' ? 'AI 建議的分類，歸帳時可改' : '依你的歷史記錄建議，歸帳時可改'}
+              >
+                <FontAwesomeIcon icon={getIcon(suggestion.icon)} />
+                {suggestion.label}
+                <span className="opacity-60">{suggestion.source === 'ai' ? 'AI' : '歷史'}</span>
+              </span>
+            )}
+            {invoice.carrierId && <span className="truncate">{invoice.carrierId}</span>}
+          </div>
+        </div>
+        <span className="text-[15px] font-semibold tabular-nums whitespace-nowrap text-text-primary">
+          {formatAmount(invoice.totalAmount, { hidden })}
+        </span>
+      </button>
+
+      <div className="flex items-center gap-1.5 flex-none">
+        {status === 'inbox' && (
+          <button
+            onClick={onRecord}
+            className="flex items-center gap-1 h-8 px-3 rounded-chip bg-brand text-white text-[13px] font-semibold"
+          >
+            <FontAwesomeIcon icon={faArrowDown} className="text-xs" /> 歸帳
+          </button>
+        )}
+        {/* 完成態一律用 success 綠，與「已結清」「已繳」同一套語彙 */}
+        {status === 'recorded' && (
+          <span className="text-[11px] font-semibold text-success bg-success-bg rounded-pill px-2 py-1">
+            已歸帳
           </span>
-          {hasItems ? (
-            <FontAwesomeIcon icon={open ? faChevronUp : faChevronDown} className="text-text-tertiary text-[11px]" />
-          ) : null}
-        </LongPressable>
-
-        <div className="flex items-center gap-1.5 flex-none">
-          {/* 手動新增的發票可編輯/刪除（誤加時用）；已歸帳需先取消歸帳 */}
-          {onEdit && invoice.source === 'manual' && status !== 'recorded' && (
-            <button
-              onClick={() => onEdit(invoice)}
-              title="編輯／刪除"
-              className="w-8 h-8 rounded-chip bg-surface-alt text-text-secondary flex items-center justify-center"
-            >
-              <FontAwesomeIcon icon={faPen} className="text-xs" />
-            </button>
-          )}
-          {status === 'inbox' && (
-            <>
-              <button
-                onClick={onRecord}
-                className="flex items-center gap-1 h-8 px-3 rounded-chip bg-brand text-white text-[13px] font-semibold"
-              >
-                <FontAwesomeIcon icon={faArrowDown} className="text-xs" /> 歸帳
-              </button>
-              <button
-                onClick={onIgnore}
-                title="略過"
-                className="w-8 h-8 rounded-chip bg-surface-alt text-text-secondary flex items-center justify-center"
-              >
-                <FontAwesomeIcon icon={faXmark} />
-              </button>
-            </>
-          )}
-          {status === 'recorded' && (
-            <>
-              {/* 完成態一律用 success 綠，與「已結清」「已繳」同一套語彙（原本用 income 藍） */}
-              <span className="text-[11px] font-semibold text-success bg-success-bg rounded-pill px-2 py-1">
-                已歸帳
-              </span>
-              <button
-                onClick={onUnrecord}
-                title="取消歸帳"
-                className="w-8 h-8 rounded-chip bg-surface-alt text-text-secondary flex items-center justify-center"
-              >
-                <FontAwesomeIcon icon={faRotateLeft} className="text-xs" />
-              </button>
-            </>
-          )}
-          {status === 'ignored' && (
-            <>
-              <span className="text-[11px] font-semibold text-text-tertiary bg-surface-alt rounded-pill px-2 py-1">
-                已略過
-              </span>
-              <button
-                onClick={onRestore}
-                title="復原"
-                className="w-8 h-8 rounded-chip bg-surface-alt text-text-secondary flex items-center justify-center"
-              >
-                <FontAwesomeIcon icon={faRotateLeft} className="text-xs" />
-              </button>
-            </>
-          )}
-        </div>
+        )}
+        {status === 'ignored' && (
+          <span className="text-[11px] font-semibold text-text-tertiary bg-surface-alt rounded-pill px-2 py-1">
+            已略過
+          </span>
+        )}
       </div>
-
-      {open && hasItems && (
-        <div className="pb-3 pl-12 pr-1 flex flex-col gap-1">
-          {items.map((it, i) => (
-            <div key={i} className="flex items-center justify-between text-[13px] text-text-secondary">
-              <span className="truncate">
-                {it.name || '（未命名）'}
-                {it.qty > 1 && <span className="text-text-tertiary"> ×{it.qty}</span>}
-              </span>
-              <span className="tabular-nums flex-none ml-2">
-                {hidden ? MASK_SHORT : formatNumber(it.amount ?? 0)}
-              </span>
-            </div>
-          ))}
-          {status === 'recorded' && (
-            <button
-              onClick={onOpenTx}
-              className="self-start mt-1.5 text-[13px] font-semibold text-brand"
-            >
-              查看記帳 →
-            </button>
-          )}
-        </div>
-      )}
     </div>
   )
 }

@@ -6,7 +6,7 @@ import TransactionRow from './TransactionRow'
 
 // 月曆檢視（docs/09 批次 5）：7 欄（週日起始）× 5-6 列；每格日數字＋當日支出（有才顯示），
 // 有收入另加小圓點；今日格框線高亮。點日期列該日交易。日聚合直接重用 TransactionsPage 的 days。
-export default function CalendarView({ ym, days, lookups, hidden, onRowClick, onRowLongPress }) {
+export default function CalendarView({ ym, days, lookups, hidden, onRowClick, rowActions }) {
   const today = todayStr()
   const prefix = `${ym.year}-${String(ym.month).padStart(2, '0')}`
 
@@ -92,14 +92,14 @@ export default function CalendarView({ ym, days, lookups, hidden, onRowClick, on
             )}
           </div>
           {selDay?.items?.length ? (
-            <div className="bg-surface border border-line rounded-card shadow-card px-4 divide-y divide-line-light">
+            <div className="bg-surface border border-line rounded-card shadow-card overflow-hidden divide-y divide-line-light">
               {selDay.items.map((t) => (
                 <TransactionRow
                   key={t.id}
                   tx={t}
                   lookups={lookups}
                   onClick={() => onRowClick(t)}
-                  onLongPress={onRowLongPress}
+                  actions={rowActions?.(t)}
                 />
               ))}
             </div>

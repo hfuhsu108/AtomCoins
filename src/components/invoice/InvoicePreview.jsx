@@ -9,7 +9,7 @@ const STATUS_LABEL = {
   ignored: { label: '已略過', cls: 'text-text-tertiary bg-surface-alt' },
 }
 
-// 長按發票列的預覽：一次看完品項明細與發票號碼，不必展開再捲動。
+// 單擊發票列的預覽：一次看完品項明細與發票號碼（列上已不做展開，明細只在這裡看）。
 // 別名與原始商家名並列——對帳時要比對的是財政部給的原始名。
 export default function InvoicePreview({ invoice, aliases, hidden, onClose, onOpenTx }) {
   if (!invoice) return null
