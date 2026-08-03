@@ -102,4 +102,4 @@
 
 **待辦**：第四批的線上驗收（含 AI 分類實際呼叫）。原「CSV 發票匯入」已於 2026-07-25 決定**取消**（爬蟲穩定運作，備援路徑無實際需求）。
 
-**注意（未提交的遺留變更）**：`functions/package.json` 與 lock 有本 session 之前就存在的未提交變更——Node 20→22、`firebase-admin` 13→14、`firebase-functions` 6→7，皆為 major 跳升且未經部署驗證。刻意不併入 2026-08-03 的 commit；要套用前先確認 v7 的破壞性變更並實際 `firebase deploy --only functions` 驗過。
+**functions 依賴（2026-08-03 補提交）**：Node 20→22、`firebase-admin` 13→14、`firebase-functions` 6→7。這批升級在更早的 session 就已改好並**實際部署上線**，只是 `package.json`／lock 一直沒進版控，造成 repo 與線上不一致達一週。2026-08-03 補提交並以 `firebase functions:list` 確認線上五個函式皆為 `nodejs22`（重跑 deploy 全數 `No changes detected`）。原始碼零改動；v7 仍輸出 `index.js` 用到的全部 sub-path（`./v2/scheduler`、`./v2/firestore`、`./v2/https`、`./v2`、`./params`、`./logger`）。**教訓：改完依賴要當場 commit，否則「線上是什麼版本」只能靠考古。**
