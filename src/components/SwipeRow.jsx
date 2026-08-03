@@ -78,6 +78,22 @@ export default function SwipeRow({ actions = [], disabled = false, className = '
     if (openRow === close) openRow = null
   }, [close])
 
+  // 判定為水平拖曳後，必須擋下瀏覽器接手捲動。
+  // touch-action:pan-y 只是「允許」垂直捲，不保證瀏覽器不搶——慢滑時手指停留久、
+  // 難免有垂直漂移，仲裁一旦判給捲動就會送出 pointercancel 把手勢中斷，位移彈回 0，
+  // 看起來就是「慢慢滑完全沒反應」（快滑因水平意圖明顯而躲過）。
+  // 只有非 passive 的原生 touchmove + preventDefault 擋得住：React 的 onTouchMove
+  // 掛在 root 且是 passive 的，在裡面 preventDefault 無效。
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el) return
+    const block = (e) => {
+      if (gesture.current?.axis === 'x' && e.cancelable) e.preventDefault()
+    }
+    el.addEventListener('touchmove', block, { passive: false })
+    return () => el.removeEventListener('touchmove', block)
+  }, [])
+
   // 只在開著時掛全域監聽：捲動或點到「這一列以外」就收起來。
   // 依賴用布林而非 dx，免得位置一變就重掛監聽
   const shifted = dx !== 0
