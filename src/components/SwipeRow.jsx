@@ -1,33 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { ACTION_W, decideAxis, offsetFor, shouldLatchOpen } from '../lib/swipeGesture'
 
 // 同時只開一列。存的是「該實例的 close 函式」而非 id——拆帳一筆會展開成 N 列、
 // 共用同一個 tx.id，用 id 當識別會讓那 N 列一起打開。
 let openRow = null
-
-const ACTION_W = 72 // px：單顆動作鈕寬度
-// 方向判定門檻。**不要再加大**：行動瀏覽器本身就有 8–15px 的觸控 slop，這個值是疊在
-// 它上面的第二層死區。設 8 時手機上要走近 20px 才開始跟手，滑鼠沒有 slop 所以只有
-// 手機覺得黏——「電腦順、手機不順」就是這麼來的。
-const AXIS_LOCK = 4
-// 判定方向時偏袒水平：手指的水平滑很少是純水平，要求 |dx| > |dy| 太嚴會讓略帶斜度的
-// 滑動整趟被判給捲動。只有明顯偏垂直（下面的 V_GIVE_UP）才讓給瀏覽器，兩者之間繼續等。
-const H_BIAS = 0.7
-const V_GIVE_UP = 1.4
-// px：要放棄整趟手勢（判定為捲動）所需的垂直位移。**必須明顯大於 AXIS_LOCK**——
-// 兩者共用同一個小門檻的話，起手那幾 px 的垂直抖動就足以殺掉整趟手勢，
-// 症狀是「慢慢滑完全沒反應」（快滑因為第一個取樣點水平量就很大而躲過）。
-const VERT_GIVE_UP = 12
-// 吸附開啟的位移門檻。**不可用「抽屜寬的一半」**：動作鈕愈多門檻愈高（3 顆要拖 108px），
-// 慢速滑的末速趨近 0、過不了 FLICK_V，就會一律彈回，手感是「滑不開、只有用甩的才行」。
-// 改成與鈕數無關的固定值，並取 40% 為上限以免抽屜很窄時反而過鬆。
-const OPEN_PX = 32
-const OPEN_RATIO = 0.4
-const FLICK_V = 0.18 // px/ms：末段速度超過此值就算「甩開」，不必拖到門檻
-const RUBBER = 0.3 // 超出兩端時的阻尼係數，給「到底了」的手感
-// px：鎖定方向前被瀏覽器 slop 與 AXIS_LOCK 吞掉的那段距離，在這段行程內平滑補回。
-// 不補的話列會永遠落後手指十幾 px——快滑看不出來，慢滑時那就是「不跟手」的來源。
-const CATCH_PX = 48
 
 const TONE = {
   default: 'bg-surface-alt text-text-secondary',
@@ -38,16 +15,15 @@ const TONE = {
 // 往左滑露出動作鈕的列（Gmail 式）。children 原樣渲染，可以是 <button>，也可以是
 // 內含子按鈕的 <div>——本元件不是 button，不吃 children 的語義。
 //
-// 四個必須做對的地方：
-//  1. touch-action: pan-y 下在內容層（實際被觸控命中的那一層）。垂直交還瀏覽器、
-//     水平留給自己，不設 none 是因為那會連頁面捲動一起殺掉。寫成 arbitrary value
-//     而非 Tailwind 的 touch-pan-y——後者編成 var(--tw-pan-x,) var(--tw-pan-y,)
-//     var(--tw-pinch-zoom,) 的組合值，多一層自訂屬性間接，這裡要的是字面宣告。
-//  2. 方向判定要盡早、偏袒水平，且**先判「鎖水平」再判「放棄」**；放棄的垂直門檻
-//     必須明顯大於鎖定門檻，否則起手抖動就會殺掉整趟手勢。見各常數的註解。
-//  3. 拖曳中**完全不走 React**：transform 與 transition 都直接寫 DOM，整趟手勢零 render。
-//     每秒 60–120 次 setState 會在中階手機上掉幀；更關鍵的是「關掉過場動畫」如果走
-//     state，render 的非同步會讓第一段位移仍被 200ms 動畫追著跑（慢滑時全程如此）。
+// 手勢數學全在 lib/swipeGesture.js（純函式，可離線驗證；它在真機上調校了五輪）。
+// 這裡只負責事件接線，四個必須做對的地方：
+//  1. touch-action: pan-y 下在內容層。寫成 arbitrary value 而非 Tailwind 的
+//     touch-pan-y——後者編成 var(--tw-pan-x,) var(--tw-pan-y,) var(--tw-pinch-zoom,)
+//     的組合值，多一層自訂屬性間接，這裡要的是字面宣告。
+//  2. 判定為水平後要用**非 passive** 的原生 touchmove + preventDefault 擋下瀏覽器
+//     接手捲動；pan-y 只是「允許」垂直捲，不保證它不搶。
+//  3. 拖曳中完全不走 React：transform 與 transition 都直接寫 DOM，整趟手勢零 render。
+//     關過場動畫若走 state，render 的非同步會讓第一段位移仍被 200ms 動畫追著跑。
 //  4. 拖曳結束後那一次 click 要吞掉，不然放手就會觸發列本身的動作（開預覽）。
 export default function SwipeRow({ actions = [], disabled = false, className = '', children }) {
   const list = actions.filter(Boolean)
@@ -78,12 +54,8 @@ export default function SwipeRow({ actions = [], disabled = false, className = '
     if (openRow === close) openRow = null
   }, [close])
 
-  // 判定為水平拖曳後，必須擋下瀏覽器接手捲動。
-  // touch-action:pan-y 只是「允許」垂直捲，不保證瀏覽器不搶——慢滑時手指停留久、
-  // 難免有垂直漂移，仲裁一旦判給捲動就會送出 pointercancel 把手勢中斷，位移彈回 0，
-  // 看起來就是「慢慢滑完全沒反應」（快滑因水平意圖明顯而躲過）。
-  // 只有非 passive 的原生 touchmove + preventDefault 擋得住：React 的 onTouchMove
-  // 掛在 root 且是 passive 的，在裡面 preventDefault 無效。
+  // 判定為水平拖曳後，擋下瀏覽器接手捲動。React 的 onTouchMove 掛在 root 且是
+  // passive 的，在裡面 preventDefault 無效，必須自己掛原生非 passive 監聽。
   useEffect(() => {
     const el = contentRef.current
     if (!el) return
@@ -130,34 +102,25 @@ export default function SwipeRow({ actions = [], disabled = false, className = '
   const onPointerMove = (e) => {
     const g = gesture.current
     if (!g) return
-    const moveX = e.clientX - g.x0
-    const moveY = e.clientY - g.y0
 
     if (!g.axis) {
-      const ax = Math.abs(moveX)
-      const ay = Math.abs(moveY)
-      // 三段判定，順序不可調換：**先看能不能鎖水平，再看要不要放棄**。反過來的話，
-      // 起手那幾 px 的垂直抖動就會先滿足放棄條件、把整趟手勢殺掉（慢滑完全沒反應）。
-      if (ax >= AXIS_LOCK && ax >= ay * H_BIAS) {
-        // 抽屜關著時只認左滑；右滑完全不攔（iOS 左緣往右是系統返回手勢）
-        if (g.base === 0 && moveX > 0) {
-          gesture.current = null
-          return
-        }
-        g.axis = 'x'
-        // 記下鎖定點：位移以它為起點才不會一鎖定就跳一段（見下方 CATCH_PX 的補回邏輯）
-        g.lockX = e.clientX
-        e.currentTarget.setPointerCapture?.(e.pointerId)
-        // 過場動畫必須「當下」就關掉。用 state 關的話 render 是非同步的，緊接著的直接
-        // 寫入還是會被那 200ms 動畫追著跑——快滑被後續位移蓋過，慢滑時它就是全部。
-        if (contentRef.current) contentRef.current.style.transition = 'none'
-      } else if (ay >= VERT_GIVE_UP && ay > ax * V_GIVE_UP) {
-        // 已經明顯往垂直走（不是起手抖動）→ 整趟讓給瀏覽器捲動
+      const verdict = decideAxis({
+        moveX: e.clientX - g.x0,
+        moveY: e.clientY - g.y0,
+        base: g.base,
+        startX: g.x0,
+      })
+      if (verdict === 'giveup') {
         gesture.current = null
         return
-      } else {
-        return // 還在曖昧區：繼續等下一個取樣點，不提早定生死
       }
+      if (verdict === 'wait') return
+      g.axis = 'x'
+      // 記下鎖定點：位移以它為起點才不會一鎖定就跳一段（見 offsetFor 的補回邏輯）
+      g.lockX = e.clientX
+      e.currentTarget.setPointerCapture?.(e.pointerId)
+      // 過場動畫必須「當下」就關掉，走 state 的話 render 非同步、擋不住那 200ms
+      if (contentRef.current) contentRef.current.style.transition = 'none'
     }
 
     const dt = e.timeStamp - g.lastT
@@ -165,18 +128,10 @@ export default function SwipeRow({ actions = [], disabled = false, className = '
     g.lastX = e.clientX
     g.lastT = e.timeStamp
 
-    // 鎖定當下不跳（sinceLock=0），之後在 CATCH_PX 的行程內把被吞掉的 dead 補回來，
-    // 補完就是 base + 手指總位移＝真正的 1:1 跟手
-    const sinceLock = e.clientX - g.lockX
-    const dead = g.lockX - g.x0
-    const caught = Math.min(1, Math.abs(sinceLock) / CATCH_PX)
-    let next = g.base + sinceLock + dead * caught
-    if (next > 0) next *= RUBBER
-    else if (next < -width) next = -width + (next + width) * RUBBER
-    g.cur = next
+    g.cur = offsetFor({ base: g.base, clientX: e.clientX, x0: g.x0, lockX: g.lockX, width })
     // 直接寫 DOM：這一段每秒會跑 60–120 次，走 setState 會掉幀
     if (contentRef.current) {
-      contentRef.current.style.transform = `translate3d(${next}px, 0, 0)`
+      contentRef.current.style.transform = `translate3d(${g.cur}px, 0, 0)`
     }
   }
 
@@ -185,11 +140,7 @@ export default function SwipeRow({ actions = [], disabled = false, className = '
     gesture.current = null
     if (!g || g.axis !== 'x') return
     swallow.current = true
-    // 已經開著時往回拖：要拖回門檻以上才關，否則微幅晃動會誤關
-    const threshold = Math.min(width * OPEN_RATIO, OPEN_PX)
-    const latchOpen = g.base === 0
-      ? g.cur < -threshold || g.v < -FLICK_V
-      : g.cur < -width + threshold && g.v < FLICK_V
+    const latchOpen = shouldLatchOpen({ base: g.base, cur: g.cur, v: g.v, width })
     const target = latchOpen ? -width : 0
     // 直接寫最終位置，不能只靠 setDx：拖一點點又放開時 dx 沒變（0→0），React 不會
     // 重新渲染，直接寫入的偏移就留在畫面上收不回來
