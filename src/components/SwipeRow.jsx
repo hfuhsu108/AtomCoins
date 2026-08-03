@@ -7,7 +7,12 @@ let openRow = null
 
 const AXIS_LOCK = 8 // px：位移超過此值才判定這一趟屬於哪個方向，之前不攔任何事
 const ACTION_W = 72 // px：單顆動作鈕寬度
-const FLICK_V = 0.4 // px/ms：末段速度超過此值就算「甩開」，不必真的拖過一半
+// 吸附開啟的位移門檻。**不可用「抽屜寬的一半」**：動作鈕愈多門檻愈高（3 顆要拖 108px），
+// 慢速滑的末速趨近 0、過不了 FLICK_V，就會一律彈回，手感是「滑不開、只有用甩的才行」。
+// 改成與鈕數無關的固定值，並取 40% 為上限以免抽屜很窄時反而過鬆。
+const OPEN_PX = 44
+const OPEN_RATIO = 0.4
+const FLICK_V = 0.25 // px/ms：末段速度超過此值就算「甩開」，不必拖到門檻
 const RUBBER = 0.3 // 超出兩端時的阻尼係數，給「到底了」的手感
 
 const TONE = {
@@ -106,6 +111,9 @@ export default function SwipeRow({ actions = [], disabled = false, className = '
         return
       }
       g.axis = 'x'
+      // 從「鎖定方向的那一點」起算，而不是從按下點——用按下點的話，前 AXIS_LOCK 個 px
+      // 完全不動、一鎖定就瞬間跳那麼多，摸起來像卡一下再彈出去
+      g.lockX = e.clientX
       e.currentTarget.setPointerCapture?.(e.pointerId)
       setDragging(true)
     }
@@ -115,7 +123,7 @@ export default function SwipeRow({ actions = [], disabled = false, className = '
     g.lastX = e.clientX
     g.lastT = e.timeStamp
 
-    let next = g.base + moveX
+    let next = g.base + (e.clientX - g.lockX)
     if (next > 0) next *= RUBBER
     else if (next < -width) next = -width + (next + width) * RUBBER
     g.cur = next
@@ -128,7 +136,12 @@ export default function SwipeRow({ actions = [], disabled = false, className = '
     if (!g || g.axis !== 'x') return
     setDragging(false)
     swallow.current = true
-    if (g.cur < -width / 2 || g.v < -FLICK_V) open()
+    // 已經開著時往回拖：要拖回門檻以上才關，否則微幅晃動會誤關
+    const threshold = Math.min(width * OPEN_RATIO, OPEN_PX)
+    const latchOpen = g.base === 0
+      ? g.cur < -threshold || g.v < -FLICK_V
+      : g.cur < -width + threshold && g.v < FLICK_V
+    if (latchOpen) open()
     else close()
   }
 
