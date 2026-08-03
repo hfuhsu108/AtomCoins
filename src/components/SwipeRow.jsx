@@ -14,6 +14,10 @@ const AXIS_LOCK = 4
 // 滑動整趟被判給捲動。只有明顯偏垂直（下面的 V_GIVE_UP）才讓給瀏覽器，兩者之間繼續等。
 const H_BIAS = 0.7
 const V_GIVE_UP = 1.4
+// px：要放棄整趟手勢（判定為捲動）所需的垂直位移。**必須明顯大於 AXIS_LOCK**——
+// 兩者共用同一個小門檻的話，起手那幾 px 的垂直抖動就足以殺掉整趟手勢，
+// 症狀是「慢慢滑完全沒反應」（快滑因為第一個取樣點水平量就很大而躲過）。
+const VERT_GIVE_UP = 12
 // 吸附開啟的位移門檻。**不可用「抽屜寬的一半」**：動作鈕愈多門檻愈高（3 顆要拖 108px），
 // 慢速滑的末速趨近 0、過不了 FLICK_V，就會一律彈回，手感是「滑不開、只有用甩的才行」。
 // 改成與鈕數無關的固定值，並取 40% 為上限以免抽屜很窄時反而過鬆。
@@ -39,7 +43,8 @@ const TONE = {
 //     水平留給自己，不設 none 是因為那會連頁面捲動一起殺掉。寫成 arbitrary value
 //     而非 Tailwind 的 touch-pan-y——後者編成 var(--tw-pan-x,) var(--tw-pan-y,)
 //     var(--tw-pinch-zoom,) 的組合值，多一層自訂屬性間接，這裡要的是字面宣告。
-//  2. 方向判定要盡早、且偏袒水平，見 AXIS_LOCK / H_BIAS 的註解。
+//  2. 方向判定要盡早、偏袒水平，且**先判「鎖水平」再判「放棄」**；放棄的垂直門檻
+//     必須明顯大於鎖定門檻，否則起手抖動就會殺掉整趟手勢。見各常數的註解。
 //  3. 拖曳中**完全不走 React**：transform 與 transition 都直接寫 DOM，整趟手勢零 render。
 //     每秒 60–120 次 setState 會在中階手機上掉幀；更關鍵的是「關掉過場動畫」如果走
 //     state，render 的非同步會讓第一段位移仍被 200ms 動畫追著跑（慢滑時全程如此）。
@@ -115,25 +120,28 @@ export default function SwipeRow({ actions = [], disabled = false, className = '
     if (!g.axis) {
       const ax = Math.abs(moveX)
       const ay = Math.abs(moveY)
-      // 明顯偏垂直 → 整趟讓給瀏覽器捲動
-      if (ay >= AXIS_LOCK && ay > ax * V_GIVE_UP) {
+      // 三段判定，順序不可調換：**先看能不能鎖水平，再看要不要放棄**。反過來的話，
+      // 起手那幾 px 的垂直抖動就會先滿足放棄條件、把整趟手勢殺掉（慢滑完全沒反應）。
+      if (ax >= AXIS_LOCK && ax >= ay * H_BIAS) {
+        // 抽屜關著時只認左滑；右滑完全不攔（iOS 左緣往右是系統返回手勢）
+        if (g.base === 0 && moveX > 0) {
+          gesture.current = null
+          return
+        }
+        g.axis = 'x'
+        // 記下鎖定點：位移以它為起點才不會一鎖定就跳一段（見下方 CATCH_PX 的補回邏輯）
+        g.lockX = e.clientX
+        e.currentTarget.setPointerCapture?.(e.pointerId)
+        // 過場動畫必須「當下」就關掉。用 state 關的話 render 是非同步的，緊接著的直接
+        // 寫入還是會被那 200ms 動畫追著跑——快滑被後續位移蓋過，慢滑時它就是全部。
+        if (contentRef.current) contentRef.current.style.transition = 'none'
+      } else if (ay >= VERT_GIVE_UP && ay > ax * V_GIVE_UP) {
+        // 已經明顯往垂直走（不是起手抖動）→ 整趟讓給瀏覽器捲動
         gesture.current = null
         return
+      } else {
+        return // 還在曖昧區：繼續等下一個取樣點，不提早定生死
       }
-      // 還沒到門檻、或水平量還不夠壓過垂直 → 繼續等，不做判定
-      if (ax < AXIS_LOCK || ax < ay * H_BIAS) return
-      // 抽屜關著時只認左滑；右滑完全不攔（iOS 左緣往右是系統返回手勢）
-      if (g.base === 0 && moveX > 0) {
-        gesture.current = null
-        return
-      }
-      g.axis = 'x'
-      // 記下鎖定點：位移以它為起點才不會一鎖定就跳一段（見下方 CATCH_PX 的補回邏輯）
-      g.lockX = e.clientX
-      e.currentTarget.setPointerCapture?.(e.pointerId)
-      // 過場動畫必須「當下」就關掉。用 state 關的話 render 是非同步的，緊接著的直接
-      // 寫入還是會被那 200ms 動畫追著跑——快滑被後續位移蓋過，慢滑時它就是全部。
-      if (contentRef.current) contentRef.current.style.transition = 'none'
     }
 
     const dt = e.timeStamp - g.lastT
