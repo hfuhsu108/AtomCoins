@@ -197,7 +197,8 @@ export default function StockPanel({
               <div className="text-[13px] font-semibold text-text-secondary px-1 mb-1.5">
                 {accMap[acctId]?.name ?? '未知帳戶'}
               </div>
-              <div className="bg-surface border border-line rounded-card shadow-card divide-y divide-line-light">
+              {/* overflow-hidden：左滑抽屜是方角的，不裁切會從卡片圓角外露出來 */}
+              <div className="bg-surface border border-line rounded-card shadow-card overflow-hidden divide-y divide-line-light">
                 {items.map((h) => (
                   // 持股是由交易推導出來的聚合，不能刪；抽屜只放「改現價」
                   <SwipeRow
@@ -249,7 +250,7 @@ export default function StockPanel({
         sortedTxns.length === 0 ? (
           <Empty>{searching ? '找不到符合的交易' : '尚無交易紀錄'}</Empty>
         ) : (
-          <div className="bg-surface border border-line rounded-card shadow-card divide-y divide-line-light">
+          <div className="bg-surface border border-line rounded-card shadow-card overflow-hidden divide-y divide-line-light">
             {sortedTxns.map((t) => {
               const isBuy = t.side === 'buy'
               const gross = Math.round(t.shares * t.price)
