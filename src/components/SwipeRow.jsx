@@ -14,17 +14,22 @@ const TONE = {
 
 // 往左滑露出動作鈕的列（Gmail 式）。children 原樣渲染，可以是 <button>，也可以是
 // 內含子按鈕的 <div>——本元件不是 button，不吃 children 的語義。
+// 手勢數學全在 lib/swipeGesture.js（純函式，可離線驗證）。
 //
-// 手勢數學全在 lib/swipeGesture.js（純函式，可離線驗證；它在真機上調校了五輪）。
-// 這裡只負責事件接線，四個必須做對的地方：
+// **為什麼是原生 touch 事件而不是 Pointer Events**（這條踩了很久）：
+// Android Chrome 是在「某一個 touchmove」上決定要不要接手捲動的，一旦接手就送出
+// pointercancel／touchcancel 把拖曳中斷。要擋下它，preventDefault 必須在**決定為
+// 水平的那一個 touchmove 當下**呼叫——晚一步就來不及。用 Pointer Events 的話方向
+// 判定發生在 pointermove，等它跑完 Chrome 早已接手，症狀是慢滑完全不跟手（快甩因
+// 水平意圖明顯、Chrome 不判成捲動而躲過）。React 的 onTouchMove 也不行：它掛在 root
+// 且是 passive 的，裡面 preventDefault 無效。故一律自己 addEventListener。
+//
+// 另外三個必須做對的地方：
 //  1. touch-action: pan-y 下在內容層。寫成 arbitrary value 而非 Tailwind 的
-//     touch-pan-y——後者編成 var(--tw-pan-x,) var(--tw-pan-y,) var(--tw-pinch-zoom,)
-//     的組合值，多一層自訂屬性間接，這裡要的是字面宣告。
-//  2. 判定為水平後要用**非 passive** 的原生 touchmove + preventDefault 擋下瀏覽器
-//     接手捲動；pan-y 只是「允許」垂直捲，不保證它不搶。
-//  3. 拖曳中完全不走 React：transform 與 transition 都直接寫 DOM，整趟手勢零 render。
+//     touch-pan-y——後者編成 var(--tw-pan-x,) … 的組合值，多一層自訂屬性間接。
+//  2. 拖曳中完全不走 React：transform 與 transition 都直接寫 DOM，整趟手勢零 render。
 //     關過場動畫若走 state，render 的非同步會讓第一段位移仍被 200ms 動畫追著跑。
-//  4. 拖曳結束後那一次 click 要吞掉，不然放手就會觸發列本身的動作（開預覽）。
+//  3. 拖曳結束後那一次 click 要吞掉，不然放手就會觸發列本身的動作（開預覽）。
 export default function SwipeRow({ actions = [], disabled = false, className = '', children }) {
   const list = actions.filter(Boolean)
   const rootRef = useRef(null)
@@ -54,17 +59,112 @@ export default function SwipeRow({ actions = [], disabled = false, className = '
     if (openRow === close) openRow = null
   }, [close])
 
-  // 判定為水平拖曳後，擋下瀏覽器接手捲動。React 的 onTouchMove 掛在 root 且是
-  // passive 的，在裡面 preventDefault 無效，必須自己掛原生非 passive 監聽。
+  // 手勢接線。touch 與 mouse 共用同一組 begin/move/end，差別只在 touch 那條要
+  // preventDefault（見檔頭）。全部用原生監聽，React 的合成事件在這裡幫不上忙。
   useEffect(() => {
     const el = contentRef.current
     if (!el) return
-    const block = (e) => {
-      if (gesture.current?.axis === 'x' && e.cancelable) e.preventDefault()
+
+    const begin = (x, y, t) => {
+      gesture.current = {
+        x0: x,
+        y0: y,
+        base: openRef.current ? -width : 0,
+        axis: null,
+        cur: openRef.current ? -width : 0,
+        lastX: x,
+        lastT: t,
+        v: 0,
+      }
     }
-    el.addEventListener('touchmove', block, { passive: false })
-    return () => el.removeEventListener('touchmove', block)
-  }, [])
+
+    // 回傳「這一趟是不是歸我管」——touch 那條據此決定要不要吃掉事件
+    const move = (x, y, t) => {
+      const g = gesture.current
+      if (!g) return false
+      if (!g.axis) {
+        const verdict = decideAxis({ moveX: x - g.x0, moveY: y - g.y0, base: g.base, startX: g.x0 })
+        if (verdict === 'giveup') {
+          gesture.current = null
+          return false
+        }
+        if (verdict === 'wait') return false
+        g.axis = 'x'
+        // 記下鎖定點：位移以它為起點才不會一鎖定就跳一段（見 offsetFor 的補回邏輯）
+        g.lockX = x
+        // 過場動畫必須「當下」就關掉，走 state 的話 render 非同步、擋不住那 200ms
+        el.style.transition = 'none'
+      }
+      const dt = t - g.lastT
+      if (dt > 0) g.v = (x - g.lastX) / dt
+      g.lastX = x
+      g.lastT = t
+      g.cur = offsetFor({ base: g.base, clientX: x, x0: g.x0, lockX: g.lockX, width })
+      el.style.transform = `translate3d(${g.cur}px, 0, 0)`
+      return true
+    }
+
+    const end = () => {
+      const g = gesture.current
+      gesture.current = null
+      if (!g || g.axis !== 'x') return
+      swallow.current = true
+      const latchOpen = shouldLatchOpen({ base: g.base, cur: g.cur, v: g.v, width })
+      const target = latchOpen ? -width : 0
+      // 直接寫最終位置，不能只靠 setDx：拖一點點又放開時 dx 沒變（0→0），React 不會
+      // 重新渲染，直接寫入的偏移就留在畫面上收不回來
+      el.style.transition = '' // 交還 class 的 200ms 過場
+      el.style.transform = `translate3d(${target}px, 0, 0)`
+      if (latchOpen) open()
+      else close()
+    }
+
+    const onTouchStart = (e) => {
+      if (e.touches.length !== 1) {
+        gesture.current = null
+        return
+      }
+      const p = e.touches[0]
+      begin(p.clientX, p.clientY, e.timeStamp)
+    }
+
+    const onTouchMove = (e) => {
+      if (e.touches.length !== 1) return
+      const p = e.touches[0]
+      const owned = move(p.clientX, p.clientY, e.timeStamp)
+      // 關鍵：判定為水平就在「這一個」事件上吃掉它，Chrome 才不會接手捲動
+      if (owned && e.cancelable) e.preventDefault()
+    }
+
+    // 滑鼠：拖到元素外也要繼續收事件，故 move/up 掛在 window
+    const onMouseMove = (e) => move(e.clientX, e.clientY, e.timeStamp)
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+      end()
+    }
+    const onMouseDown = (e) => {
+      if (e.button !== 0) return
+      begin(e.clientX, e.clientY, e.timeStamp)
+      window.addEventListener('mousemove', onMouseMove)
+      window.addEventListener('mouseup', onMouseUp)
+    }
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true })
+    el.addEventListener('touchmove', onTouchMove, { passive: false })
+    el.addEventListener('touchend', end)
+    el.addEventListener('touchcancel', end)
+    el.addEventListener('mousedown', onMouseDown)
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart)
+      el.removeEventListener('touchmove', onTouchMove)
+      el.removeEventListener('touchend', end)
+      el.removeEventListener('touchcancel', end)
+      el.removeEventListener('mousedown', onMouseDown)
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [width, open, close])
 
   // 只在開著時掛全域監聽：捲動或點到「這一列以外」就收起來。
   // 依賴用布林而非 dx，免得位置一變就重掛監聽
@@ -84,73 +184,6 @@ export default function SwipeRow({ actions = [], disabled = false, className = '
   }, [shifted, close])
 
   if (list.length === 0 || disabled) return children
-
-  const onPointerDown = (e) => {
-    if (e.button != null && e.button !== 0) return // 只理會主鍵／單指
-    gesture.current = {
-      x0: e.clientX,
-      y0: e.clientY,
-      base: openRef.current ? -width : 0,
-      axis: null,
-      cur: openRef.current ? -width : 0,
-      lastX: e.clientX,
-      lastT: e.timeStamp,
-      v: 0,
-    }
-  }
-
-  const onPointerMove = (e) => {
-    const g = gesture.current
-    if (!g) return
-
-    if (!g.axis) {
-      const verdict = decideAxis({
-        moveX: e.clientX - g.x0,
-        moveY: e.clientY - g.y0,
-        base: g.base,
-        startX: g.x0,
-      })
-      if (verdict === 'giveup') {
-        gesture.current = null
-        return
-      }
-      if (verdict === 'wait') return
-      g.axis = 'x'
-      // 記下鎖定點：位移以它為起點才不會一鎖定就跳一段（見 offsetFor 的補回邏輯）
-      g.lockX = e.clientX
-      e.currentTarget.setPointerCapture?.(e.pointerId)
-      // 過場動畫必須「當下」就關掉，走 state 的話 render 非同步、擋不住那 200ms
-      if (contentRef.current) contentRef.current.style.transition = 'none'
-    }
-
-    const dt = e.timeStamp - g.lastT
-    if (dt > 0) g.v = (e.clientX - g.lastX) / dt
-    g.lastX = e.clientX
-    g.lastT = e.timeStamp
-
-    g.cur = offsetFor({ base: g.base, clientX: e.clientX, x0: g.x0, lockX: g.lockX, width })
-    // 直接寫 DOM：這一段每秒會跑 60–120 次，走 setState 會掉幀
-    if (contentRef.current) {
-      contentRef.current.style.transform = `translate3d(${g.cur}px, 0, 0)`
-    }
-  }
-
-  const onPointerEnd = () => {
-    const g = gesture.current
-    gesture.current = null
-    if (!g || g.axis !== 'x') return
-    swallow.current = true
-    const latchOpen = shouldLatchOpen({ base: g.base, cur: g.cur, v: g.v, width })
-    const target = latchOpen ? -width : 0
-    // 直接寫最終位置，不能只靠 setDx：拖一點點又放開時 dx 沒變（0→0），React 不會
-    // 重新渲染，直接寫入的偏移就留在畫面上收不回來
-    if (contentRef.current) {
-      contentRef.current.style.transition = '' // 交還 class 的 200ms 過場
-      contentRef.current.style.transform = `translate3d(${target}px, 0, 0)`
-    }
-    if (latchOpen) open()
-    else close()
-  }
 
   // 掛在內容層（不是最外框）：抽屜裡的動作鈕是它的兄弟節點，不會被這裡攔到
   const onClickCapture = (e) => {
@@ -191,11 +224,6 @@ export default function SwipeRow({ actions = [], disabled = false, className = '
       </div>
       <div
         ref={contentRef}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerEnd}
-        onPointerCancel={onPointerEnd}
-        onLostPointerCapture={onPointerEnd}
         onClickCapture={onClickCapture}
         className="relative bg-surface select-none [-webkit-touch-callout:none] [touch-action:pan-y] transition-transform duration-200"
         style={{ transform: `translate3d(${dx}px, 0, 0)` }}
