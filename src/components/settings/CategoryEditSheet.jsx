@@ -146,7 +146,7 @@ export default function CategoryEditSheet({ open, category, kind, parentId = nul
               無（中性色）
             </button>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-8 gap-2 justify-items-center">
             {CATEGORY_COLORS.map((c) => (
               <button
                 key={c}

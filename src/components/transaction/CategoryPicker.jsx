@@ -4,9 +4,16 @@ import { faCheck } from '@fortawesome/free-solid-svg-icons'
 import { getIcon } from '../../lib/icons'
 import Sheet from '../Sheet'
 
+const KIND_SECTIONS = [
+  ['expense', '支出'],
+  ['income', '收入'],
+]
+
 // 分類選擇器：左母分類、右子分類（docs/04）。選子分類即提交；
 // 無子項目的母分類（如「未分類」「其他」）可直接提交該母分類。
-export default function CategoryPicker({ open, onClose, categories, value, onSelect }) {
+// groupByKind：呼叫端沒先依 kind 過濾時（搜尋面板要能跨收支挑），左欄改分「支出／收入」兩段；
+// 預設 false 維持「由呼叫端過濾」的原契約，記帳表單那條路徑不受影響。
+export default function CategoryPicker({ open, onClose, categories, value, onSelect, groupByKind = false }) {
   const parents = useMemo(
     () =>
       categories
@@ -46,49 +53,62 @@ export default function CategoryPicker({ open, onClose, categories, value, onSel
     onClose()
   }
 
+  const renderParent = (p) => {
+    const active = p.id === activeParentId
+    return (
+      <button
+        key={p.id}
+        onClick={() => setActiveParentId(p.id)}
+        className={`flex items-center gap-2.5 w-full p-3 rounded-chip text-left ${
+          active ? 'bg-surface shadow-card' : ''
+        }`}
+      >
+        <span
+          className={`w-[30px] h-[30px] flex-none rounded-chip flex items-center justify-center text-[13px] border ${
+            p.color
+              ? 'border-transparent'
+              : active
+                ? 'bg-brand text-white border-brand'
+                : 'bg-surface text-text-secondary border-line'
+          }`}
+          // 有自訂色就吃自訂色：選中＝實心該色＋白 icon，未選＝同色淡底；沒設色才退回品牌藍
+          style={
+            p.color
+              ? active
+                ? { background: p.color, color: '#fff', borderColor: p.color }
+                : { background: `color-mix(in srgb, ${p.color} 15%, transparent)`, color: p.color }
+              : undefined
+          }
+        >
+          <FontAwesomeIcon icon={getIcon(p.icon)} />
+        </span>
+        <span
+          className={`text-sm flex-1 min-w-0 truncate ${
+            active ? 'font-semibold text-text-primary' : 'font-medium text-text-secondary'
+          }`}
+        >
+          {p.name}
+        </span>
+      </button>
+    )
+  }
+
   return (
     <Sheet open={open} onClose={onClose} title="選擇分類" bodyClassName="flex">
       {/* 母分類 */}
       <div className="w-[148px] flex-none bg-app-bg border-r border-line overflow-y-auto p-2">
-        {parents.map((p) => {
-          const active = p.id === activeParentId
-          return (
-            <button
-              key={p.id}
-              onClick={() => setActiveParentId(p.id)}
-              className={`flex items-center gap-2.5 w-full p-3 rounded-chip text-left ${
-                active ? 'bg-surface shadow-card' : ''
-              }`}
-            >
-              <span
-                className={`w-[30px] h-[30px] flex-none rounded-chip flex items-center justify-center text-[13px] border ${
-                  p.color
-                    ? 'border-transparent'
-                    : active
-                      ? 'bg-brand text-white border-brand'
-                      : 'bg-surface text-text-secondary border-line'
-                }`}
-                // 有自訂色就吃自訂色：選中＝實心該色＋白 icon，未選＝同色淡底；沒設色才退回品牌藍
-                style={
-                  p.color
-                    ? active
-                      ? { background: p.color, color: '#fff', borderColor: p.color }
-                      : { background: `color-mix(in srgb, ${p.color} 15%, transparent)`, color: p.color }
-                    : undefined
-                }
-              >
-                <FontAwesomeIcon icon={getIcon(p.icon)} />
-              </span>
-              <span
-                className={`text-sm flex-1 min-w-0 truncate ${
-                  active ? 'font-semibold text-text-primary' : 'font-medium text-text-secondary'
-                }`}
-              >
-                {p.name}
-              </span>
-            </button>
-          )
-        })}
+        {groupByKind
+          ? KIND_SECTIONS.map(([kind, label]) => {
+              const list = parents.filter((p) => p.kind === kind)
+              if (list.length === 0) return null
+              return (
+                <div key={kind}>
+                  <div className="text-xs font-semibold text-text-tertiary px-2.5 pt-2 pb-1.5">{label}</div>
+                  {list.map(renderParent)}
+                </div>
+              )
+            })
+          : parents.map(renderParent)}
       </div>
 
       {/* 子分類 */}

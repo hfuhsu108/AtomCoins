@@ -24,10 +24,12 @@ import {
   replaceTransactionGroup,
   createInstallmentPlan,
   createRecurringRule,
+  updateRecurringRule,
   createStockTransaction,
   updateStockTransaction,
   recordInvoice,
   createTemplate,
+  updateTemplate,
 } from '../../db/repo'
 import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
 import { useConfirm } from '../ConfirmSheet'
@@ -40,7 +42,8 @@ import {
 import { newId } from '../../lib/id'
 import { settlementStatus } from '../../lib/engine'
 import { resolveMerchant, merchantSuggestions } from '../../lib/merchant'
-import { todayStr, formatMd, advanceDate } from '../../lib/date'
+import { todayStr, formatMd, advanceDate, addDays, dayOfMonth, parseDate, WEEKDAYS } from '../../lib/date'
+import { processRecurringRules } from '../../lib/recurring'
 import { formatNumber } from '../../lib/format'
 import { getIcon, ACCOUNT_TYPE_ICON } from '../../lib/icons'
 import { toAmount, hasOperator, prettyExpr, applyKey } from '../../lib/calc'
@@ -182,7 +185,42 @@ function stateFromTemplate(template) {
   return base
 }
 
-export default function TransactionForm({ initialTx = null, initialStock = null, initialInvoice = null, onClose, onSaved, onDelete, deleteBusy = false, deleteError = null }) {
+// 從既有週期規則回填表單（設定頁「週期性收支」編輯用）。payload 就是一筆交易的形狀，
+// 直接沿用 stateFromTx，再把日期換成規則的下次發生日、frequency/postingMode 還原成表單狀態。
+function stateFromRule(rule) {
+  const p = rule.payload ?? {}
+  return {
+    ...stateFromTx({ ...p, tradeDate: rule.nextDate, postingDate: null }),
+    recurring: {
+      unit: rule.frequency?.unit ?? 'month',
+      interval: rule.frequency?.interval ?? 1,
+      mode: rule.postingMode ?? 'immediate',
+    },
+  }
+}
+
+// 選了「每月幾號」「每週星期幾」之後，把首次發生日跳到最近一個符合的日子（含今天）。
+// 只用來給預設值，使用者仍可在日期欄手動改成任何一天。
+function nextDateOfMonthDay(day, from = todayStr()) {
+  const d = parseDate(from)
+  const y = d.getFullYear()
+  const m = d.getMonth() + 1
+  const inThisMonth = dayOfMonth(y, m, day)
+  if (inThisMonth >= from) return inThisMonth
+  return dayOfMonth(m === 12 ? y + 1 : y, m === 12 ? 1 : m + 1, day)
+}
+
+function nextDateOfWeekday(weekday, from = todayStr()) {
+  return addDays(from, (weekday - parseDate(from).getDay() + 7) % 7)
+}
+
+// 編輯既有範本：payload 是交易欄位子集，用 stateFromTx 完整回填（含金額）。
+// 與 stateFromTemplate 的差別是那個為「套用範本去記一筆」而刻意清空金額，這裡是要改範本本身。
+function stateFromTemplateEdit(template) {
+  return stateFromTx({ ...(template.payload ?? {}), tradeDate: todayStr(), postingDate: null })
+}
+
+export default function TransactionForm({ initialTx = null, initialStock = null, initialInvoice = null, ruleMode = false, initialRule = null, templateMode = false, initialTemplate = null, onClose, onSaved, onDelete, deleteBusy = false, deleteError = null }) {
   const settings = useSettings()
   const accounts = useCollection('accounts')
   const categories = useCollection('categories')
@@ -197,7 +235,11 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
   const [stockState, setStockState] = useState(() => initStockState(initialStock, accounts))
 
   const [state, setState] = useState(() =>
-    initialTx
+    initialRule
+      ? stateFromRule(initialRule)
+      : initialTemplate
+      ? stateFromTemplateEdit(initialTemplate)
+      : initialTx
       ? stateFromTx(initialTx)
       : initialInvoice
         ? stateFromInvoice(
@@ -221,7 +263,8 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           counterpartyId: null,
           reconciled: false,
           installment: null, // { periods, startDate, fundingAccountId }
-          recurring: null, // { unit, interval, mode }
+          // 事先設定規則時 RecurringBox 常駐且沒有開關，故一進來就要有值
+          recurring: ruleMode ? { unit: 'month', interval: 1, mode: 'immediate' } : null, // { unit, interval, mode }
           advancedBy: null, // 由他人代墊：對象 id
         },
   )
@@ -243,6 +286,10 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
   const defaultAccountId = settings?.defaultAccountId ?? null
   const accountId = state.accountId ?? defaultAccountId
   const fromAccountId = state.fromAccountId ?? defaultAccountId
+
+  // 只產出 payload、不實際記一筆的兩種模式（週期規則、範本）共用同一批「關掉不相干區塊」的判斷：
+  // 入帳日、已對帳、分期、代墊應收都是「那一筆交易」才有的概念，存進 payload 沒有意義或會被丟掉
+  const payloadOnly = ruleMode || templateMode
 
   const { type } = state
   const typeMeta = TYPES.find((t) => t.id === type)
@@ -552,14 +599,62 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
   const { run, busy, error } = useAsyncAction()
   const { confirm, confirmElement } = useConfirm()
 
+  // 規則清單的顯示名稱：備註 → 第一個有分類的分類名 → 型別。少了退路整排都會叫「支出」
+  const ruleName = () => {
+    const note = state.note.trim()
+    if (note) return note
+    const catId = state.splits.find((s) => s.categoryId)?.categoryId
+    return lookups.cat[catId]?.name || typeMeta?.label || '週期項目'
+  }
+
   const save = () => {
-    if (!canSave) return
+    // 範本可以只有分類沒有金額（套用時再填），故換一套可存判準
+    if (templateMode ? !canSaveTemplate : !canSave) return
 
     run(async () => {
       if (isStock) {
         const record = buildStockRecord(stockState, brokers)
         await settle(initialStock ? updateStockTransaction(initialStock.id, record) : createStockTransaction(record))
         onSaved?.()
+        return
+      }
+
+      // 事先設定週期規則：不記任何交易，只寫規則。payload 用 buildList 的主筆（欄位與一般交易
+      // 完全相同，觸發時由 processRecurringRules 覆寫日期）。與「記一筆順便設週期」最大的差別是
+      // nextDate 直接採用使用者指定的首次發生日，不再往後推一期。
+      if (ruleMode) {
+        const list = buildList()
+        if (list.length === 0) return
+        const r = state.recurring
+        const data = {
+          name: ruleName(),
+          payload: { ...list[0] },
+          frequency: {
+            unit: r.unit,
+            interval: r.interval ?? 1,
+            // 錨定「幾號」，否則 31 號的規則被 2 月夾成 28 之後就再也回不到 31（見 date.js advanceDate）
+            ...(r.unit === 'week' ? {} : { anchorDay: Number(state.tradeDate.slice(8, 10)) }),
+          },
+          postingMode: r.mode,
+          nextDate: state.tradeDate,
+        }
+        // 編輯時刻意不寫 isActive：patch 語義下不帶這個 key，才不會把使用者按過的「暫停」打開
+        await settle(initialRule ? updateRecurringRule(initialRule.id, data) : createRecurringRule(data))
+        // 首次發生日就是今天且為自動入帳時，讓它當場生效，而不是等下次開 app
+        await settle(processRecurringRules())
+        onSaved?.()
+        return
+      }
+
+      // 範本：同樣只存 payload、不記交易。新增要先取名（沿用既有的「存為範本」流程），
+      // 編輯則直接覆蓋 payload，名稱另由清單的「改名」處理。
+      if (templateMode) {
+        if (initialTemplate) {
+          await settle(updateTemplate(initialTemplate.id, { payload: buildTemplatePayload() }))
+          onSaved?.()
+        } else {
+          setTplNameOpen(true)
+        }
         return
       }
 
@@ -661,7 +756,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
 
   // ── 範本（docs/09 批次 2）───────────────────────────────────
   // 顯示範本 chips：純新增（非編輯／歸帳／股票）且有範本
-  const showTemplateChips = !initialTx && !initialInvoice && !isStock && templates.length > 0
+  const showTemplateChips = !initialTx && !initialInvoice && !payloadOnly && !isStock && templates.length > 0
   const applyTemplate = (t) => setState(stateFromTemplate(t))
 
   // 存為範本可用性：股票／分期／週期／代墊（雙向）不可存；且需有實質內容
@@ -711,6 +806,8 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
     run(async () => {
       await settle(createTemplate({ name, payload: buildTemplatePayload(), sortOrder: Date.now() }))
       setTplNameOpen(false)
+      // 從設定頁「新增範本」進來的，存完就把整張表單收掉
+      if (templateMode) onSaved?.()
     })
   }
 
@@ -734,7 +831,13 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
         >
           <FontAwesomeIcon icon={faXmark} />
         </button>
-        <span className="text-base font-semibold">{initialTx ? '編輯記錄' : initialInvoice ? '歸帳' : '記帳'}</span>
+        <span className="text-base font-semibold">
+          {ruleMode
+            ? initialRule ? '編輯週期規則' : '新增週期規則'
+            : templateMode
+              ? initialTemplate ? '編輯範本' : '新增範本'
+              : initialTx ? '編輯記錄' : initialInvoice ? '歸帳' : '記帳'}
+        </span>
         <div className="flex items-center gap-2">
           {onDelete && (
             <button
@@ -747,7 +850,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           )}
           <button
             onClick={save}
-            disabled={!canSave || busy}
+            disabled={(templateMode ? !canSaveTemplate : !canSave) || busy}
             className="flex items-center gap-1.5 h-[38px] px-4 rounded-btn bg-brand text-white text-[13px] font-semibold disabled:opacity-40"
           >
             <FontAwesomeIcon icon={faCheck} className="text-xs" /> 儲存
@@ -764,6 +867,9 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
       <div className="flex gap-2 px-3.5 py-3 bg-surface border-b border-line overflow-x-auto flex-none">
         {TYPES
           .filter((t) => t.id !== 'stock' || isStock || !initialTx)
+          // 週期規則只支援收支（與原本「記一筆順便設週期」的能力一致）；範本另外支援轉帳與借還款，只排除股票
+          .filter((t) => !ruleMode || t.id === 'expense' || t.id === 'income')
+          .filter((t) => !templateMode || t.id !== 'stock')
           .map((t) => {
             const active = t.id === type
             return (
@@ -831,15 +937,22 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
                 />
                 {accountObj?.name ?? '選擇帳戶'}
               </button>
-              <label className={`${chipBase} relative cursor-pointer`}>
-                <FontAwesomeIcon icon={faCalendarDays} className="text-text-secondary text-xs" />
-                {state.tradeDate === todayStr() ? `今天 ${formatMd(state.tradeDate)}` : formatMd(state.tradeDate)}
-                <DateInput
-                  value={state.tradeDate}
-                  onChange={(e) => e.target.value && set({ tradeDate: e.target.value })}
-                  className="absolute inset-0 opacity-0 cursor-pointer"
-                />
-              </label>
+              {/* 範本不記日期（套用時一律當天），故不顯示這一格 */}
+              {!templateMode && (
+                <label className={`${chipBase} relative cursor-pointer`}>
+                  <FontAwesomeIcon icon={faCalendarDays} className="text-text-secondary text-xs" />
+                  {ruleMode
+                    ? `首次 ${formatMd(state.tradeDate)}`
+                    : state.tradeDate === todayStr()
+                      ? `今天 ${formatMd(state.tradeDate)}`
+                      : formatMd(state.tradeDate)}
+                  <DateInput
+                    value={state.tradeDate}
+                    onChange={(e) => e.target.value && set({ tradeDate: e.target.value })}
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                  />
+                </label>
+              )}
             </div>
           )}
         </div>
@@ -893,7 +1006,9 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
                 應收與應付互斥，各自 active 時的高亮是移除 toggle 後唯一的開關狀態指示。*/}
             <div className="flex gap-1.5 mt-3">
               <ActionBtn icon={faScissors} label="拆帳" onClick={addSplit} />
-              {type === 'expense' && (
+              {/* 週期規則只存得下主筆：代墊會拆出獨立的應收，每期都會靜默丟掉那一筆，故不提供。
+                  一般拆帳不受影響（仍是同一筆交易的多個拆帳列）。*/}
+              {type === 'expense' && !payloadOnly && (
                 <ActionBtn
                   icon={faHandHoldingDollar}
                   label="應收"
@@ -930,6 +1045,19 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
               </div>
             )}
 
+            {/* 事先設定規則時，週期設定是主角：常駐在備註上方，不摺進進階區 */}
+            {ruleMode && (
+              <div className="mt-2.5">
+                <RecurringBox
+                  recurring={state.recurring}
+                  onSet={setRecurring}
+                  hideToggle
+                  firstDate={state.tradeDate}
+                  onFirstDate={(v) => set({ tradeDate: v })}
+                />
+              </div>
+            )}
+
             {/* 備註常駐可見（不再摺進進階），入帳日等其餘設定維持在進階 */}
             <div className="mt-2.5">
               <NoteRow note={state.note} onChange={(v) => set({ note: v })} />
@@ -954,22 +1082,25 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
                   suggestions={merchantSugg}
                   onSetAlias={initialInvoice ? () => setAliasSheetOpen(true) : null}
                 />
-                {!state.installment && (
+                {/* 規則本身沒有「入帳日」「已對帳」，那是每期實際產生交易時才有的概念 */}
+                {!state.installment && !payloadOnly && (
                   <PostingDateRow
                     tradeDate={state.tradeDate}
                     postingDate={state.postingDate}
                     onChange={(v) => set({ postingDate: v })}
                   />
                 )}
-                <ToggleRow
-                  label="已對帳"
-                  on={state.reconciled}
-                  onToggle={() => set({ reconciled: !state.reconciled })}
-                />
+                {!payloadOnly && (
+                  <ToggleRow
+                    label="已對帳"
+                    on={state.reconciled}
+                    onToggle={() => set({ reconciled: !state.reconciled })}
+                  />
+                )}
 
                 {/* 分期付款（僅支出＋信用卡帳戶；新增時可設定；歸帳不提供）
                     與「由他人代墊」互斥：分期只寫 expense＋N 筆轉帳，會靜默丟掉應付那筆 */}
-                {type === 'expense' && !initialTx && !initialInvoice && !state.advancedBy && (
+                {type === 'expense' && !initialTx && !initialInvoice && !state.advancedBy && !payloadOnly && (
                   <InstallmentBox
                     enabled={isCardAccount}
                     installment={state.installment}
@@ -983,7 +1114,8 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
 
                 {/* 週期性收支（新增、非分期時可設定；歸帳不提供）
                     與「由他人代墊」互斥：規則 payload 只留主筆，每期都會漏記應付 */}
-                {!initialTx && !initialInvoice && !state.installment && !state.advancedBy && (
+                {/* ruleMode 時這一區改為常駐在備註上方（規則設定是主角，不該摺在進階裡）*/}
+                {!initialTx && !initialInvoice && !state.installment && !state.advancedBy && !payloadOnly && (
                   <RecurringBox recurring={state.recurring} onToggle={toggleRecurring} onSet={setRecurring} />
                 )}
               </div>
@@ -1053,7 +1185,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
         )}
 
         {/* 存為範本（純新增模式；股票／分期／週期／代墊拆帳不可存）*/}
-        {!initialTx && !initialInvoice && (
+        {!initialTx && !initialInvoice && !payloadOnly && (
           <div className="px-3.5 pb-4">
             <button
               onClick={() => setTplNameOpen(true)}
@@ -1625,7 +1757,12 @@ const MODE_HINT = {
   reminder: '到期在通知區提醒，手動確認才記',
 }
 
-function RecurringBox({ recurring, onToggle, onSet }) {
+const UNIT_NOUN = { week: '週', month: '個月', year: '年' }
+
+// hideToggle / firstDate / onFirstDate 只有「事先設定規則」那條路徑會給：
+// 從記帳表單順手設週期時，首期日是由記錄日往後推算的，沒有獨立的「首次發生日」可調，
+// 那條路徑也就沒有「幾號／星期幾」可選（它一定跟著那筆交易的日期走）。
+function RecurringBox({ recurring, onToggle, onSet, hideToggle = false, firstDate = null, onFirstDate = null }) {
   const on = !!recurring
   const UNITS = [
     ['week', '每週'],
@@ -1637,24 +1774,97 @@ function RecurringBox({ recurring, onToggle, onSet }) {
     ['deferred', '提前產生'],
     ['reminder', '僅提醒'],
   ]
+  const unit = recurring?.unit ?? 'month'
+  const interval = recurring?.interval ?? 1
+  const editable = !!onFirstDate && !!firstDate
+  const anchorDay = editable ? Number(firstDate.slice(8, 10)) : null
+  const anchorWeekday = editable ? parseDate(firstDate).getDay() : null
+
   return (
     <div className="bg-surface border border-line rounded-modal p-3 flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-text-secondary">設為週期性</span>
-        <Toggle checked={on} onChange={onToggle} label="設為週期性" />
-      </div>
+      {!hideToggle && (
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-text-secondary">設為週期性</span>
+          <Toggle checked={on} onChange={onToggle} label="設為週期性" />
+        </div>
+      )}
       {on && (
         <>
           <div>
             <div className="text-[11px] text-text-tertiary mb-1.5">頻率</div>
             <div className="flex gap-1.5">
               {UNITS.map(([u, l]) => (
-                <Chip key={u} active={recurring.unit === u} onClick={() => onSet({ unit: u })}>
+                <Chip key={u} active={unit === u} onClick={() => onSet({ unit: u })}>
                   {l}
                 </Chip>
               ))}
             </div>
           </div>
+
+          <div className="flex items-center justify-between text-[13px]">
+            <span className="text-text-secondary">間隔</span>
+            <span className="flex items-center gap-1.5 font-semibold">
+              每
+              <input
+                type="number"
+                min="1"
+                max="99"
+                value={interval}
+                onChange={(e) => onSet({ interval: Math.min(99, Math.max(1, Number(e.target.value) || 1)) })}
+                className="w-14 h-8 px-2 text-center bg-surface-alt border border-line rounded-btn tabular-nums outline-none"
+              />
+              {UNIT_NOUN[unit]}
+            </span>
+          </div>
+
+          {editable && unit === 'week' && (
+            <div>
+              <div className="text-[11px] text-text-tertiary mb-1.5">星期幾</div>
+              <div className="grid grid-cols-7 gap-1">
+                {WEEKDAYS.map((w, i) => (
+                  <Chip key={w} active={anchorWeekday === i} onClick={() => onFirstDate(nextDateOfWeekday(i))}>
+                    {w}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {editable && unit !== 'week' && (
+            <div>
+              <div className="text-[11px] text-text-tertiary mb-1.5">
+                {unit === 'year' ? '幾號（月份看首次發生日）' : '每月幾號'}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                  <Chip key={d} active={anchorDay === d} onClick={() => onFirstDate(nextDateOfMonthDay(d))}>
+                    {d}
+                  </Chip>
+                ))}
+              </div>
+              {anchorDay > 28 && (
+                <p className="text-[11px] text-text-tertiary mt-1.5">
+                  沒有 {anchorDay} 號的月份會落在該月最後一天，之後仍回到 {anchorDay} 號
+                </p>
+              )}
+            </div>
+          )}
+
+          {editable && (
+            <div className="flex items-center justify-between text-[13px]">
+              <span className="text-text-secondary">首次發生日</span>
+              <label className="relative font-semibold cursor-pointer flex items-center gap-1.5">
+                <FontAwesomeIcon icon={faCalendarDays} className="text-text-secondary text-xs" />
+                {formatMd(firstDate)}
+                <DateInput
+                  value={firstDate}
+                  onChange={(e) => e.target.value && onFirstDate(e.target.value)}
+                  className="absolute inset-0 opacity-0 cursor-pointer"
+                />
+              </label>
+            </div>
+          )}
+
           <div>
             <div className="text-[11px] text-text-tertiary mb-1.5">入帳方式</div>
             <div className="flex gap-1.5">

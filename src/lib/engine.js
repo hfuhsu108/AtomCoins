@@ -25,14 +25,19 @@ export function transactionPostings(tx) {
         postings.push({ accountId: tx.fromAccountId, amount: -tx.fee, date: tx.postingDate })
       }
       break
+    // 期初餘額（isOpening）：開始記帳前就存在的債權債務，本金那筆現金早就流動過了，
+    // 再扣一次會讓帳戶餘額憑空短少。但**只跳過本金**——之後登錄的還款是真實的現金進出，
+    // 必須照常入帳。這點與股票期初持股不同，那邊整筆回空（stockPostings）是因為期初持股
+    // 沒有「後續還款」這種附加現金流。未結清金額與淨資產不受影響：兩者都走 outstandingAsOf，
+    // 只看 amount 與 repayments，不看 postings。
     case 'receivable': // 借出：資金離開帳戶，還款再回來
-      postings.push({ accountId: tx.accountId, amount: -tx.amount, date: tx.postingDate })
+      if (!tx.isOpening) postings.push({ accountId: tx.accountId, amount: -tx.amount, date: tx.postingDate })
       for (const r of tx.repayments ?? []) {
         postings.push({ accountId: r.accountId, amount: r.amount, date: r.date })
       }
       break
     case 'payable': // 借入：資金進入帳戶，還款再離開
-      postings.push({ accountId: tx.accountId, amount: tx.amount, date: tx.postingDate })
+      if (!tx.isOpening) postings.push({ accountId: tx.accountId, amount: tx.amount, date: tx.postingDate })
       for (const r of tx.repayments ?? []) {
         postings.push({ accountId: r.accountId, amount: -r.amount, date: r.date })
       }

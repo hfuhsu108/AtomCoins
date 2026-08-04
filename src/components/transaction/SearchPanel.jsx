@@ -268,12 +268,14 @@ export default function SearchPanel({ txns, categories, accounts, lookups, hidde
         </>
       )}
 
+      {/* 篩選要能跨收支挑分類，故不像記帳表單那樣先依 kind 過濾，改請 picker 分兩段顯示 */}
       <CategoryPicker
         open={catOpen}
         onClose={() => setCatOpen(false)}
         categories={categories}
         value={categoryId}
         onSelect={setCategoryId}
+        groupByKind
       />
       <AccountPicker
         open={accOpen}

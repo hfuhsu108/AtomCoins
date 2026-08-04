@@ -35,11 +35,16 @@ const REGISTRY = {
 // 所有呼叫端（含在資料整形階段就取 icon 物件的 TransactionRow／FlowReport）都不必改。
 const customCache = new Map()
 
+// 快取 key 與 prefix 都要帶風格：solid 與 brands 有同名圖示（如 rebel），
+// 只用 n 當 key 會讓先渲染的那個把另一個的字形蓋掉。
+// 舊資料沒有 s 欄位（目錄原本只收 solid），一律當 solid 解讀。
 function toDefinition(v) {
-  const hit = customCache.get(v.n)
+  const prefix = v.s ?? 'fas'
+  const key = `${prefix}:${v.n}`
+  const hit = customCache.get(key)
   if (hit) return hit
-  const def = { prefix: 'fas', iconName: v.n, icon: [v.w, v.h, [], '', v.p] }
-  customCache.set(v.n, def)
+  const def = { prefix, iconName: v.n, icon: [v.w, v.h, [], '', v.p] }
+  customCache.set(key, def)
   return def
 }
 
@@ -81,10 +86,13 @@ export const ICON_KEYWORDS_ZH = {
 }
 
 // 分類顏色色盤（docs/09 後續調整）：中間色調，深淺主題皆可讀；null=不上色（用中性底）
+// 24 色依色相排成 3×8（色盤 UI 用 grid-cols-8）。原有 15 色一律保留原值不動——
+// 存量分類直接存 hex，改值會讓既有分類在編輯時找不到自己那顆、看不到選中環。
+// 同色相成對者以明度區分（如 #74B816 亮／#5C940D 深），不靠色相硬擠。
 export const CATEGORY_COLORS = [
-  '#E03131', '#F76707', '#F08C00', '#F59F00', '#74B816', '#2F9E44',
-  '#0CA678', '#1098AD', '#1971C2', '#3B5BDB', '#6741D9', '#9C36B5',
-  '#C2255C', '#E64980', '#868E96',
+  '#FA5252', '#E03131', '#F76707', '#D9480F', '#F08C00', '#F59F00', '#9C6B30', '#5C940D',
+  '#74B816', '#2F9E44', '#099268', '#0CA678', '#1098AD', '#0B7285', '#339AF0', '#1971C2',
+  '#3B5BDB', '#845EF7', '#6741D9', '#CC5DE8', '#9C36B5', '#C2255C', '#E64980', '#868E96',
 ]
 
 // 帳戶類型 → 預設 icon 名稱（docs/04 Font Awesome 對應）

@@ -70,25 +70,23 @@ export function dayOfMonth(year, month, day) {
   return `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
 
-// 依頻率把日期往後推一個週期。frequency = { unit:'week'|'month'|'year', interval:n }
-export function advanceDate(str, { unit, interval = 1 } = {}) {
+// 依頻率把日期往後推一個週期。frequency = { unit:'week'|'month'|'year', interval:n, anchorDay?:1-31 }
+// anchorDay＝使用者指定的「每月幾號」。沒有它的話只能拿上一期的日往後推，而「每月 31 號」
+// 一旦在 2 月被夾成 28，之後就從 28 再推 → 3 月變 28、4 月 28…永久回不到 31。
+// 帶著 anchorDay 每期都從原始錨點重算，被夾的月份只影響那一個月。week 不需要（+7 天不會漂）。
+export function advanceDate(str, { unit, interval = 1, anchorDay } = {}) {
   // 未知 unit 若靜默走 month 分支會產出 'NaN-…' 髒日期並寫回規則使其永久失效；fail loud
   if (unit !== 'week' && unit !== 'month' && unit !== 'year') {
     throw new Error(`未知的週期單位：${unit}`)
   }
   if (unit === 'week') return addDays(str, 7 * interval)
   const d = parseDate(str)
-  const day = d.getDate()
-  if (unit === 'year') {
-    d.setFullYear(d.getFullYear() + interval)
-  } else {
-    // month：先設 1 號避免跨月溢位，再夾回原日（或月底）
-    const y = d.getFullYear()
-    const m = d.getMonth() + interval // 0-based
-    const ny = y + Math.floor(m / 12)
-    const nm = ((m % 12) + 12) % 12
-    const last = new Date(ny, nm + 1, 0).getDate()
-    return `${ny}-${String(nm + 1).padStart(2, '0')}-${String(Math.min(day, last)).padStart(2, '0')}`
-  }
-  return todayStr(d)
+  const day = anchorDay ?? d.getDate()
+  // month 與 year 走同一套「算出年月、再把日夾到當月月底」，避免 Date 的跨月溢位
+  // （setFullYear 遇到 2/29 會滑到 3/1，那是漂移不是夾住）
+  const monthDelta = unit === 'year' ? 0 : interval
+  const m = d.getMonth() + monthDelta
+  const ny = d.getFullYear() + (unit === 'year' ? interval : 0) + Math.floor(m / 12)
+  const nm = ((m % 12) + 12) % 12
+  return dayOfMonth(ny, nm + 1, day)
 }

@@ -514,6 +514,73 @@ v1.1.4 上線後實際使用暴露的六個摩擦點，性質都是「補完既�
 
 **全部六批＋兩個 bug 修復皆已使用者實機測試驗收通過（2026-07-28），發布 v1.2.0。**
 
+## 後續調整（2026-08-05，第七批：選擇器擴充、週期規則事先設定、設定頁管理器化）
+
+使用者回報的七項，分兩輪交付、皆已驗收通過，發布 v1.6.0。
+
+### ① 圖示目錄擴到 1988（實心＋品牌）
+
+`scripts/gen-icon-catalog.mjs` 從只收 `free-solid` 改成 `[['fas', solid], ['fab', brands]]`。**刻意不收 `free-regular`**——實測它那 169 個 `iconName` 與 solid 完全重複（同一圖示的細線版），收進來只是讓每個名字出現兩次。實測數量：solid 唯一 1422、regular 169、brands 566；`solid∩regular = 169`、`solid∩brands = 2`（`font-awesome`、`web-awesome`）。故 1422＋566−2＝**1988**，這是 FA 免費版不重複圖示的天花板（官方宣稱的「2000+」是三套風格加總的 2157 個變體）。
+
+- 去重 key 從 `iconName` 改為 `` `${prefix}:${iconName}` ``；entry 加 `s` 欄位，**solid 省略不寫**（既有已存的分類資料沒有這個欄位，讀取端一律以「缺 `s` ＝ solid」解讀，向下相容且省約 10 KB）。
+- `lib/icons.js` 的 `toDefinition` **快取 key 與 prefix 都必須帶風格**（`` `${v.s ?? 'fas'}:${v.n}` ``）——不改的話同名的實心與品牌會共用快取，先渲染的那個會把另一個的字形蓋掉。`getIcon` 簽章與 14 個呼叫端零改動。
+- `IconPickerSheet`：加「實心／品牌」風格分頁（分頁對搜尋一律生效，切到品牌才搜得到 LINE、Apple）；`LIMIT = 120` 改成 `visibleCount` 分頁（每次 +160），移除搜尋迴圈裡的 `starts.length >= LIMIT` 早退（要完整命中清單才能分頁）；React key 加 prefix 前綴。
+- 目錄檔 800 KB → 1357 KB。已驗證 **brands 套件沒有進前端主 chunk**（品牌圖示名 grep 命中 0）、`fa-icons.json` 仍不進 PWA 預快取。
+
+**捲動載入用 scroll 事件而非 IntersectionObserver，且必須另留一顆「載入更多」按鈕**：螢幕夠高時一頁可能填不滿捲動空間，捲不動就等於剩下的永遠載不出來。（驗證環境限制見 pitfalls-services 第 9 節。）
+
+### ② 分類／標籤色盤 15 → 24 色
+
+`CATEGORY_COLORS` 保留既有 15 色**原值不動**（存量分類直接存 hex，改值會讓既有分類在編輯時找不到自己那顆、看不到選中環），新增 9 色並依色相排成 3×8：`#FA5252` 亮紅、`#D9480F` 磚橘、`#9C6B30` 棕（補齊完全缺席的土色系）、`#5C940D` 橄欖、`#099268` 松綠、`#0B7285` 深湖藍、`#339AF0` 天藍、`#845EF7` 亮紫、`#CC5DE8` 蘭花紫。同色相成對者以明度區分。兩處色盤 UI（`CategoryEditSheet`、`TagEditSheet`）從 `flex flex-wrap` 改 `grid grid-cols-8 justify-items-center`。
+
+### ③ 明細頁搜尋的分類選單分收支兩段
+
+`SearchPanel` 原本把 `categories` 原樣傳進 `CategoryPicker`，沒有像 `TransactionForm` 那樣先 `filter(c => c.kind === type)`。修法是給 `CategoryPicker` 加**可選 prop `groupByKind`（預設 false）**：為真時左欄母分類分「支出」「收入」兩段顯示。預設值維持「由呼叫端過濾」的原契約，記帳表單那條主路徑零影響。
+
+### ④ 週期性收支可事先設定（不必先記一筆）
+
+設定頁的「週期性收支」原本只能列出／暫停／刪除，**沒有新增也沒有編輯**（空狀態文案還在叫使用者回記帳表單建立）。新增 `components/settings/RecurringManager.jsx`，新增與編輯都開整張記帳表單（`ruleMode`）——規則的 `payload` 本來就是一筆交易，另寫精簡表單等於把金額鍵盤、拆帳、分類選擇器再實作一次，口徑必然分岔。
+
+- `TransactionForm` 加 `ruleMode` / `initialRule`；`stateFromRule` 直接重用 `stateFromTx`（payload 是交易形狀），再覆寫日期與 `recurring`。
+- **`nextDate` 語義差異**：事先設定時直接採用使用者指定的首次發生日，**不呼叫 `advanceDate`**（這正是與「記一筆順便設週期」的分野）。日期欄標籤在 ruleMode 顯示「首次 M/D」。
+- 編輯時 patch **刻意不含 `isActive`**，靠 patch 語義保留使用者按過的「暫停」。存完呼叫一次 `processRecurringRules()`，讓「首次＝今天＋自動入帳」當場生效。
+- 表單走**本地 fixed overlay 而非路由**：設定頁的 `section` 是純 local state，導去 `/add` 再回來會掉回選單。
+- `ruleMode` 關掉：範本 chips、存為範本、分期、代墊應收／應付、入帳日、已對帳；型別只留支出／收入。**「應收」（代墊拆帳）必須關**——它會讓 `buildList` 產出兩筆而規則只存主筆，每期都會靜默丟掉應收那筆。一般拆帳不受影響（仍是同一筆交易的多個拆帳列）。
+
+### ⑤ 週期規則新增「幾號／星期幾」與「隔 N 期」，並修掉日期永久漂移
+
+`advanceDate` **本來就支援 `interval`**（`addDays(str, 7*interval)`、`m + interval`），只是 UI 把它寫死 1。真正要修的是漂移：原本從「上一期的日期」往後推，所以「每月 31 號」在 2 月被夾成 28 之後，3 月會從 28 再推 → **永遠回不到 31**。
+
+修法是 `frequency` 增加可選欄位 `anchorDay`（1–31，month／year 用；week 不需要，+7 天不會漂），`advanceDate` 的 `const day = anchorDay ?? d.getDate()`——每期都從原始錨點重算，被夾的月份只影響那一個月。順帶把 year 分支從 `setFullYear` 改成與 month 同款的夾月底寫法（原寫法遇 2/29 會滑到 3/1，那是漂移不是夾住）。**沒有 `anchorDay` 的既有規則走原路徑，行為完全不變。**
+
+`RecurringBox` 擴充：間隔數字輸入（1–99，邊界夾住）、每月幾號（1–31 grid，選 31 時提示月底行為）、每週星期幾（沿用 `WEEKDAYS`）、首次發生日常駐（`DateInput`，選幾號／星期幾時自動重算，也可手動覆寫）。
+
+離線驗算 19/19：31 號連推 6 期不漂移（對照組確認舊行為真的會停在 28）、閏年 2/29 年度規則在 2032 回到 29、interval 2/3 的三種單位、既有行為回歸、非法 unit 仍 fail loud。
+
+### ⑥ 範本可在設定頁新增與改內容；範本／週期清單套用左滑抽屜
+
+- 新增 `components/settings/TemplateManager.jsx`，把 `templateSummary`／`TemplateRenameSheet` 從 `SettingsPage` 搬過來。
+- `TransactionForm` 加 `templateMode` / `initialTemplate`，並把 `ruleMode` 的「只存 payload」判斷抽成共用的 **`payloadOnly = ruleMode || templateMode`**（入帳日、已對帳、分期、代墊應收、存為範本、範本 chips 一律共用同一批條件）。範本另支援轉帳與借還款，只排除股票；不顯示日期欄（套用時一律當天）；`canSave` 換成 `canSaveTemplate`（範本可以只有分類沒有金額）。新增範本沿用既有的 `TemplateNameSheet` 取名流程，編輯則直接覆蓋 `payload`。
+- 兩個清單都改用 `SwipeRow`：**單擊列＝編輯內容**，抽屜放其餘動作（範本「改名／刪除」、週期「暫停／啟用」「刪除」）。暫停中的規則在摘要行加註「（已暫停）」——暫停鈕收進抽屜後只剩淡化不夠明顯。容器改 `overflow-hidden`、左右 padding 移到列上（同 v1.4.0 `StockPanel` 漏改導致方角抽屜外露的坑）。
+
+### ⑦ 借貸對象可填期初餘額
+
+新增對象時多一區「期初借貸餘額（選填）」：他欠我／我欠他、金額、起算日；建立時寫一筆帶 `isOpening: true` 的 `receivable`／`payable`。
+
+**不可照抄股票期初持股**：`stockPostings` 對 `isOpening` 是整筆回空，但借貸不行——期初借出之後登錄的還款是真實的現金進帳，必須照常入帳。所以 `transactionPostings` 只跳過**本金**那一筆 posting，`repayments` 迴圈照跑。又因為還款 posting 用的是 `r.accountId` 而非交易的 `accountId`，期初借貸連帳戶都不必選，`accountId` 直接給 `null` 最誠實。未結清金額與淨資產天然不受影響——`outstandingAsOf` 只看 `amount` 與 `repayments`，`netWorth` 對借貸也是走這條獨立路徑而非 `accountBalances`。期初只寫單筆、不設 `linkGroupId`，與手動記一般借貸的既有寫法相同。
+
+離線驗算 13/13：本金不動帳戶（對照組確認一般借出會扣）、還款仍 +2000、未結清與一般借貸同口徑、`loanTotals`／`counterpartyLoanStats` 照算、淨資產正確（期初借出 5000 → 淨資產 +5000；一般借出 → 0）。
+
+### 進度
+
+第一輪（①②③）與第二輪（④⑤）：lint 對改動檔零輸出、`npm run build` 通過、dev server 冒煙驗證（圖示筆數 1988／品牌 566、分頁遞增 160→320→480→640 與載完後入口消失、品牌頁搜 `line` 命中 LINE、中文「咖啡」橋接、24 色票與 `grid-cols-8`、規則表單的幾號／星期幾／間隔連動與邊界夾值、規則模式該關的區塊都不出現）。引擎改動另以 node 離線驗算 19/19。
+
+第三輪（⑥⑦）：lint／build 綠燈、dev server 冒煙通過；期初借貸以 node 驗 13/13。過程中 lint 攔下一個會在執行期直接爆錯的殘留——搬走範本區塊後 `tplLookups` 仍引用已刪除的 `categories`（build 不會抓，runtime 才 ReferenceError）。
+
+**全部七項皆已使用者測試驗收通過（2026-08-05），發布 v1.6.0。**
+
+> **部署注意**：本輪改到 `engine.js` 與 `date.js`，兩者都在 `copy-shared.mjs` 的複製清單內，上線時必須一併 `firebase deploy --only functions`，否則推播的卡費／週期判定會與前端分岔。
+
 ## 保留／明確不做（本輪拍板）
 
 - **Project 單值專案維度**：不做。「一個項目多個標籤」已由 Tag 涵蓋，再做一套單值分群只會重疊。

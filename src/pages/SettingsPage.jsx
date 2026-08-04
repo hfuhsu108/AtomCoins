@@ -11,11 +11,11 @@ import { signInWithGoogle, signOutUser, functions } from '../lib/firebase'
 import { getSubscriptionState, subscribeToPush, unsubscribeFromPush, getPushEnv } from '../lib/push'
 import { useAuth } from '../hooks/useAuth'
 import { accountBalances } from '../lib/engine'
-import { updateRecurringRule, deleteRecurringRule, updateTemplate, deleteTemplate, deleteMerchantAlias, setSortOrders, updateSettings } from '../db/repo'
+import { deleteMerchantAlias, setSortOrders, updateSettings } from '../db/repo'
 import { useAsyncAction, settle } from '../hooks/useAsyncAction'
 import { useConfirm } from '../components/ConfirmSheet'
 import { formatBalance, formatAmount } from '../lib/format'
-import { todayStr, formatMd } from '../lib/date'
+import { todayStr } from '../lib/date'
 import { accountIcon } from '../lib/icons'
 import { useHiddenAmount, EyeButton } from '../components/HiddenAmountProvider'
 import AccountEditSheet from '../components/settings/AccountEditSheet'
@@ -26,7 +26,8 @@ import CounterpartyManager from '../components/settings/CounterpartyManager'
 import TagManager from '../components/settings/TagManager'
 import Toggle from '../components/Toggle'
 import EmptyState from '../components/EmptyState'
-import Sheet from '../components/Sheet'
+import RecurringManager from '../components/settings/RecurringManager'
+import TemplateManager from '../components/settings/TemplateManager'
 
 // build 時間以 ISO（UTC）注入，顯示時轉本地時區
 function formatBuiltAt(iso) {
@@ -44,28 +45,6 @@ const THEME_OPTIONS = [
   { value: 'dark', label: '深色' },
   { value: 'system', label: '跟隨系統' },
 ]
-
-const FREQ_LABEL = { week: '每週', month: '每月', year: '每年' }
-const MODE_LABEL = { immediate: '自動入帳', deferred: '提前產生', reminder: '僅提醒' }
-const TX_TYPE_LABEL = { expense: '支出', income: '收入', transfer: '轉帳', receivable: '應收', payable: '應付' }
-
-// 範本摘要行（docs/09 批次 2）：型別＋分類／帳戶／對象＋金額
-function templateSummary(t, { catById, accById, cpById }) {
-  const p = t.payload ?? {}
-  const parts = [TX_TYPE_LABEL[p.type] ?? '']
-  if (p.type === 'expense' || p.type === 'income') {
-    const names = (p.splits ?? []).map((s) => catById[s.categoryId]?.name).filter(Boolean)
-    if (names.length) parts.push(names.join('、'))
-    const sum = (p.splits ?? []).reduce((a, s) => a + (s.amount ?? 0), 0)
-    if (sum > 0) parts.push(formatAmount(sum))
-  } else if (p.type === 'transfer') {
-    parts.push(`${accById[p.fromAccountId]?.name ?? '?'} → ${accById[p.toAccountId]?.name ?? '?'}`)
-  } else {
-    if (p.counterpartyId) parts.push(cpById[p.counterpartyId]?.name ?? '')
-    if (p.amount > 0) parts.push(formatAmount(p.amount))
-  }
-  return parts.filter(Boolean).join(' · ')
-}
 
 const GROUPS = [
   { type: 'cash', label: '現金' },
@@ -93,12 +72,8 @@ const TITLES = Object.fromEntries(MENU.map((m) => [m.key, m.label]))
 export default function SettingsPage() {
   const accounts = useCollection('accounts')
   const txns = useCollection('transactions')
-  const rules = useCollection('recurringRules')
   const brokers = useCollection('brokers')
   const stockTxns = useCollection('stockTransactions')
-  const templates = useCollection('templates')
-  const categories = useCollection('categories')
-  const counterparties = useCollection('counterparties')
   const merchantAliases = useCollection('merchantAliases')
 
   // 二層導覽：'menu' 或某子區塊 key
@@ -106,7 +81,6 @@ export default function SettingsPage() {
   // editing: undefined=關閉、null=新增、帳戶物件=編輯
   const [editing, setEditing] = useState(undefined)
   const [editingBroker, setEditingBroker] = useState(undefined)
-  const [renamingTemplate, setRenamingTemplate] = useState(null)
   const [editingAlias, setEditingAlias] = useState(undefined)
   const [aliasQuery, setAliasQuery] = useState('')
 
@@ -117,8 +91,6 @@ export default function SettingsPage() {
   const pwa = usePwa()
   const [authError, setAuthError] = useState(null)
   const [uidCopied, setUidCopied] = useState(false)
-  const { run: runRule, error: ruleError } = useAsyncAction()
-  const { run: runTemplate, error: templateError } = useAsyncAction()
   const { run: runAlias, error: aliasError } = useAsyncAction()
   const { run: runOrder } = useAsyncAction()
   const { confirm, confirmElement } = useConfirm()
@@ -148,12 +120,6 @@ export default function SettingsPage() {
         { id: b.id, sortOrder: soA },
       ]))
     })
-  }
-
-  const tplLookups = {
-    catById: Object.fromEntries(categories.map((c) => [c.id, c])),
-    accById: Object.fromEntries(accounts.map((a) => [a.id, a])),
-    cpById: Object.fromEntries(counterparties.map((c) => [c.id, c])),
   }
 
   async function handleSignIn() {
@@ -357,89 +323,11 @@ export default function SettingsPage() {
       </div>
       </>)}
 
-      {/* 週期性收支 */}
-      {section === 'recurring' && (
-        <>
-          <div className="bg-surface border border-line rounded-card shadow-card px-3.5 divide-y divide-line-light">
-            {rules.length === 0 && (
-              <EmptyState title="尚無週期性收支" hint="於記帳表單「進階 → 設為週期性」建立" compact />
-            )}
-            {rules
-              .slice()
-              .sort((a, b) => (a.nextDate < b.nextDate ? -1 : 1))
-              .map((r) => (
-                <div key={r.id} className={`flex items-center gap-3 py-3 ${r.isActive ? '' : 'opacity-50'}`}>
-                  <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
-                    <FontAwesomeIcon icon={faRepeat} />
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[15px] font-medium truncate">{r.name ?? '週期項目'}</div>
-                    <div className="text-xs text-text-tertiary tabular-nums">
-                      {FREQ_LABEL[r.frequency?.unit] ?? ''} · {MODE_LABEL[r.postingMode] ?? ''} · 下次 {formatMd(r.nextDate)}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => runRule(async () => { await settle(updateRecurringRule(r.id, { isActive: !r.isActive })) })}
-                    className="text-[13px] font-medium text-text-secondary px-2"
-                  >
-                    {r.isActive ? '暫停' : '啟用'}
-                  </button>
-                  <button
-                    onClick={async () => {
-                      if (await confirm({ title: '刪除週期規則', message: '刪除此週期性規則？（已產生的交易不受影響）', danger: true }))
-                        runRule(async () => { await settle(deleteRecurringRule(r.id)) })
-                    }}
-                    className="w-8 h-8 flex items-center justify-center text-text-tertiary"
-                  >
-                    <FontAwesomeIcon icon={faTrashCan} className="text-xs" />
-                  </button>
-                </div>
-              ))}
-            {ruleError && <div className="py-2 text-[13px] text-error">{ruleError}</div>}
-          </div>
-        </>
-      )}
+      {/* 週期性收支：列表、新增、編輯、暫停、刪除都在 RecurringManager 內 */}
+      {section === 'recurring' && <RecurringManager />}
 
-      {/* 範本（docs/09 批次 2）：改名、刪除；建立入口在記帳表單 */}
-      {section === 'templates' && (
-        <>
-          <div className="bg-surface border border-line rounded-card shadow-card px-3.5 divide-y divide-line-light">
-            {templates.length === 0 && (
-              <EmptyState title="尚無範本" hint="於記帳表單「存為範本」建立" compact />
-            )}
-            {templates
-              .slice()
-              .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-              .map((t) => (
-                <div key={t.id} className="flex items-center gap-3 py-3">
-                  <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
-                    <FontAwesomeIcon icon={faBookmark} className="text-sm" />
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[15px] font-medium truncate">{t.name}</div>
-                    <div className="text-xs text-text-tertiary truncate">{templateSummary(t, tplLookups)}</div>
-                  </div>
-                  <button
-                    onClick={() => setRenamingTemplate(t)}
-                    className="text-[13px] font-medium text-text-secondary px-2"
-                  >
-                    改名
-                  </button>
-                  <button
-                    onClick={async () => {
-                      if (await confirm({ title: '刪除範本', message: `刪除範本「${t.name}」？`, danger: true }))
-                        runTemplate(async () => { await settle(deleteTemplate(t.id)) })
-                    }}
-                    className="w-8 h-8 flex items-center justify-center text-text-tertiary"
-                  >
-                    <FontAwesomeIcon icon={faTrashCan} className="text-xs" />
-                  </button>
-                </div>
-              ))}
-            {templateError && <div className="py-2 text-[13px] text-error">{templateError}</div>}
-          </div>
-        </>
-      )}
+      {/* 範本：列表、新增、編輯內容、改名、刪除都在 TemplateManager 內 */}
+      {section === 'templates' && <TemplateManager />}
 
       {/* 商家別名（docs/09 批次 3）：把載具冗長公司名對應到店名，影響顯示與統計 */}
       {section === 'aliases' && (<>
@@ -670,15 +558,6 @@ export default function SettingsPage() {
         onClose={() => setEditingBroker(undefined)}
       />
 
-      <TemplateRenameSheet
-        template={renamingTemplate}
-        onClose={() => setRenamingTemplate(null)}
-        onSave={(id, name) => runTemplate(async () => {
-          await settle(updateTemplate(id, { name }))
-          setRenamingTemplate(null)
-        })}
-      />
-
       <MerchantAliasSheet
         open={editingAlias !== undefined}
         alias={editingAlias ?? null}
@@ -690,34 +569,6 @@ export default function SettingsPage() {
 }
 
 // 範本改名 Sheet
-function TemplateRenameSheet({ template, onClose, onSave }) {
-  const open = !!template
-  const [name, setName] = useState('')
-  // 每次開啟時以現有名稱預填
-  useEffect(() => {
-    if (open) setName(template?.name ?? '')
-  }, [open, template])
-  const trimmed = name.trim()
-  return (
-    <Sheet open={open} onClose={onClose} title="範本改名" bodyClassName="p-4">
-      <input
-        autoFocus
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="範本名稱"
-        className="w-full h-[46px] px-3.5 bg-surface-alt rounded-modal text-[15px] outline-none placeholder:text-text-tertiary mb-3"
-      />
-      <button
-        onClick={() => trimmed && onSave(template.id, trimmed)}
-        disabled={!trimmed}
-        className="w-full h-[46px] rounded-btn bg-brand text-white text-[15px] font-semibold disabled:opacity-40"
-      >
-        儲存
-      </button>
-    </Sheet>
-  )
-}
-
 // 推播通知情境開關（批次 7）。前後端各存一份預設，須與 functions/index.js 的 DEFAULT_PREFS 一致。
 const DEFAULT_PUSH_PREFS = {
   daily: true,
