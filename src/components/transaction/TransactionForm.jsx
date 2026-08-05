@@ -42,6 +42,7 @@ import {
 import { newId } from '../../lib/id'
 import { settlementStatus } from '../../lib/engine'
 import { resolveMerchant, merchantSuggestions } from '../../lib/merchant'
+import { suggestAccountFromHistory } from '../../lib/autoCategory'
 import { todayStr, formatMd, advanceDate, addDays, dayOfMonth, parseDate, WEEKDAYS } from '../../lib/date'
 import { processRecurringRules } from '../../lib/recurring'
 import { formatNumber } from '../../lib/format'
@@ -230,6 +231,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
   const merchantAliases = useCollection('merchantAliases')
   const tags = useCollection('tags')
   const txns = useCollection('transactions')
+  const invoices = useCollection('invoices')
   const invoiceSuggestions = useCollection('invoiceSuggestions')
 
   const [stockState, setStockState] = useState(() => initStockState(initialStock, accounts))
@@ -282,9 +284,20 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
 
   const set = (patch) => setState((s) => ({ ...s, ...patch }))
 
-  // 預設主帳戶尚未填入時，以 settings.defaultAccountId 補上
+  // 歸帳時依商家比對歷史，猜這家店平常用哪個帳戶付（發票本身沒有付款欄位可查）。
+  // 走 useMemo 而不是塞進 stateFromInvoice 的初始值：useState 的 initializer 只跑一次，
+  // Firestore 快取回填前算不出建議；當成 fallback 就沒有時序問題。
+  const accountSugg = useMemo(
+    () => (initialInvoice
+      ? suggestAccountFromHistory(initialInvoice, { transactions: txns, invoices, aliases: merchantAliases })
+      : null),
+    [initialInvoice, txns, invoices, merchantAliases],
+  )
+
+  // 預設主帳戶尚未填入時，先用歷史建議、再退回 settings.defaultAccountId。
+  // state.accountId 一旦有值（使用者自己選過）就永遠優先，建議不會蓋掉。
   const defaultAccountId = settings?.defaultAccountId ?? null
-  const accountId = state.accountId ?? defaultAccountId
+  const accountId = state.accountId ?? accountSugg?.accountId ?? defaultAccountId
   const fromAccountId = state.fromAccountId ?? defaultAccountId
 
   // 只產出 payload、不實際記一筆的兩種模式（週期規則、範本）共用同一批「關掉不相干區塊」的判斷：
@@ -579,7 +592,10 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
     return [
       {
         type,
-        accountId,
+        // 期初借貸的本金不屬於任何帳戶，accountId 為 null 是刻意的（engine 對 isOpening
+        // 跳過本金 posting）。這裡若讓它退回 defaultAccountId，從借貸明細「編輯這筆」
+        // 存一次就會悄悄把 null 換成預設帳戶，破壞那個不變式。
+        accountId: initialTx?.isOpening ? null : accountId,
         amount: total,
         counterpartyId: state.counterpartyId,
         tradeDate,
@@ -928,7 +944,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
             </div>
           )}
           {/* account + date row（轉帳除外，轉帳自有轉出/入）*/}
-          {!isTransfer && (
+          {!isTransfer && (<>
             <div className="flex gap-2 mt-3.5">
               <button className={chipBase} onClick={() => setPicker({ kind: 'account', target: 'main' })}>
                 <FontAwesomeIcon
@@ -954,7 +970,13 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
                 </label>
               )}
             </div>
-          )}
+            {/* 帳戶是猜的就要說清楚憑什麼猜——猜錯時使用者才知道該改。手動選過就不再顯示 */}
+            {accountSugg && state.accountId == null && (
+              <p className="text-[11px] text-text-tertiary mt-1.5 px-0.5">
+                依「{accountSugg.merchant}」過去 {accountSugg.count} 筆紀錄自動選填帳戶
+              </p>
+            )}
+          </>)}
         </div>
 
         {/* type-specific body */}

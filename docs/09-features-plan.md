@@ -581,6 +581,54 @@ v1.1.4 上線後實際使用暴露的六個摩擦點，性質都是「補完既�
 
 > **部署注意**：本輪改到 `engine.js` 與 `date.js`，兩者都在 `copy-shared.mjs` 的複製清單內，上線時必須一併 `firebase deploy --only functions`，否則推播的卡費／週期判定會與前端分岔。
 
+## 後續調整（2026-08-05，第八批：設定頁分組、抽屜擴用、期初可調、歸帳自動選帳戶）
+
+使用者回報三件事：設定區域混亂想分組、借貸期初餘額事後改不了、發票歸帳希望依過往紀錄自動選帳戶。四個決定皆由使用者拍板。
+
+### ① 設定頁重新分組（`SettingsPage.jsx`）
+
+`MENU` 11 項原本完全平鋪、沒有任何分組；「偏好／主題」與「關於與更新」又不在選單裡、直接展開在主頁底部，兩種呈現方式並存是「混亂」的另一半來源。改為 `MENU_GROUPS` 五群：**主檔設定**（帳戶／分類／標籤／借貸對象／券商）、**輸入輔助**（範本／週期性收支）、**偏好設定**（外觀主題／商家別名／推播通知）、**資料同步**（雲端同步／備份匯出），**關於與更新**維持在主頁底部直接展開（它沒有可設定的東西，進選單只是多一次點擊）。
+
+**刻意維持單層**：分群只是視覺歸類，不多一層點擊——11 項平鋪找不到東西，但收成 4 個大類再進二層又要每個設定都多點一次。「外觀主題」新增 `theme` section key 升為正式選單項，主題三段切換整段搬進該子區塊。`TITLES` 改由 `MENU_GROUPS.flatMap(g => g.items)` 推導，其餘 `section` 條件渲染零改動。
+
+### ② 滑動抽屜擴用到三個清單
+
+`SwipeRow` 原本只用在週期性收支與範本。本輪擴到**標籤管理、券商設定、商家別名**，統一成「點列＝編輯、左滑＝其餘動作」。
+
+**帳戶管理與分類管理刻意不套**：這兩個列上有 `ReorderBtns` 上下排序箭頭，而抽屜的動作鈕點完會 `close()`（`SwipeRow.jsx`），排序放進抽屜會變成「滑一次排一次」。排序箭頭留在列上是正確解。
+
+容器一律加 `overflow-hidden`、左右 padding 從容器移到列上（v1.4.0 踩過的方角外露）；`EmptyState` 需另外用 `<div className="px-3.5">` 包住，否則失去內距。刪除確認文案抽成 `tagDeleteMessage`（`TagEditSheet.jsx`）與 `brokerDeleteMessage`（`BrokerEditSheet.jsx`）具名匯出——這兩個 Sheet 也從記帳表單的選擇器開啟，兩個入口都要能刪，但文案只能有一份。
+
+### ③ 借貸對象期初餘額可事後調整（`CounterpartyEditSheet.jsx`）
+
+期初區塊原本被 `{isNew && …}` 擋住（當初的顧慮是「編輯時開放容易被重複建立成第二筆期初」）。改為永遠顯示，並用 `txns.find(t => t.counterpartyId === cp.id && t.isOpening)` 找出既有那筆來預填——**建立入口唯一，所以最多一筆，重複建立的顧慮由「找到就改同一筆」直接消解**。
+
+四種情形：無→有建立、有→有 `updateTransaction` patch、有→清空刪除（先確認）、無→0 不動。**patch 只寫 `type`／`amount`／`tradeDate`／`postingDate`，不寫 `repayments` 與 `isOpening`**——靠 `updateDoc` 的 patch 語義保留，表單也就不會用陳舊快照覆寫別的裝置剛登錄的還款（同 v1.6.0「編輯週期規則的 patch 刻意不含 `isActive`」）。
+
+兩個防呆：**金額不可低於已登錄還款總額**（否則 `outstanding` 變負，docs/01 §3.5 的不變式，先前只有 `RepaymentSheet` 管上限、金額端沒有反向檢查）；**有還款時鎖住方向切換**（engine 依 `type` 決定 posting 正負，改方向等於把既有還款的現金流向整個反轉），刪除同理擋下。
+
+預填時序有個坑：原本的重置是 render-phase 的 `lastKey` 比對，只在對象 id 變化時跑一次；交易訂閱若比對象晚一步到齊，`openingTx` 會從 null 變成有值而欄位停在空白。解法是把 `openingTx?.id` 併進 key。
+
+**順修**：`TransactionForm` 的借貸 payload 改為 `accountId: initialTx?.isOpening ? null : accountId`。原本從借貸明細「編輯這筆」存檔，會讓 `accountId` 從 `null` 退回 `settings.defaultAccountId`（金額不會錯，engine 對 isOpening 跳過本金 posting，但破壞「期初本金不屬於任何帳戶」的不變式）。期初開放編輯後這條路徑更常被走到。
+
+### ④ 發票歸帳依歷史自動選帳戶
+
+現況是**不管哪家店都預選現金**：`stateFromInvoice` 給 `accountId: null` → 退回 `settings.defaultAccountId`，而該值只在 `seed.js` 種子時寫成現金帳戶、全站沒有修改 UI。
+
+`autoCategory.js` 新增 `suggestAccountFromHistory`，重用同檔的 `txMerchantName` 做商家比對（交易層 `merchant` 優先、舊歸帳交易退回發票商家、都經別名解析），把投票對象從 `sp.categoryId` 換成 `tx.accountId`。**與分類版的關鍵差異是一筆一票**——帳戶是交易層欄位，不像分類要對每個拆帳列各投一票。發票文件沒有卡號之類的付款欄位（docs/01 §3.7），歷史交易是唯一可行的推論來源。
+
+**刻意走前端即時算、不寫 `invoiceSuggestions`**：這層不需要 LLM，即時算才吃得到使用者剛記的帳；爬蟲抓進來當下算好的建議反而會過時。函式所在的 `autoCategory.js` 在 `copy-shared.mjs` 清單內，新函式會一併複製到 `functions/shared/`（無害，functions 不呼叫它）。
+
+`TransactionForm` 端**用 fallback 而非改 `stateFromInvoice` 的初始值**：`useState` 的 initializer 只跑一次，Firestore 快取回填前算不出建議；改成 `state.accountId ?? accountSugg?.accountId ?? defaultAccountId` 就沒有時序問題，且使用者一旦手動選過就永遠優先。帳戶列下方顯示來源說明（「依『全家』過去 5 筆紀錄自動選填帳戶」），手動選過即消失；`suggestAccountFromHistory` 為此一併回傳 `merchant`（別名解析後的名稱）。
+
+### 進度
+
+`npm run lint` 對改動檔零錯誤；dev server 冒煙驗證（五群標題與歸屬、外觀主題子頁三段切換實際生效、四個子頁進出、空狀態排版、記帳表單渲染正常、console 全乾淨）。`suggestAccountFromHistory` 以 node 離線驗算 **12/12**：多數決、拆帳只投一票、舊交易靠 `invoiceId` 回填商家、別名解析、`accountId` 為 null 不計票、只算支出、新商家回 null、無商家名回 null、同票取先遇到、空值不炸。
+
+**四項皆已使用者測試驗收通過（2026-08-05），發布 v1.7.0。**
+
+> **部署注意**：本輪**不需要** `firebase deploy --only functions`——`engine.js`／`date.js`／`notifications.js` 零改動，`autoCategory.js` 只新增前端專用函式，functions 端邏輯完全沒變。
+
 ## 保留／明確不做（本輪拍板）
 
 - **Project 單值專案維度**：不做。「一個項目多個標籤」已由 Tag 涵蓋，再做一套單值分群只會重疊。

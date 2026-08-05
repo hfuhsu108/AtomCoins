@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faChevronRight, faChevronLeft, faTrashCan, faRepeat, faPercent, faCopy, faFileArrowDown, faBookmark, faStore, faWallet, faCloud, faTag, faTags, faBell, faUserGroup, faMagnifyingGlass, faXmark } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faChevronRight, faChevronLeft, faTrashCan, faRepeat, faPercent, faCopy, faFileArrowDown, faBookmark, faStore, faWallet, faCloud, faTag, faTags, faBell, faUserGroup, faMagnifyingGlass, faXmark, faCircleHalfStroke } from '@fortawesome/free-solid-svg-icons'
 import { faGoogle } from '@fortawesome/free-brands-svg-icons'
 import { httpsCallable } from 'firebase/functions'
 import { useCollection, useAllCollections, useSettings } from '../db/DataProvider'
@@ -11,15 +11,16 @@ import { signInWithGoogle, signOutUser, functions } from '../lib/firebase'
 import { getSubscriptionState, subscribeToPush, unsubscribeFromPush, getPushEnv } from '../lib/push'
 import { useAuth } from '../hooks/useAuth'
 import { accountBalances } from '../lib/engine'
-import { deleteMerchantAlias, setSortOrders, updateSettings } from '../db/repo'
+import { deleteBroker, deleteMerchantAlias, setSortOrders, updateSettings } from '../db/repo'
 import { useAsyncAction, settle } from '../hooks/useAsyncAction'
 import { useConfirm } from '../components/ConfirmSheet'
 import { formatBalance, formatAmount } from '../lib/format'
 import { todayStr } from '../lib/date'
 import { accountIcon } from '../lib/icons'
 import { useHiddenAmount, EyeButton } from '../components/HiddenAmountProvider'
+import SwipeRow from '../components/SwipeRow'
 import AccountEditSheet from '../components/settings/AccountEditSheet'
-import BrokerEditSheet from '../components/settings/BrokerEditSheet'
+import BrokerEditSheet, { brokerDeleteMessage } from '../components/settings/BrokerEditSheet'
 import MerchantAliasSheet from '../components/settings/MerchantAliasSheet'
 import CategoryManager, { ReorderBtns } from '../components/settings/CategoryManager'
 import CounterpartyManager from '../components/settings/CounterpartyManager'
@@ -53,21 +54,46 @@ const GROUPS = [
   { type: 'securities', label: '證券' },
 ]
 
-// 設定二層選單（docs/09 需求2，仿 CoTravel）：點列進入子區塊，避免主頁越加越長
-const MENU = [
-  { key: 'accounts', label: '帳戶管理', sub: '新增、編輯、刪除、排序帳戶', icon: faWallet },
-  { key: 'categories', label: '分類管理', sub: '大/小分類、圖示、顏色、排序', icon: faTag },
-  { key: 'counterparties', label: '借貸對象', sub: '新增、改名、刪除、排序', icon: faUserGroup },
-  { key: 'tags', label: '標籤管理', sub: '專案／主題標籤，改名、顏色、刪除', icon: faTags },
-  { key: 'brokers', label: '券商設定', sub: '手續費折數與最低手續費', icon: faPercent },
-  { key: 'recurring', label: '週期性收支', sub: '自動記帳與提醒規則', icon: faRepeat },
-  { key: 'templates', label: '範本', sub: '快速記帳範本', icon: faBookmark },
-  { key: 'aliases', label: '商家別名', sub: '載具公司名對應店名', icon: faStore },
-  { key: 'push', label: '推播通知', sub: '記帳提醒、卡費、交割、發票', icon: faBell },
-  { key: 'cloud', label: '帳號與雲端同步', sub: '登入、多裝置同步', icon: faCloud },
-  { key: 'backup', label: '備份匯出', sub: 'JSON／CSV 下載', icon: faFileArrowDown },
+// 設定二層選單（docs/09 需求2，仿 CoTravel）：點列進入子區塊，避免主頁越加越長。
+// 分群只是視覺歸類，不多一層點擊——11 項平鋪找不到東西，多一層又要多點一次。
+// 「關於與更新」刻意不進選單：它沒有可設定的東西，留在主頁底部直接展開。
+const MENU_GROUPS = [
+  {
+    title: '主檔設定',
+    items: [
+      { key: 'accounts', label: '帳戶管理', sub: '新增、編輯、刪除、排序帳戶', icon: faWallet },
+      { key: 'categories', label: '分類管理', sub: '大/小分類、圖示、顏色、排序', icon: faTag },
+      { key: 'tags', label: '標籤管理', sub: '專案／主題標籤，改名、顏色、刪除', icon: faTags },
+      { key: 'counterparties', label: '借貸對象', sub: '新增、改名、期初餘額、刪除', icon: faUserGroup },
+      { key: 'brokers', label: '券商設定', sub: '手續費折數與最低手續費', icon: faPercent },
+    ],
+  },
+  {
+    title: '輸入輔助',
+    items: [
+      { key: 'templates', label: '範本', sub: '快速記帳範本', icon: faBookmark },
+      { key: 'recurring', label: '週期性收支', sub: '自動記帳與提醒規則', icon: faRepeat },
+    ],
+  },
+  {
+    title: '偏好設定',
+    items: [
+      { key: 'theme', label: '外觀主題', sub: '淺色／深色／跟隨系統', icon: faCircleHalfStroke },
+      { key: 'aliases', label: '商家別名', sub: '載具公司名對應店名', icon: faStore },
+      { key: 'push', label: '推播通知', sub: '記帳提醒、卡費、交割、發票', icon: faBell },
+    ],
+  },
+  {
+    title: '資料同步',
+    items: [
+      { key: 'cloud', label: '帳號與雲端同步', sub: '登入、多裝置同步', icon: faCloud },
+      { key: 'backup', label: '備份匯出', sub: 'JSON／CSV 下載', icon: faFileArrowDown },
+    ],
+  },
 ]
-const TITLES = Object.fromEntries(MENU.map((m) => [m.key, m.label]))
+const TITLES = Object.fromEntries(
+  MENU_GROUPS.flatMap((g) => g.items).map((m) => [m.key, m.label]),
+)
 
 export default function SettingsPage() {
   const accounts = useCollection('accounts')
@@ -93,7 +119,20 @@ export default function SettingsPage() {
   const [uidCopied, setUidCopied] = useState(false)
   const { run: runAlias, error: aliasError } = useAsyncAction()
   const { run: runOrder } = useAsyncAction()
+  const { run: runBroker, error: brokerError } = useAsyncAction()
   const { confirm, confirmElement } = useConfirm()
+
+  // 券商刪除：抽屜與 BrokerEditSheet 兩個入口共用同一份確認文案（brokerDeleteMessage）
+  const removeBroker = async (b) => {
+    const used = stockTxns.some((t) => t.brokerId === b.id)
+    if (await confirm({ title: '刪除券商', message: brokerDeleteMessage(used), danger: true }))
+      runBroker(async () => { await settle(deleteBroker(b.id)) })
+  }
+
+  const removeAlias = async (a) => {
+    if (await confirm({ title: '刪除別名', message: `刪除別名「${a.alias}」？（不影響已記錄交易）`, danger: true }))
+      runAlias(async () => { await settle(deleteMerchantAlias(a.id)) })
+  }
 
   // 別名清單：依別名名稱排序，搜尋同時比對別名與比對字串（filter 已產生新陣列，sort 不會動到來源）
   const aliasQ = aliasQuery.trim().toLowerCase()
@@ -190,27 +229,31 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* 選單（僅主頁） */}
-      {section === 'menu' && (
-        <div className="bg-surface border border-line rounded-card shadow-card px-3.5">
-          {MENU.map((m, i) => (
-            <button
-              key={m.key}
-              onClick={() => setSection(m.key)}
-              className={`flex items-center gap-3 w-full py-3.5 text-left ${i > 0 ? 'border-t border-line-light' : ''}`}
-            >
-              <span className="w-10 h-10 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
-                <FontAwesomeIcon icon={m.icon} />
-              </span>
-              <span className="flex-1 min-w-0">
-                <span className="block text-[15px] font-medium">{m.label}</span>
-                <span className="block text-xs text-text-tertiary">{m.sub}</span>
-              </span>
-              <FontAwesomeIcon icon={faChevronRight} className="text-text-tertiary text-[11px]" />
-            </button>
-          ))}
-        </div>
-      )}
+      {/* 選單（僅主頁）：每群一張卡＋群組小標題，標題樣式與下方「關於與更新」一致 */}
+      {section === 'menu' &&
+        MENU_GROUPS.map((g, gi) => (
+          <div key={g.title}>
+            <div className={`px-0.5 mb-2 text-[15px] font-semibold ${gi > 0 ? 'mt-6' : ''}`}>{g.title}</div>
+            <div className="bg-surface border border-line rounded-card shadow-card px-3.5">
+              {g.items.map((m, i) => (
+                <button
+                  key={m.key}
+                  onClick={() => setSection(m.key)}
+                  className={`flex items-center gap-3 w-full py-3.5 text-left ${i > 0 ? 'border-t border-line-light' : ''}`}
+                >
+                  <span className="w-10 h-10 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
+                    <FontAwesomeIcon icon={m.icon} />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-[15px] font-medium">{m.label}</span>
+                    <span className="block text-xs text-text-tertiary">{m.sub}</span>
+                  </span>
+                  <FontAwesomeIcon icon={faChevronRight} className="text-text-tertiary text-[11px]" />
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
 
       {/* 帳戶管理 */}
       {section === 'accounts' && (<>
@@ -294,33 +337,43 @@ export default function SettingsPage() {
         </button>
       </div>
 
-      <div className="bg-surface border border-line rounded-card shadow-card px-3.5 divide-y divide-line-light">
+      {/* 容器要 overflow-hidden、左右 padding 移到列上，抽屜才貼齊圓角卡片邊緣 */}
+      <div className="bg-surface border border-line rounded-card shadow-card overflow-hidden divide-y divide-line-light">
         {brokers.length === 0 ? (
-          <EmptyState title="尚無券商" hint="用右上角「新增券商」建立" compact />
+          <div className="px-3.5">
+            <EmptyState title="尚無券商" hint="用右上角「新增券商」建立" compact />
+          </div>
         ) : (
           brokers.map((b) => (
-            <button
+            <SwipeRow
               key={b.id}
-              onClick={() => setEditingBroker(b)}
-              className="flex items-center gap-3 w-full py-3 text-left"
+              actions={[
+                { key: 'delete', label: '刪除', icon: faTrashCan, tone: 'danger', onClick: () => removeBroker(b) },
+              ]}
             >
-              <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
-                <FontAwesomeIcon icon={faPercent} className="text-sm" />
-              </span>
-              <div className="flex-1 min-w-0">
-                <div className="text-[15px] font-medium truncate">{b.name}</div>
-                <div className="text-xs text-text-tertiary tabular-nums">
-                  {b.feeDiscount < 1
-                    ? `${+(b.feeDiscount * 10).toFixed(2)} 折`
-                    : '不折'}
-                  {' · '}最低 NT$ {b.minFee ?? 20}
+              <button
+                onClick={() => setEditingBroker(b)}
+                className="flex items-center gap-3 w-full px-3.5 py-3 text-left"
+              >
+                <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
+                  <FontAwesomeIcon icon={faPercent} className="text-sm" />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[15px] font-medium truncate">{b.name}</div>
+                  <div className="text-xs text-text-tertiary tabular-nums">
+                    {b.feeDiscount < 1
+                      ? `${+(b.feeDiscount * 10).toFixed(2)} 折`
+                      : '不折'}
+                    {' · '}最低 NT$ {b.minFee ?? 20}
+                  </div>
                 </div>
-              </div>
-              <FontAwesomeIcon icon={faChevronRight} className="text-text-tertiary text-[11px]" />
-            </button>
+                <FontAwesomeIcon icon={faChevronRight} className="text-text-tertiary text-[11px]" />
+              </button>
+            </SwipeRow>
           ))
         )}
       </div>
+      {brokerError && <div className="text-[13px] text-error px-1 mt-2">{brokerError}</div>}
       </>)}
 
       {/* 週期性收支：列表、新增、編輯、暫停、刪除都在 RecurringManager 內 */}
@@ -353,35 +406,41 @@ export default function SettingsPage() {
           <FontAwesomeIcon icon={faPlus} className="text-xs" /> 新增
         </button>
       </div>
-      <div className="bg-surface border border-line rounded-card shadow-card px-3.5 divide-y divide-line-light">
+      {/* 容器要 overflow-hidden、左右 padding 移到列上，抽屜才貼齊圓角卡片邊緣 */}
+      <div className="bg-surface border border-line rounded-card shadow-card overflow-hidden divide-y divide-line-light">
         {merchantAliases.length === 0 ? (
-          <EmptyState title="尚無別名" hint="用右上角「新增」把載具的公司全名對應到店名" compact />
+          <div className="px-3.5">
+            <EmptyState title="尚無別名" hint="用右上角「新增」把載具的公司全名對應到店名" compact />
+          </div>
         ) : visibleAliases.length === 0 ? (
-          <EmptyState title="找不到符合的別名" compact />
+          <div className="px-3.5">
+            <EmptyState title="找不到符合的別名" compact />
+          </div>
         ) : (
           visibleAliases.map((a) => (
-            <div key={a.id} className="flex items-center gap-3 py-3">
-              <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
-                <FontAwesomeIcon icon={faStore} className="text-sm" />
-              </span>
-              <button onClick={() => setEditingAlias(a)} className="flex-1 min-w-0 text-left">
-                <div className="text-[15px] font-medium truncate">{a.alias}</div>
-                <div className="text-xs text-text-tertiary truncate">比對：{a.match}</div>
-              </button>
+            <SwipeRow
+              key={a.id}
+              actions={[
+                { key: 'delete', label: '刪除', icon: faTrashCan, tone: 'danger', onClick: () => removeAlias(a) },
+              ]}
+            >
               <button
-                onClick={async () => {
-                  if (await confirm({ title: '刪除別名', message: `刪除別名「${a.alias}」？（不影響已記錄交易）`, danger: true }))
-                    runAlias(async () => { await settle(deleteMerchantAlias(a.id)) })
-                }}
-                className="w-8 h-8 flex items-center justify-center text-text-tertiary"
+                onClick={() => setEditingAlias(a)}
+                className="flex items-center gap-3 w-full px-3.5 py-3 text-left"
               >
-                <FontAwesomeIcon icon={faTrashCan} className="text-xs" />
+                <span className="w-9 h-9 flex-none rounded-btn bg-surface-alt text-text-secondary flex items-center justify-center">
+                  <FontAwesomeIcon icon={faStore} className="text-sm" />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[15px] font-medium truncate">{a.alias}</div>
+                  <div className="text-xs text-text-tertiary truncate">比對：{a.match}</div>
+                </div>
               </button>
-            </div>
+            </SwipeRow>
           ))
         )}
-        {aliasError && <div className="py-2 text-[13px] text-error">{aliasError}</div>}
       </div>
+      {aliasError && <div className="text-[13px] text-error px-1 mt-2">{aliasError}</div>}
       </>)}
 
       {/* 帳號與雲端同步（docs/07 M0：登入＋rules 連線驗證；資料遷移為 M1–M3） */}
@@ -427,29 +486,34 @@ export default function SettingsPage() {
       </div>
       </>)}
 
-      {/* 偏好（階段 7）：主題三段切換，localStorage per-device。留在主頁（小、常用） */}
-      {section === 'menu' && (<>
-      <div className="px-0.5 mt-6 mb-2 text-[15px] font-semibold">偏好</div>
-      <div className="bg-surface border border-line rounded-card shadow-card px-3.5 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm text-text-secondary">主題</span>
-          <div className="flex bg-surface-alt rounded-btn p-0.5">
-            {THEME_OPTIONS.map((o) => (
-              <button
-                key={o.value}
-                onClick={() => { setTheme(o.value); setThemeState(o.value) }}
-                className={`h-[30px] px-3 rounded-[8px] text-[13px] font-medium ${
-                  theme === o.value ? 'bg-surface shadow-segment font-semibold' : 'text-text-secondary'
-                }`}
-              >
-                {o.label}
-              </button>
-            ))}
+      {/* 外觀主題（階段 7）：三段切換，localStorage per-device、不跟著帳號同步 */}
+      {section === 'theme' && (
+        <div className="bg-surface border border-line rounded-card shadow-card px-3.5 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-text-secondary">主題</span>
+            <div className="flex bg-surface-alt rounded-btn p-0.5">
+              {THEME_OPTIONS.map((o) => (
+                <button
+                  key={o.value}
+                  onClick={() => { setTheme(o.value); setThemeState(o.value) }}
+                  className={`h-[30px] px-3 rounded-[8px] text-[13px] font-medium ${
+                    theme === o.value ? 'bg-surface shadow-segment font-semibold' : 'text-text-secondary'
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
           </div>
+          <p className="text-[11px] text-text-tertiary mt-2">
+            主題記在這台裝置上，換手機或瀏覽器要各自設定一次。
+          </p>
         </div>
-      </div>
+      )}
 
-      {/* 關於與更新：版本顯示、檢查更新（prompt 模式手動套用）、安裝 App（沿用 CoTravel 機制） */}
+      {/* 關於與更新：版本顯示、檢查更新（prompt 模式手動套用）、安裝 App（沿用 CoTravel 機制）。
+          刻意留在主頁底部直接展開——沒有可設定的東西，進選單只是多一次點擊 */}
+      {section === 'menu' && (<>
       <div className="px-0.5 mt-6 mb-2 text-[15px] font-semibold">關於與更新</div>
       <div className="bg-surface border border-line rounded-card shadow-card px-3.5 divide-y divide-line-light">
         <div className="py-3">

@@ -1,8 +1,12 @@
 import { useMemo, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faPen, faTag, faMagnifyingGlass, faXmark } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faTag, faMagnifyingGlass, faXmark, faTrashCan } from '@fortawesome/free-solid-svg-icons'
 import { useCollection } from '../../db/DataProvider'
-import TagEditSheet from './TagEditSheet'
+import { deleteTagCleanup } from '../../db/repo'
+import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
+import { useConfirm } from '../ConfirmSheet'
+import SwipeRow from '../SwipeRow'
+import TagEditSheet, { tagDeleteMessage } from './TagEditSheet'
 
 // 標籤依名稱排序：中文直接比字串是 UTF-16 碼位序（等同亂序），需 Collator 才有筆畫／注音序
 const TAG_COLLATOR = new Intl.Collator('zh-Hant')
@@ -14,6 +18,8 @@ export default function TagManager() {
   const txns = useCollection('transactions')
   const [sheet, setSheet] = useState(undefined) // undefined=關閉／null=新增／物件=編輯
   const [query, setQuery] = useState('')
+  const { run, error } = useAsyncAction()
+  const { confirm, confirmElement } = useConfirm()
 
   // 每個標籤的引用筆數：以交易為單位，同一筆的多個拆帳列掛同標籤只算一次
   const countById = useMemo(() => {
@@ -24,6 +30,13 @@ export default function TagManager() {
     }
     return map
   }, [txns])
+
+  // 刪除確認文案與 TagEditSheet 共用（tagDeleteMessage），兩個入口說法一致
+  const remove = async (tag, count) => {
+    if (await confirm({ title: '刪除標籤', message: tagDeleteMessage(tag, count), danger: true })) {
+      run(async () => { await settle(deleteTagCleanup(tag.id)) })
+    }
+  }
 
   const q = query.trim().toLowerCase()
   // filter 已產生新陣列，sort 不會動到來源
@@ -63,36 +76,43 @@ export default function TagManager() {
       ) : list.length === 0 ? (
         <p className="text-[13px] text-text-tertiary text-center py-6">找不到符合的標籤。</p>
       ) : (
-        <div className="bg-surface border border-line rounded-card shadow-card divide-y divide-line-light">
+        // 容器要 overflow-hidden、左右 padding 移到列上，抽屜才貼齊圓角卡片邊緣
+        <div className="bg-surface border border-line rounded-card shadow-card overflow-hidden divide-y divide-line-light">
           {list.map((tag) => {
             const count = countById[tag.id] ?? 0
             return (
-              <div key={tag.id} className="flex items-center gap-2 px-3 py-2.5">
-                <span
-                  className={`w-9 h-9 flex-none rounded-btn flex items-center justify-center ${tag.color ? '' : 'bg-surface-alt text-text-secondary'}`}
-                  style={tag.color ? { background: `color-mix(in srgb, ${tag.color} 15%, transparent)`, color: tag.color } : undefined}
-                >
-                  <FontAwesomeIcon icon={faTag} className="text-sm" />
-                </span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[15px] font-medium truncate">{tag.name}</div>
-                  <div className="text-xs text-text-tertiary tabular-nums">
-                    {count > 0 ? `${count} 筆記錄` : '尚未使用'}
-                  </div>
-                </div>
+              <SwipeRow
+                key={tag.id}
+                actions={[
+                  { key: 'delete', label: '刪除', icon: faTrashCan, tone: 'danger', onClick: () => remove(tag, count) },
+                ]}
+              >
                 <button
                   onClick={() => setSheet(tag)}
-                  className="w-8 h-8 flex items-center justify-center text-text-secondary"
+                  className="flex items-center gap-2 w-full px-3 py-2.5 text-left"
                 >
-                  <FontAwesomeIcon icon={faPen} className="text-xs" />
+                  <span
+                    className={`w-9 h-9 flex-none rounded-btn flex items-center justify-center ${tag.color ? '' : 'bg-surface-alt text-text-secondary'}`}
+                    style={tag.color ? { background: `color-mix(in srgb, ${tag.color} 15%, transparent)`, color: tag.color } : undefined}
+                  >
+                    <FontAwesomeIcon icon={faTag} className="text-sm" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[15px] font-medium truncate">{tag.name}</div>
+                    <div className="text-xs text-text-tertiary tabular-nums">
+                      {count > 0 ? `${count} 筆記錄` : '尚未使用'}
+                    </div>
+                  </div>
                 </button>
-              </div>
+              </SwipeRow>
             )
           })}
         </div>
       )}
+      {error && <div className="text-[13px] text-error px-1 mt-2">{error}</div>}
 
       <TagEditSheet open={sheet !== undefined} tag={sheet ?? null} onClose={() => setSheet(undefined)} />
+      {confirmElement}
     </div>
   )
 }

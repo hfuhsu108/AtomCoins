@@ -13,6 +13,13 @@ import TagChip from '../TagChip'
 // 刪除不像借貸對象那樣「有引用就擋下」——標籤只是標記，移除不動到任何金額，
 // 所以直接把引用清掉（repo.deleteTagCleanup），只在確認框告知會影響幾筆。
 // 交易自己訂閱而不靠 prop：這個 Sheet 也從記帳表單的標籤選擇器開啟，那裡沒有交易清單。
+// 刪除確認文案：本 Sheet 與標籤清單的左滑抽屜共用，避免兩處說法不一致
+export function tagDeleteMessage(tag, refCount) {
+  return refCount > 0
+    ? `刪除「${tag.name}」？有 ${refCount} 筆記錄使用它，標籤會從那些記錄上移除（記錄本身不會被刪）。`
+    : `刪除「${tag.name}」？`
+}
+
 export default function TagEditSheet({ open, tag = null, onClose }) {
   const txns = useCollection('transactions')
   const isNew = !tag
@@ -53,9 +60,7 @@ export default function TagEditSheet({ open, tag = null, onClose }) {
 
   const handleDelete = async () => {
     if (!tag) return
-    const message = refCount > 0
-      ? `刪除「${tag.name}」？有 ${refCount} 筆記錄使用它，標籤會從那些記錄上移除（記錄本身不會被刪）。`
-      : `刪除「${tag.name}」？`
+    const message = tagDeleteMessage(tag, refCount)
     if (!(await confirm({ title: '刪除標籤', message, danger: true }))) return
     run(async () => {
       await settle(deleteTagCleanup(tag.id))

@@ -14,6 +14,13 @@ function initState(broker) {
   }
 }
 
+// 刪除確認文案：本 Sheet 與券商清單的左滑抽屜共用，避免兩處說法不一致
+export function brokerDeleteMessage(used) {
+  return used
+    ? '此券商已有交易紀錄引用，刪除後相關交易的券商欄位將失效。確定刪除？'
+    : '確定刪除此券商？'
+}
+
 export default function BrokerEditSheet({ open, broker, onClose, stockTxns = [] }) {
   const [s, setS] = useState(() => initState(broker))
   const set = (patch) => setS((prev) => ({ ...prev, ...patch }))
@@ -50,10 +57,7 @@ export default function BrokerEditSheet({ open, broker, onClose, stockTxns = [] 
   const handleDelete = async () => {
     if (!broker) return
     const used = stockTxns.some((t) => t.brokerId === broker.id)
-    const msg = used
-      ? '此券商已有交易紀錄引用，刪除後相關交易的券商欄位將失效。確定刪除？'
-      : '確定刪除此券商？'
-    if (!(await confirm({ title: '刪除券商', message: msg, danger: true }))) return
+    if (!(await confirm({ title: '刪除券商', message: brokerDeleteMessage(used), danger: true }))) return
     run(async () => {
       await settle(deleteBroker(broker.id))
       onClose()
