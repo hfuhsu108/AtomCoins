@@ -629,8 +629,68 @@ v1.1.4 上線後實際使用暴露的六個摩擦點，性質都是「補完既�
 
 > **部署注意**：本輪**不需要** `firebase deploy --only functions`——`engine.js`／`date.js`／`notifications.js` 零改動，`autoCategory.js` 只新增前端專用函式，functions 端邏輯完全沒變。
 
+## 後續調整（2026-08-07，第九批：發票分類分歧降級送 LLM ＋ 依品項金額建議拆帳）
+
+使用者回報：「付款方式用過去店家紀錄合理，但類別僅用店家不行——像全聯，買的東西會分到不同類別。」
+
+追查後確認問題有三層，且比表面更深：
+
+1. **第一層是贏者全拿**：`suggestFromHistory` 只要該商家有任何一筆歷史（`tally.size > 0`）就回傳最高票，**永遠不會落到看得見品項的第二層 LLM**。歷史是 `{食物 6、日用品 5、寵物 3}` 也照樣建議「食物」。
+2. **confidence 只看絕對票數**：`count >= 3 → high`，3/14 票也標 high，發票列的「歷史」徽章反而讓錯誤建議更有說服力。
+3. **單一分類本來就是錯答案**：一次買生鮮＋衛生紙，正解是拆帳。但建議 schema 只有單值 `categoryId`、`stateFromInvoice` 也硬寫單列。
+
+帳戶建議（`suggestAccountFromHistory`）**刻意不動**——付款方式與店家的相關性本來就高，第八批的一筆一票設計成立。
+
+### ① 分歧判定（`autoCategory.js`）
+
+`suggestFromHistory` 回傳擴充 `share`／`dispersed`／`top`／`totalVotes`，判定集中於此檔（在 `copy-shared.mjs` 清單內，前後端同一份）：
+
+- `dispersed`＝最高票佔比 `< 0.6` **或**與第二名差 `< 2` 票。**只有一類時一律不分歧**——`lead` 會等於 `best.count`，不加這條會被 `LEAD_MIN` 誤判。
+- `confidence` 改雙條件：`high` 需 `count >= 3 且 share >= 0.7`；`medium` 需 `count >= 2 且 share >= 0.5`。關鍵對照組是「票數夠但佔比不夠」，舊版會把 3/14 標成 high。
+- `top` 回前 3 名供表單快捷 chips。
+
+函式簽章與 `categoryId` 語義都沒動，呼叫端不加判斷時行為與改動前完全一致。
+
+### ② 分歧商家降級送 LLM（`functions/index.js`）
+
+分流條件加 `!hit.dispersed`。送進 prompt 的兩處加料：
+
+- **品項帶數量與金額**（`衛生紙 ×2 =265`），上限 8→20。只給名稱模型拆不出金額，這是拆帳建議能成立的前提。
+- 分歧商家附一行 `此商家歷史分類：食物 6 次、日用品 5 次`，用**分類名稱**讓模型好讀（回傳仍限定 id）。
+
+**LLM 漏回的退路**：模型可能漏掉某張或回不合格內容。若該張有 hint 就退回寫歷史建議——分歧商家的低信心建議仍勝過完全沒建議（confidence 已如實反映佔比，不會假裝篤定）。沒這條的話本次改動會製造覆蓋率回歸：改前全聯至少有個（不太準的）建議，改後可能什麼都沒有。hint 只在 `validIds.has(hit.categoryId)` 時保留，因為它會被直接寫進建議。
+
+超過 `LLM_BATCH_CAP` 的 `pending` **刻意不寫退路**——寫了就會進 `done` 集合，下一輪永遠不會再送 LLM。
+
+### ③ 拆帳建議（schema ＋ 後端硬門檻）
+
+`SUGGESTION_SCHEMA` 每筆 result 改為 `{ invoiceId, splits: [{ categoryId, amount }], confidence }`。寫入的文件同時保留 `categoryId`（＝`splits[0]`，金額最大那列），既有讀取端與既有資料同形、免遷移。
+
+`normalizeSplits` 硬驗證，**不靠模型自律**，違反任一條退回單列（取金額最大那列）：至多 3 列、每列 `>= 總額 15%` 且 `>= 50 元`、合計差 `<= 總額 1%` 時補進最大列否則退單列、無效 `categoryId` 剔除、同分類先合併。
+
+**這個函式放在 `autoCategory.js` 而非 `functions/index.js`**：後者有 firebase 相依、離線驗算不了。放共用檔既可測，也避免判定散成兩份（前端不呼叫它，Vite 會 tree-shake 掉）。`SPLIT_MAX_ROWS` 一併匯出供 prompt 文案引用，門檻數字只有一個來源。
+
+### ④ 前端：多列預填、時序修正、常用分類快捷
+
+- 抽 `splitsFromSuggestion`：依 `suggestion.splits` 產生多列；舊建議無此欄位則退回單列原行為。多列自動讓既有的 `multiRow` 成立，`SplitRows` 與「發票金額／已湊平」列**零改動生效**。
+- **時序**：分類建議踩的是與帳戶建議同一個坑（`useState` initializer 只跑一次，Firestore 快取回填前建議還沒到），但分類是 state 結構、**不能在渲染期當 fallback 換掉**，只能用 `useEffect` 等它到達後補套。pristine 條件（單列、`categoryId` 為 null、`expr` 等於發票原額）保證使用者動過就永不覆蓋；補套後 `categoryId` 有值，也不會再套第二次。
+- **「這家店常用」chips**：即時算 `suggestFromHistory(...).top`，一鍵套到 `activeSplit` 那列（拆帳與未拆帳共用同一條路徑）。**刻意不讀 `invoiceSuggestions`**——理由同帳戶建議：即時算才吃得到剛記的帳。這是 LLM 猜錯時的一鍵退路，與 ② 互補。
+- 徽章支援多分類：1 列 `母·子`、2 列 `食物＋日用品`、3 列 `食物 +2`，`title` 補「歸帳時自動拆成 N 列」。
+
+### 進度
+
+lint 對改動 5 檔零輸出、`npm run build` 通過、`node --check functions/index.js` 通過；dev server 冒煙（記帳表單掛載乾淨、新增的 memo/effect 在 `initialInvoice=null` 路徑正常早退、console 全乾淨）。
+
+引擎邏輯以 node 離線驗算 **37/37**：分歧判定 16 項（share 剛好 0.6 不算分歧、lead 差 1 票算分歧、單一分類不論幾票都不分歧、`excludeIds` 濾後只剩一類、同票取先遇到）、confidence 雙條件 6 項（含 3/14 票的關鍵對照組）、拆帳門檻 15 項（補差額／超容差退單列／碎列／超 3 列／無效 id／同分類合併／負數與零剔除）。
+
+**已使用者測試驗收通過（2026-08-07），發布 v1.8.0。**
+
+> **部署注意**：本輪改到 `autoCategory.js`（在 `copy-shared.mjs` 清單內）與 `functions/index.js`，上線時**必須** `firebase deploy --only functions`，否則線上跑的仍是贏者全拿的舊口徑。已於 2026-08-07 部署，五個函式皆更新成功。
+
 ## 保留／明確不做（本輪拍板）
 
+- **品項級歷史學習**（品項名 token → 分類的離線投票）：不做。語料只有「單一分類的歸帳交易」才有明確標註——拆帳交易的 note 是整筆共用、對不回單列，資料成長太慢；LLM 已看得到品項與金額，這層邊際效益低。
+- **歸帳當下即時呼叫 LLM**：不做。維持爬蟲同步後批次 ＋ 發票匣「重新分析」手動觸發。即時呼叫會讓開表單等 1–3 秒網路往返，且同一張發票反覆開就反覆計費。
 - **Project 單值專案維度**：不做。「一個項目多個標籤」已由 Tag 涵蓋，再做一套單值分群只會重疊。
 - 標籤的報表分頁／首頁專案卡／標籤詳情頁：本輪不做，需要時再議。
 - 自訂起訖區間報表：批次 4 只做年視角，自訂區間保留。

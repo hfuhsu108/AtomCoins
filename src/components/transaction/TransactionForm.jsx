@@ -42,7 +42,7 @@ import {
 import { newId } from '../../lib/id'
 import { settlementStatus } from '../../lib/engine'
 import { resolveMerchant, merchantSuggestions } from '../../lib/merchant'
-import { suggestAccountFromHistory } from '../../lib/autoCategory'
+import { suggestAccountFromHistory, suggestFromHistory } from '../../lib/autoCategory'
 import { todayStr, formatMd, advanceDate, addDays, dayOfMonth, parseDate, WEEKDAYS } from '../../lib/date'
 import { processRecurringRules } from '../../lib/recurring'
 import { formatNumber } from '../../lib/format'
@@ -123,8 +123,17 @@ function invoiceItemsSummary(invoice) {
     .join('、')
 }
 
+// 自動分類建議 → 拆帳列。建議可能有多列（全聯這種一次買生鮮＋日用品的，後端會依品項金額拆），
+// 合計已由後端保證等於發票原額。舊建議沒有 splits 欄位，退回「單列帶總額」的原行為。
+function splitsFromSuggestion(invoice, suggestion) {
+  const rows = suggestion?.splits?.length
+    ? suggestion.splits.map((s) => ({ categoryId: s.categoryId ?? null, expr: String(s.amount ?? '') }))
+    : [{ categoryId: suggestion?.categoryId ?? null, expr: String(invoice.totalAmount ?? '') }]
+  return rows.map((r) => ({ ...r, key: newId(), advanceCounterpartyId: null, tagIds: [] }))
+}
+
 // 從發票歸帳預填：一律支出、記錄日=發票日、商家=別名解析後名稱（原始名永遠保留在 invoice.merchant）、
-// 備註=品項明細摘要、單列拆帳帶入總額。分類若有自動分類建議就預填（仍需使用者按儲存才成立）。
+// 備註=品項明細摘要、拆帳列帶入總額。分類若有自動分類建議就預填（仍需使用者按儲存才成立）。
 function stateFromInvoice(invoice, aliases, suggestion = null) {
   return {
     type: 'expense',
@@ -132,7 +141,7 @@ function stateFromInvoice(invoice, aliases, suggestion = null) {
     postingDate: null,
     note: invoiceItemsSummary(invoice),
     merchant: resolveMerchant(invoice.merchant, aliases) ?? '',
-    splits: [{ key: newId(), categoryId: suggestion?.categoryId ?? null, expr: String(invoice.totalAmount ?? ''), advanceCounterpartyId: null, tagIds: [] }],
+    splits: splitsFromSuggestion(invoice, suggestion),
     activeSplit: 0,
     amountExpr: '',
     accountId: null,
@@ -294,6 +303,37 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
     [initialInvoice, txns, invoices, merchantAliases],
   )
 
+  // 分類建議踩同一個時序坑，但分類是 state 結構、不能在渲染期當 fallback 換掉，只能等它到達後補套。
+  const invoiceSugg = useMemo(
+    () => (initialInvoice ? invoiceSuggestions.find((s) => s.invoiceId === initialInvoice.id) ?? null : null),
+    [initialInvoice, invoiceSuggestions],
+  )
+  useEffect(() => {
+    const rows = initialInvoice && invoiceSugg ? splitsFromSuggestion(initialInvoice, invoiceSugg) : null
+    if (!rows?.some((r) => r.categoryId)) return
+    setState((s) => {
+      // 只在使用者完全沒動過分類與金額時補套；動過就永不覆蓋（補套後 categoryId 有值，也不會再套第二次）
+      const pristine =
+        s.splits.length === 1 &&
+        !s.splits[0].categoryId &&
+        s.splits[0].expr === String(initialInvoice.totalAmount ?? '')
+      return pristine ? { ...s, splits: rows, activeSplit: 0 } : s
+    })
+  }, [initialInvoice, invoiceSugg])
+
+  // 「這家店常用」快捷：即時算歷史前幾名分類。刻意不讀 invoiceSuggestions——即時算才吃得到
+  // 使用者剛記的帳（同帳戶建議的理由）。全聯這種商家 AI 也可能猜錯，這是一鍵改掉的退路。
+  const merchantTopCats = useMemo(() => {
+    if (!initialInvoice) return []
+    const hit = suggestFromHistory(initialInvoice, {
+      transactions: txns,
+      invoices,
+      aliases: merchantAliases,
+      excludeIds: [UNCATEGORIZED_EXPENSE_ID],
+    })
+    return hit?.top ?? []
+  }, [initialInvoice, txns, invoices, merchantAliases])
+
   // 預設主帳戶尚未填入時，先用歷史建議、再退回 settings.defaultAccountId。
   // state.accountId 一旦有值（使用者自己選過）就永遠優先，建議不會蓋掉。
   const defaultAccountId = settings?.defaultAccountId ?? null
@@ -347,6 +387,19 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
     for (const t of tags) tag[t.id] = t
     return { cat, acc, cp, tag }
   }, [categories, accounts, counterparties, tags])
+
+  // 快捷 chips 的顯示清單：已被刪除的分類直接濾掉，濾完沒剩就整行不渲染
+  const topCats = merchantTopCats.filter((t) => lookups.cat[t.categoryId])
+
+  // 套用到目前作用中的那一列，故拆帳與未拆帳走同一條路徑
+  const applyTopCat = (categoryId) => {
+    setState((s) => {
+      const splits = s.splits.slice()
+      const idx = Math.min(s.activeSplit, splits.length - 1)
+      splits[idx] = { ...splits[idx], categoryId }
+      return { ...s, splits }
+    })
+  }
 
   const onPress = (key) => {
     if (isExpenseLike) {
@@ -1022,6 +1075,36 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
                 total={total}
                 targetTotal={initialInvoice?.totalAmount ?? 0}
               />
+            )}
+
+            {/* 這家店過去記過的分類，一鍵套到作用中那一列。歸帳時才有意義（一般記帳沒有商家可比對）*/}
+            {topCats.length > 0 && (
+              <div className="flex items-center flex-wrap gap-1.5 mt-2 px-0.5">
+                <span className="text-[11px] text-text-tertiary flex-none">這家店常用</span>
+                {topCats.map((t) => {
+                  const cat = lookups.cat[t.categoryId]
+                  const parent = cat.parentId ? lookups.cat[cat.parentId] : cat
+                  const color = parent?.color ?? null
+                  return (
+                    <button
+                      key={t.categoryId}
+                      onClick={() => applyTopCat(t.categoryId)}
+                      className={`flex items-center gap-1.5 text-[12px] rounded-pill px-2.5 py-1 ${
+                        color ? '' : 'bg-surface-alt text-text-secondary'
+                      }`}
+                      style={
+                        color
+                          ? { background: `color-mix(in srgb, ${color} 15%, transparent)`, color }
+                          : undefined
+                      }
+                    >
+                      <FontAwesomeIcon icon={getIcon(cat.icon ?? parent?.icon)} className="text-[11px]" />
+                      {cat.parentId ? `${parent?.name ?? ''}·${cat.name}` : cat.name}
+                      <span className="opacity-60 tabular-nums">{t.count}</span>
+                    </button>
+                  )
+                })}
+              </div>
             )}
 
             {/* 動作列：拆帳／應收（我墊別人）／應付（別人墊我）／進階。

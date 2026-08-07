@@ -27,7 +27,7 @@ import {
   dueRecurringPostings,
 } from './shared/notifications.js'
 import { addDays } from './shared/date.js'
-import { suggestFromHistory } from './shared/autoCategory.js'
+import { suggestFromHistory, normalizeSplits, SPLIT_MAX_ROWS } from './shared/autoCategory.js'
 
 // VAPID 公鑰＝公開值，同前端 src/lib/push.js 寫死（CLAUDE.md 機密分層，同 GAS proxy 先例）。
 // 換金鑰時須與 src/lib/push.js 的同名常數同步（成對產生，不配對會 403）。
@@ -377,16 +377,31 @@ const SUGGESTION_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['invoiceId', 'categoryId', 'confidence'],
+        required: ['invoiceId', 'splits', 'confidence'],
         properties: {
           invoiceId: { type: 'string' },
-          categoryId: { type: 'string' },
+          // 品項明顯分屬不同分類時可回多列；無法明確分群就回單列
+          splits: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['categoryId', 'amount'],
+              properties: {
+                categoryId: { type: 'string' },
+                amount: { type: 'integer' },
+              },
+            },
+          },
           confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
         },
       },
     },
   },
 }
+
+// 送進 prompt 的品項數上限。單張發票品項通常遠少於此，設上限只為擋異常資料
+const MAX_ITEMS = 20
 
 // 分類樹攤平成「id | 母·子」，讓模型只能從既有 id 挑
 function categoryLines(categories) {
@@ -399,23 +414,36 @@ function categoryLines(categories) {
     })
 }
 
-function invoiceLine(inv) {
+// 品項帶上數量與金額——「衛生紙 =265」才有辦法讓模型把它拆成獨立一列，只給名稱做不到。
+// hint 是該商家分歧的歷史分布（不分歧的發票根本不會走到 LLM），用分類名稱讓模型好讀。
+function invoiceLine(inv, hint, catName) {
   const items = (inv.lineItems ?? [])
-    .map((it) => it.name)
+    .slice(0, MAX_ITEMS)
+    .map((it) => {
+      if (!it.name) return null
+      const qty = it.qty > 1 ? ` ×${it.qty}` : ''
+      const amount = Number.isFinite(it.amount) ? ` =${it.amount}` : ''
+      return `${it.name}${qty}${amount}`
+    })
     .filter(Boolean)
-    .slice(0, 8)
     .join('、')
-  return `${inv.id} | 商家：${inv.merchant ?? '（未知）'} | 金額：${inv.totalAmount ?? 0} | 品項：${items || '（無明細）'}`
+  const history = hint?.top?.length
+    ? ` | 此商家歷史分類：${hint.top.map((t) => `${catName(t.categoryId)} ${t.count} 次`).join('、')}`
+    : ''
+  return `${inv.id} | 商家：${inv.merchant ?? '（未知）'} | 金額：${inv.totalAmount ?? 0} | 品項：${items || '（無明細）'}${history}`
 }
 
-async function askLlm(invoices, categories) {
+// targets: [{ inv, hint }]，hint 可為 null（全新商家）
+async function askLlm(targets, categories) {
   const openai = new OpenAI({ apiKey: OPENAI_API_KEY.value() })
+  const nameById = new Map(categories.map((c) => [c.id, c.name]))
+  const catName = (id) => nameById.get(id) ?? id
   const prompt = [
     '可用分類（格式：id | 名稱），categoryId 只能從這份清單挑：',
     ...categoryLines(categories),
     '',
-    '待分類發票（格式：id | 商家 | 金額 | 品項）：',
-    ...invoices.map(invoiceLine),
+    '待分類發票（格式：id | 商家 | 金額 | 品項 | 此商家歷史分類）：',
+    ...targets.map((t) => invoiceLine(t.inv, t.hint, catName)),
   ].join('\n')
 
   const completion = await openai.chat.completions.create({
@@ -424,8 +452,11 @@ async function askLlm(invoices, categories) {
       {
         role: 'system',
         content:
-          '你是台灣個人記帳的分類助理。依商家名稱與發票品項，為每張發票從使用者的分類清單挑一個最合適的分類 id。' +
-          '每張發票都要回一筆；categoryId 必須原樣取自清單中出現過的 id，不可自創。判斷把握不大時 confidence 給 low。',
+          '你是台灣個人記帳的分類助理。依商家名稱與發票品項，為每張發票從使用者的分類清單挑分類。' +
+          '每張發票都要回一筆；categoryId 必須原樣取自清單中出現過的 id，不可自創。判斷把握不大時 confidence 給 low。\n' +
+          'splits 預設只回一列，amount 等於發票金額。只有當品項明顯分屬不同分類、且每一群的金額都達到「發票金額的 15% 以上且至少 50 元」時，' +
+          `才拆成多列（最多 ${SPLIT_MAX_ROWS} 列），各列 amount 由該群品項金額加總、合計必須等於發票金額。\n` +
+          '有附「此商家歷史分類」代表這家店過去被記成多種分類，請以本張發票的實際品項為準判斷，歷史只是參考。',
       },
       { role: 'user', content: prompt },
     ],
@@ -458,11 +489,13 @@ async function classifyInbox(uid) {
   const validIds = new Set(categories.filter((c) => c.kind === 'expense').map((c) => c.id))
   const batch = db.batch()
   const now = new Date().toISOString()
-  const write = (inv, categoryId, source, confidence, model = null) => {
+  // categoryId 是 splits[0]（金額最大那列）的複本：既有讀取端與既有資料同形，免遷移
+  const write = (inv, splits, source, confidence, model = null) => {
     batch.set(userCol(uid, 'invoiceSuggestions').doc(inv.id), {
       id: inv.id,
       invoiceId: inv.id,
-      categoryId,
+      categoryId: splits[0].categoryId,
+      splits,
       source,
       confidence,
       ...(model ? { model } : {}),
@@ -479,23 +512,37 @@ async function classifyInbox(uid) {
       aliases,
       excludeIds: [UNCATEGORIZED_EXPENSE_ID],
     })
-    if (hit && validIds.has(hit.categoryId)) {
-      write(inv, hit.categoryId, 'history', hit.confidence)
+    // 歷史夠篤定才直接採用。全聯這種歷史分散的（hit.dispersed）降級送 LLM——
+    // 它看得到品項與金額，才有機會判對，甚至建議拆帳。
+    if (hit && validIds.has(hit.categoryId) && !hit.dispersed) {
+      write(inv, [{ categoryId: hit.categoryId, amount: inv.totalAmount ?? 0 }], 'history', hit.confidence)
       history += 1
     } else {
-      needLlm.push(inv)
+      // hint 只在分類仍存在時保留——它會被當成 LLM 漏回時的退路寫進建議
+      needLlm.push({ inv, hint: hit?.dispersed && validIds.has(hit.categoryId) ? hit : null })
     }
   }
 
   let ai = 0
   const targets = needLlm.slice(0, LLM_BATCH_CAP)
   if (targets.length > 0) {
-    const byId = new Map(targets.map((i) => [i.id, i]))
+    const byId = new Map(targets.map((t) => [t.inv.id, t.inv]))
+    const answered = new Set()
     for (const r of await askLlm(targets, categories)) {
       const inv = byId.get(r.invoiceId)
-      if (!inv || !validIds.has(r.categoryId)) continue
-      write(inv, r.categoryId, 'ai', r.confidence, OPENAI_MODEL)
+      if (!inv) continue
+      const splits = normalizeSplits(r.splits, inv.totalAmount ?? 0, validIds)
+      if (!splits) continue
+      write(inv, splits, 'ai', r.confidence, OPENAI_MODEL)
+      answered.add(inv.id)
       ai += 1
+    }
+    // 模型漏回或回了不合格的內容時，有歷史的就退回歷史建議——分歧商家的低信心建議
+    // 仍勝過完全沒有建議（confidence 已如實反映佔比，不會假裝很篤定）。
+    for (const t of targets) {
+      if (answered.has(t.inv.id) || !t.hint) continue
+      write(t.inv, [{ categoryId: t.hint.categoryId, amount: t.inv.totalAmount ?? 0 }], 'history', t.hint.confidence)
+      history += 1
     }
   }
 

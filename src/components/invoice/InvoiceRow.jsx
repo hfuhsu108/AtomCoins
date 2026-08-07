@@ -9,7 +9,8 @@ import { getIcon } from '../../lib/icons'
 // 查看記帳）收進左滑抽屜，由 InvoicePanel 依 status 組好用 actions 傳入。
 // 單擊＝開預覽（品項明細、發票號碼都在裡面，故列上不再做展開）。
 // 顯示名稱套用商家別名（原始名 invoice.merchant 永不改寫）。
-// suggestion＝自動分類建議 { label, icon, color, source }，僅未歸帳列顯示，點歸帳時會預填。
+// suggestion＝自動分類建議 { label, icon, color, source, splitCount, detail }，僅未歸帳列顯示，
+// 點歸帳時會預填（splitCount > 1 代表歸帳表單會直接開好多列拆帳）。
 export default function InvoiceRow({ invoice, aliases, suggestion = null, hidden, onRecord, onPreview }) {
   const displayName = resolveMerchant(invoice.merchant, aliases)
   const items = invoice.lineItems ?? []
@@ -42,7 +43,9 @@ export default function InvoiceRow({ invoice, aliases, suggestion = null, hidden
                     ? { background: `color-mix(in srgb, ${suggestion.color} 15%, transparent)`, color: suggestion.color }
                     : undefined
                 }
-                title={suggestion.source === 'ai' ? 'AI 建議的分類，歸帳時可改' : '依你的歷史記錄建議，歸帳時可改'}
+                title={`${suggestion.source === 'ai' ? 'AI 建議' : '依你的歷史記錄建議'}：${suggestion.detail ?? suggestion.label}${
+                  suggestion.splitCount > 1 ? `（歸帳時自動拆成 ${suggestion.splitCount} 列）` : ''
+                }，歸帳時可改`}
               >
                 <FontAwesomeIcon icon={getIcon(suggestion.icon)} />
                 {suggestion.label}

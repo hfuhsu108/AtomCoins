@@ -48,19 +48,31 @@ export default function InvoicePanel({ hidden, keyword = '' }) {
     [sub, inbox, processed, keyword, merchantAliases],
   )
 
-  // 自動分類建議 → 顯示用資料：名稱走「母·子」、圖示與顏色沿用母分類（同 TransactionRow 口徑）
+  // 自動分類建議 → 顯示用資料：名稱走「母·子」、圖示與顏色沿用母分類（同 TransactionRow 口徑）。
+  // 建議可能是多列拆帳（依品項金額拆），列上塞不下全名，兩列並列、三列以上收成「+N」。
   const suggestionView = useMemo(() => {
     const byId = new Map(categories.map((c) => [c.id, c]))
+    const fullName = (c) => (c.parentId ? `${byId.get(c.parentId)?.name ?? ''}·${c.name}` : c.name)
     const m = new Map()
     for (const s of suggestions) {
-      const cat = byId.get(s.categoryId)
-      if (!cat) continue // 分類已被刪除，建議失效
-      const parent = cat.parentId ? byId.get(cat.parentId) : cat
+      // 舊建議沒有 splits 欄位，退回單值 categoryId（免遷移）
+      const rows = s.splits?.length ? s.splits : [{ categoryId: s.categoryId }]
+      const cats = rows.map((r) => byId.get(r.categoryId)).filter(Boolean)
+      if (cats.length === 0) continue // 分類已被刪除，建議失效
+      const first = cats[0]
+      const parent = first.parentId ? byId.get(first.parentId) : first
       m.set(s.invoiceId, {
-        label: cat.parentId ? `${parent?.name ?? ''}·${cat.name}` : cat.name,
+        label:
+          cats.length === 1
+            ? fullName(first)
+            : cats.length === 2
+              ? `${first.name}＋${cats[1].name}`
+              : `${first.name} +${cats.length - 1}`,
         icon: parent?.icon ?? null,
         color: parent?.color ?? null,
         source: s.source,
+        splitCount: cats.length,
+        detail: cats.map(fullName).join('、'),
       })
     }
     return m
