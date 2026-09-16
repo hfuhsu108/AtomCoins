@@ -43,7 +43,8 @@ export default function CardDetailPage() {
   const allStatements = useCollection('creditCardStatements')
   const statements = id ? allStatements.filter((s) => s.accountId === id) : []
 
-  const [paying, setPaying] = useState(null) // 繳費中的 period 物件
+  // 繳費面板：null＝關閉；{ period }＝綁該期帳單的繳費；{ period: null }＝不綁帳單的繳款
+  const [paying, setPaying] = useState(null)
   const [deferring, setDeferring] = useState(null) // 延後入帳：{ preselectId } 或 null
   const [idx, setIdx] = useState(FUTURE) // 目前瀏覽的期別索引；idx-- 往未來、idx++ 往過去
   const [previewTx, setPreviewTx] = useState(null) // 單擊預覽中的消費
@@ -128,8 +129,19 @@ export default function CardDetailPage() {
 
         {/* 額度摘要 */}
         <div className="bg-surface border border-line rounded-card shadow-card p-[18px] mb-3">
-          <div className="text-[13px] text-text-secondary">已用額度</div>
-          <div className="text-[30px] font-bold leading-tight tabular-nums mt-0.5">{formatAmount(used, opt)}</div>
+          <div className="flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[13px] text-text-secondary">已用額度</div>
+              <div className="text-[30px] font-bold leading-tight tabular-nums mt-0.5">{formatAmount(used, opt)}</div>
+            </div>
+            {/* 不綁帳單的繳款：預繳、補繳、溢繳隨時可記，只影響已用／可用額度，不把任何一期標為已繳 */}
+            <button
+              onClick={() => setPaying({ period: null })}
+              className="flex-none h-[34px] px-3 rounded-btn bg-surface-alt text-text-primary text-[13px] font-semibold"
+            >
+              繳款
+            </button>
+          </div>
           {limit > 0 && (
             <>
               {/* 隱藏金額時進度條固定等寬淡色，不洩漏使用率比例（同首頁卡片列） */}
@@ -191,7 +203,7 @@ export default function CardDetailPage() {
               </div>
               {!period.isOpen && !isPaid && period.total > 0 && (
                 <button
-                  onClick={() => setPaying(period)}
+                  onClick={() => setPaying({ period })}
                   className="flex-none h-[34px] px-3 rounded-btn bg-brand text-white text-[13px] font-semibold"
                 >
                   繳費
@@ -264,8 +276,9 @@ export default function CardDetailPage() {
       </div>
 
       <PaySheet
-        period={paying}
+        request={paying}
         card={card}
+        usedAmount={used}
         defaultFundingId={card.linkedDebitAccountId ?? settings?.defaultAccountId ?? null}
         accounts={accounts}
         onClose={() => setPaying(null)}
@@ -429,20 +442,23 @@ function DeferSheet({ request, charges, paid, lookups, defaultDate, onClose }) {
   )
 }
 
-// 繳費面板：金額（預設本期應繳，可改）＋扣款銀行＋日期 → 一次寫轉帳＋帳單快照
-function PaySheet({ period, card, defaultFundingId, accounts, onClose }) {
-  const open = !!period
+// 繳費面板，兩種模式共用金額＋扣款銀行＋日期：
+//   帳單繳費（request.period 有值）：金額預設該期應繳、可改 → 轉帳＋帳單快照，該期標為已繳
+//   不綁帳單的繳款（request.period 為 null）：預繳／補繳／溢繳 → 只寫轉帳，不動任何一期的繳款狀態
+function PaySheet({ request, card, usedAmount, defaultFundingId, accounts, onClose }) {
+  const open = !!request
+  const period = request?.period ?? null
   const [amountStr, setAmountStr] = useState('')
   const [fundingId, setFundingId] = useState(null)
   const [date, setDate] = useState(todayStr())
   const [pickerOpen, setPickerOpen] = useState(false)
 
-  // period 改變時重置預設值
-  const key = period?.periodEnd ?? 'none'
+  // 每次開啟重置預設值。關閉時 key 回到 'none'，同一期或繳款模式關了再開才會重新帶入
+  const key = open ? (period?.periodEnd ?? 'free') : 'none'
   const [lastKey, setLastKey] = useState(key)
   if (lastKey !== key) {
     setLastKey(key)
-    setAmountStr(period ? String(period.total) : '')
+    setAmountStr(period ? String(period.total) : usedAmount > 0 ? String(usedAmount) : '')
     setFundingId(defaultFundingId)
     setDate(todayStr())
   }
@@ -463,7 +479,7 @@ function PaySheet({ period, card, defaultFundingId, accounts, onClose }) {
   }
 
   return (
-    <Sheet open={open} onClose={onClose} title="信用卡繳費" bodyClassName="overflow-y-auto">
+    <Sheet open={open} onClose={onClose} title={period ? '信用卡繳費' : '信用卡繳款'} bodyClassName="overflow-y-auto">
       <div className="p-[18px] flex flex-col gap-3.5">
         <div>
           <div className="text-[13px] text-text-secondary mb-1.5">繳款金額</div>
@@ -476,8 +492,25 @@ function PaySheet({ period, card, defaultFundingId, accounts, onClose }) {
               className="w-full outline-none bg-transparent"
             />
           </div>
-          {period && (
-            <div className="text-[11px] text-text-tertiary mt-1">本期應繳 NT$ {formatNumber(period.total)}</div>
+          {period ? (
+            <>
+              <div className="text-[11px] text-text-tertiary mt-1">本期應繳 NT$ {formatNumber(period.total)}</div>
+              {/* 金額與應繳不同只提醒、不擋（警告＋允許）。該期照舊標為已繳，差額不結轉到下期 */}
+              {amount > period.total && (
+                <div className="text-[11px] text-warning-text mt-0.5">
+                  多繳 NT$ {formatNumber(amount - period.total)}，不會抵下期帳單，只會讓已用額度變少
+                </div>
+              )}
+              {amount > 0 && amount < period.total && (
+                <div className="text-[11px] text-warning-text mt-0.5">
+                  少繳 NT$ {formatNumber(period.total - amount)}，這期仍會標為已繳、不再提醒
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-[11px] text-text-tertiary mt-1">
+              目前已用 NT$ {formatNumber(usedAmount)}・不綁帳單，不會把任何一期標為已繳
+            </div>
           )}
         </div>
         <div>
@@ -504,7 +537,7 @@ function PaySheet({ period, card, defaultFundingId, accounts, onClose }) {
           disabled={!canPay || busy}
           className="flex items-center justify-center gap-1.5 h-[42px] rounded-btn bg-brand text-white text-[13px] font-semibold disabled:opacity-40"
         >
-          <FontAwesomeIcon icon={faCheck} className="text-xs" /> 確認繳費（轉帳 {formatBalance(-amount)}）
+          <FontAwesomeIcon icon={faCheck} className="text-xs" /> {period ? '確認繳費' : '確認繳款'}（轉帳 {formatBalance(-amount)}）
         </button>
       </div>
 

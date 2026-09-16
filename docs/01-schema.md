@@ -124,7 +124,7 @@
   - `payload` = 可還原表單的欄位子集，**不含** id／日期／戳記：`type`；expense/income 帶 `accountId?` + `splits:[{categoryId, amount}]`；transfer 帶 `fromAccountId?`/`toAccountId?`/`fee`；receivable/payable 帶 `accountId?`/`counterpartyId?`/`amount`；共同 `note?`。
   - 建立入口在 TransactionForm「存為範本」（股票／分期／週期／含代墊拆帳不可存）；套用時日期一律今天、金額空值不預填（`stateFromTemplate`）。`shortcut` 欄位取消（未實作）。
 - **Budget 預算**(暫不實作)：`id` / `scope`(overall/category/project) / `period` / `amount`。
-- **Settings 偏好**(單一文件)：`theme` / `defaultAccountId`(主帳戶) / `hideAmountsDefault` / `autoBackup` bool / `lastBackupAt` / `driveFileId` / `lastPriceSyncAt`(上次股價同步時間) / 通知設定…（GAS proxy 網址不在此存放，見 `00-overview.md`「環境／機密值」）
+- **Settings 偏好**(單一文件)：`theme` / `defaultAccountId`(主帳戶) / `hideAmountsDefault` / `autoBackup` bool / `lastBackupAt` / `driveFileId` / `lastPriceSyncAt`(上次股價同步時間) / `invoiceSeenAt`(最後一次看過發票分頁的時間，ISO；導覽列新發票紅點的已讀基準，判定見 `src/lib/unseenInvoices.js`) / 通知設定…（GAS proxy 網址不在此存放，見 `00-overview.md`「環境／機密值」）
 
 ## 3.13 NetWorthSnapshot 淨資產每日快照（docs/09 批次 1/6a）
 

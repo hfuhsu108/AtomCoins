@@ -7,6 +7,7 @@ import {
   faChartPie,
   faGear,
 } from '@fortawesome/free-solid-svg-icons'
+import useUnseenInvoices from '../hooks/useUnseenInvoices'
 
 const tabs = [
   { to: '/', icon: faHouse, label: '首頁' },
@@ -18,6 +19,7 @@ const tabs = [
 
 export default function BottomNav() {
   const navigate = useNavigate()
+  const hasUnseenInvoices = useUnseenInvoices().length > 0
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-surface border-t border-line pb-[env(safe-area-inset-bottom,22px)]">
@@ -34,7 +36,13 @@ export default function BottomNav() {
                 }`
               }
             >
-              <FontAwesomeIcon icon={tab.icon} className="text-lg" />
+              {/* 新發票紅點（樣式同首頁鈴鐺）。外層用 flex，高度才會等於圖示本身、版面不位移 */}
+              <span className="relative flex text-lg">
+                <FontAwesomeIcon icon={tab.icon} />
+                {tab.to === '/transactions' && hasUnseenInvoices && (
+                  <span className="absolute -top-0.5 -right-1.5 w-[7px] h-[7px] bg-error rounded-full" />
+                )}
+              </span>
               <span>{tab.label}</span>
             </NavLink>
           ) : (

@@ -4,6 +4,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faChevronLeft, faChevronRight, faMagnifyingGlass, faList, faCalendarDays, faReceipt, faXmark, faPen, faTrash } from '@fortawesome/free-solid-svg-icons'
 import { useCollection } from '../db/DataProvider'
 import useDeleteTransaction from '../hooks/useDeleteTransaction'
+import useUnseenInvoices from '../hooks/useUnseenInvoices'
 import { monthlySummary, adjustDeltas } from '../lib/engine'
 import { formatAmount, formatSigned } from '../lib/format'
 import { todayStr, parseDate, monthLabel, monthPrefix, addMonth, formatMd, weekday } from '../lib/date'
@@ -32,6 +33,8 @@ export default function TransactionsPage() {
   const categories = useCollection('categories')
   const counterparties = useCollection('counterparties')
   const tags = useCollection('tags')
+  // 「發票載具」分頁的新發票紅點；打開發票分頁即由 InvoicePanel 標為已讀
+  const hasUnseenInvoices = useUnseenInvoices().length > 0
 
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -167,6 +170,9 @@ export default function TransactionsPage() {
             }`}
           >
             {t.label}
+            {t.id === 'invoice' && tab !== 'invoice' && hasUnseenInvoices && (
+              <span className="inline-block align-middle ml-1.5 mb-0.5 w-[7px] h-[7px] bg-error rounded-full" />
+            )}
           </button>
         ))}
       </div>

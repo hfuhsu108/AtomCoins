@@ -413,8 +413,10 @@ export async function deleteTagCleanup(tagId) {
 }
 
 // ── 信用卡繳費（docs/03 §B：繳款是 transfer，不是支出）────────────
-// 「銀行→卡」轉帳＋帳單繳款快照以 writeBatch 原子綁定，避免轉帳成功但快照漏記
-export async function payCreditCardStatement({ card, fundingAccountId, amount, postingDate, period }) {
+// 「銀行→卡」轉帳＋帳單繳款快照以 writeBatch 原子綁定，避免轉帳成功但快照漏記。
+// period 省略＝不綁帳單的繳款（預繳／補繳／溢繳）：只寫轉帳、不寫快照。快照一寫該期就算已繳，
+// 本期還在累計時先繳，之後刷的消費也會被當成已繳，卡費推播就不再提醒這一期。
+export async function payCreditCardStatement({ card, fundingAccountId, amount, postingDate, period = null }) {
   const ts = now()
   const payment = {
     id: newId(),
@@ -432,23 +434,25 @@ export async function payCreditCardStatement({ card, fundingAccountId, amount, p
     createdAt: ts,
     updatedAt: ts,
   }
-  const statement = {
-    id: newId(),
-    accountId: card.id,
-    periodStart: period.periodStart,
-    periodEnd: period.periodEnd,
-    statementDate: period.statementDate,
-    dueDate: period.dueDate,
-    totalAmount: period.total,
-    isPaid: true,
-    paymentTransactionId: payment.id,
-    paidAmount: amount,
-    createdAt: ts,
-    updatedAt: ts,
-  }
   const batch = writeBatch(firestore)
   batch.set(ref('transactions', payment.id), stripUndefined(payment))
-  batch.set(ref('creditCardStatements', statement.id), stripUndefined(statement))
+  if (period) {
+    const statement = {
+      id: newId(),
+      accountId: card.id,
+      periodStart: period.periodStart,
+      periodEnd: period.periodEnd,
+      statementDate: period.statementDate,
+      dueDate: period.dueDate,
+      totalAmount: period.total,
+      isPaid: true,
+      paymentTransactionId: payment.id,
+      paidAmount: amount,
+      createdAt: ts,
+      updatedAt: ts,
+    }
+    batch.set(ref('creditCardStatements', statement.id), stripUndefined(statement))
+  }
   await batch.commit()
   return payment
 }

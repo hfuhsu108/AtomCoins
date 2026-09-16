@@ -10,6 +10,7 @@ import {
   faUser,
 } from '@fortawesome/free-solid-svg-icons'
 import { useAuth } from '../hooks/useAuth'
+import useUnseenInvoices from '../hooks/useUnseenInvoices'
 
 const navItems = [
   { to: '/', icon: faHouse, label: '首頁' },
@@ -21,6 +22,7 @@ const navItems = [
 export default function Sidebar() {
   const navigate = useNavigate()
   const user = useAuth()
+  const hasUnseenInvoices = useUnseenInvoices().length > 0
   // undefined＝登入狀態載入中、null＝未登入、物件＝已登入
   const userLabel = user === undefined ? '…' : user === null ? '未登入' : (user.displayName || user.email)
 
@@ -65,7 +67,15 @@ export default function Sidebar() {
               }`
             }
           >
-            <FontAwesomeIcon icon={item.icon} className="w-5 text-center" />
+            {/* 圖示欄固定 w-5 對齊文字；紅點掛在圖示本身的角上（同底部導覽），不是掛在欄位邊緣 */}
+            <span className="flex w-5 justify-center">
+              <span className="relative flex">
+                <FontAwesomeIcon icon={item.icon} />
+                {item.to === '/transactions' && hasUnseenInvoices && (
+                  <span className="absolute -top-0.5 -right-1.5 w-[7px] h-[7px] bg-error rounded-full" />
+                )}
+              </span>
+            </span>
             <span>{item.label}</span>
           </NavLink>
         ))}

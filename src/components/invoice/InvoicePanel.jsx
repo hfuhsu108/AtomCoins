@@ -8,7 +8,9 @@ import { useCollection } from '../../db/DataProvider'
 import { useScraperStatus } from '../../hooks/useScraperStatus'
 import { filterInvoices } from '../../lib/search'
 import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
-import { updateInvoice, unrecordInvoice } from '../../db/repo'
+import { updateInvoice, unrecordInvoice, updateSettings } from '../../db/repo'
+import useUnseenInvoices from '../../hooks/useUnseenInvoices'
+import { nextSeenAt } from '../../lib/unseenInvoices'
 import { formatDateTime } from '../../lib/date'
 import { useConfirm } from '../ConfirmSheet'
 import EmptyState from '../EmptyState'
@@ -34,6 +36,16 @@ export default function InvoicePanel({ hidden, keyword = '' }) {
   const [preview, setPreview] = useState(null) // 單擊預覽中的發票
   // 發票編輯 sheet：undefined=關閉、null=手動新增、發票物件=編輯
   const [editTarget, setEditTarget] = useState(undefined)
+
+  // 打開發票分頁＝看過新發票。有未讀才寫，沒有就不寫，免得每次切到這頁都寫一次設定；
+  // 分頁開著時爬蟲又寫進新發票，unseen 會跟著變、再標一次，同樣視為看過。
+  const unseen = useUnseenInvoices()
+  useEffect(() => {
+    if (unseen.length === 0) return
+    updateSettings({ invoiceSeenAt: nextSeenAt(unseen) }).catch((err) =>
+      console.error('[InvoicePanel] 標記發票已讀失敗', err),
+    )
+  }, [unseen])
 
   const { inbox, processed } = useMemo(() => {
     const inbox = invoices.filter((i) => i.status === 'inbox').sort(byDateDesc)

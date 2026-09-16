@@ -687,6 +687,44 @@ lint 對改動 5 檔零輸出、`npm run build` 通過、`node --check functions
 
 > **部署注意**：本輪改到 `autoCategory.js`（在 `copy-shared.mjs` 清單內）與 `functions/index.js`，上線時**必須** `firebase deploy --only functions`，否則線上跑的仍是贏者全拿的舊口徑。已於 2026-08-07 部署，五個函式皆更新成功。
 
+## 後續調整（2026-09-16，第十批：信用卡不綁帳單的繳款＋新發票紅點）
+
+使用者需求：「繳信用卡費可以自行輸入金額，也就是可以溢繳」「有新載具要有通知圓點」。
+
+查證後兩個事實改變了做法：
+
+1. **繳費面板的金額本來就能改、也沒有上限**（`PaySheet` 的金額欄位自由輸入，`canPay` 只擋 `amount > 0`）。卡住的其實是入口——「繳費」鈕只在「已出帳＋未繳＋金額 > 0」時出現，本期累計中、已繳過、金額為 0 都按不到。
+2. **溢繳若要抵下期，不能用卡片餘額推算**：分期（Model B）每期會產生一筆銀行→卡轉帳，在餘額上與繳款無從區分。要做只能用繳費快照已存的 `paidAmount` 逐期推。
+
+### 裁示（AskUserQuestion 選定）
+
+- 溢繳語義：**只放寬入口，不抵扣**——溢繳只反映在已用／可用額度，下期應繳照樣是該期消費全額；engine 與推播口徑零改動。
+- 紅點位置：導覽列「明細」＋明細頁「發票載具」分頁，**不放首頁鈴鐺**。
+- 「新發票」定義：上次打開發票分頁之後爬蟲新抓到的；已讀時間**跨裝置同步**。
+
+### ① 繳款與繳費分成兩個入口
+
+`repo.payCreditCardStatement` 的 `period` 改為可省略，省略時只寫轉帳、不寫 `creditCardStatements` 快照。
+
+**這是模型判斷、不是使用者指定，理由必須留著**：直接放寬原本那顆「繳費」鈕的顯示條件會寫出快照，於是本期還在累計時先預繳 → 該期提早標已繳 → `dueCardPayments` 跳過它 → **之後刷的消費永遠不再提醒繳費**。所以期別卡的「繳費」（綁帳單、標已繳）維持原顯示條件，額度摘要卡另加「繳款」（只寫轉帳、隨時可按、金額預帶已用額度）。
+
+`PaySheet` 改吃 `request`（`{ period }` 或 `{ period: null }`），標題、預設金額、按鈕文案依模式切換；金額與應繳不同時顯示多繳／少繳提示（警告＋允許，不擋存）。
+
+### ② 新發票紅點
+
+- `src/lib/unseenInvoices.js`（純函式、可離線驗算）：`unseenInvoices(invoices, seenAt)`＝`inbox` ＋ 非 `manual` ＋ `createdAt` 晚於已讀時間；`nextSeenAt(unseen, now)` 取 max(現在, 未讀最晚 `createdAt`)——只寫「現在」的話，裝置時鐘比爬蟲那台慢就永遠消不掉紅點。
+- `useUnseenInvoices` 三處共用（`BottomNav`／`Sidebar`／`TransactionsPage` 分頁列），settings 未載入時回空陣列，避免每次開 App 閃一下。
+- 已讀時間寫 `settings.invoiceSeenAt`（docs/01 已補），只在 `InvoicePanel` 掛載且有未讀時寫。
+- 爬蟲重抓既有 inbox 發票時保留原 `createdAt`（`firestore_upload.py`），故同一張不會每天重新變新；其 `_now_iso` 早已對齊前端 `toISOString`，判定仍以 `Date.parse` 比數字、不依賴兩端格式永遠一致。
+
+### 進度
+
+離線驗算 **15/15**（手動／已歸帳／已略過不算、時間相等不算、時區字串反例、時鐘偏差、標已讀後新抓到的仍會亮）；改動 8 檔 lint 零新增警告、`npm run build` 通過；dev server 量測紅點外框高度等於圖示本身（桌面 14px、手機 18px），版面不位移、console 乾淨。
+
+**已使用者測試驗收通過（2026-09-16），發布 v1.9.0。**
+
+> **部署注意**：本輪 `engine.js`／`notifications.js`／`date.js` 零改動，**不需要** `firebase deploy --only functions`。
+
 ## 保留／明確不做（本輪拍板）
 
 - **品項級歷史學習**（品項名 token → 分類的離線投票）：不做。語料只有「單一分類的歸帳交易」才有明確標註——拆帳交易的 note 是整筆共用、對不回單列，資料成長太慢；LLM 已看得到品項與金額，這層邊際效益低。
