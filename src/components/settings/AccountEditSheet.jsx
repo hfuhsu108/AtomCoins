@@ -12,6 +12,7 @@ import { todayStr } from '../../lib/date'
 import Sheet from '../Sheet'
 import AccountPicker from '../transaction/AccountPicker'
 import DateInput from '../DateInput'
+import Toggle from '../Toggle'
 import BalanceAdjustSheet from './BalanceAdjustSheet'
 
 const TYPES = [
@@ -38,6 +39,7 @@ function initState(account) {
     statementDay: account?.statementDay != null ? String(account.statementDay) : '',
     paymentDueDay: account?.paymentDueDay != null ? String(account.paymentDueDay) : '',
     linkedDebitAccountId: account?.linkedDebitAccountId ?? null,
+    autoPay: account?.autoPay ?? false,
     defaultSettlementBankId: account?.defaultSettlementBankId ?? null,
     defaultBrokerId: account?.defaultBrokerId ?? null,
     // 期初持股（僅新增證券帳戶時填）：[{ symbol, name, shares, avgCost }]，成本不扣現金
@@ -125,6 +127,13 @@ export default function AccountEditSheet({ open, account, accounts, brokers = []
       statementDay: isCard && s.statementDay ? toInt(s.statementDay) : null,
       paymentDueDay: isCard && s.paymentDueDay ? toInt(s.paymentDueDay) : null,
       linkedDebitAccountId: isCard ? s.linkedDebitAccountId : null,
+      // 自動扣款以「開啟當天」為起點，原本就開著則沿用舊起點；沒有扣款帳戶視同關閉。
+      // autoPayLastPeriodEnd 刻意不寫：它由自動記錄維護，表單持有的是開表單當下的舊值
+      autoPay: isCard && s.autoPay && !!s.linkedDebitAccountId,
+      autoPaySince:
+        isCard && s.autoPay && s.linkedDebitAccountId
+          ? (account?.autoPay && account?.autoPaySince) || todayStr()
+          : null,
       // 非證券一律清空
       defaultSettlementBankId: isSecurities ? s.defaultSettlementBankId : null,
       defaultBrokerId: isSecurities ? s.defaultBrokerId : null,
@@ -327,6 +336,23 @@ export default function AccountEditSheet({ open, account, accounts, brokers = []
                 </span>
               </button>
             </Field>
+            <div>
+              <div className="flex items-center justify-between px-4 py-3 bg-surface border border-line rounded-modal">
+                <span className={`text-sm ${s.linkedDebitAccountId ? 'text-text-secondary' : 'text-text-tertiary'}`}>
+                  自動扣款
+                </span>
+                <Toggle
+                  checked={s.autoPay && !!s.linkedDebitAccountId}
+                  onChange={() => s.linkedDebitAccountId && set({ autoPay: !s.autoPay })}
+                  label="自動扣款"
+                />
+              </div>
+              <p className="text-[11px] text-text-tertiary mt-1.5 px-1">
+                {s.linkedDebitAccountId
+                  ? '到了繳款截止日，自動從扣繳帳戶記一筆繳費，金額為該期 App 帳單金額。開啟前已到期的帳單不會補記。'
+                  : '先設定自動扣繳帳戶才能開啟。'}
+              </p>
+            </div>
           </>
         )}
 

@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faChevronLeft, faChevronRight, faChevronDown, faCheck, faClockRotateLeft, faRotateLeft, faPen, faTrash } from '@fortawesome/free-solid-svg-icons'
 import { useCollection, useSettings } from '../db/DataProvider'
-import { accountBalances, statementPeriods, deferredCharges, paidStatementSet } from '../lib/engine'
+import { accountBalances, statementPeriods, deferredCharges, paidStatementSet, isAutoPayPeriod } from '../lib/engine'
 import { payCreditCardStatement, setPostingDates } from '../db/repo'
 import { useAsyncAction, settle } from '../hooks/useAsyncAction'
 import useCloseView from '../hooks/useCloseView'
@@ -11,6 +11,7 @@ import useDeleteTransaction from '../hooks/useDeleteTransaction'
 import { formatAmount, formatBalance, formatNumber } from '../lib/format'
 import { todayStr, formatMd, addDays, monthLabel } from '../lib/date'
 import { accountIcon } from '../lib/icons'
+import { findDeferCombos, MAX_CANDIDATES } from '../lib/deferMatch'
 import { useHiddenAmount, EyeButton } from '../components/HiddenAmountProvider'
 import EmptyState from '../components/EmptyState'
 import TransactionRow from '../components/transaction/TransactionRow'
@@ -139,7 +140,7 @@ export default function CardDetailPage() {
               onClick={() => setPaying({ period: null })}
               className="flex-none h-[34px] px-3 rounded-btn bg-surface-alt text-text-primary text-[13px] font-semibold"
             >
-              繳款
+              額外繳款
             </button>
           </div>
           {limit > 0 && (
@@ -198,7 +199,9 @@ export default function CardDetailPage() {
                 <div className="text-xs text-text-tertiary tabular-nums mt-0.5">
                   {period.isOpen
                     ? `出帳 ${formatMd(period.statementDate)}`
-                    : `繳款截止 ${formatMd(period.dueDate)}`}
+                    : isAutoPayPeriod(card, period)
+                      ? `${formatMd(period.dueDate)} 自動扣款`
+                      : `繳款截止 ${formatMd(period.dueDate)}`}
                 </div>
               </div>
               {!period.isOpen && !isPaid && period.total > 0 && (
@@ -206,7 +209,7 @@ export default function CardDetailPage() {
                   onClick={() => setPaying({ period })}
                   className="flex-none h-[34px] px-3 rounded-btn bg-brand text-white text-[13px] font-semibold"
                 >
-                  繳費
+                  繳這期帳單
                 </button>
               )}
             </div>
@@ -331,6 +334,8 @@ function DeferSheet({ request, charges, paid, lookups, defaultDate, onClose }) {
   const open = !!request
   const [selected, setSelected] = useState(() => new Set())
   const [date, setDate] = useState(defaultDate)
+  // 銀行帳單金額只供這次反推用，不存檔
+  const [bankStr, setBankStr] = useState('')
   const { run, busy, error } = useAsyncAction()
 
   // 每次開啟重置：逐列進來只勾那筆，從標題進來則全不勾。
@@ -341,7 +346,21 @@ function DeferSheet({ request, charges, paid, lookups, defaultDate, onClose }) {
     setLastKey(key)
     setSelected(new Set(open && request.preselectId ? [request.preselectId] : []))
     setDate(defaultDate)
+    setBankStr('')
   }
+
+  const match = bankStr === '' ? null : findDeferCombos(charges, parseInt(bankStr, 10))
+  const pickCombo = (combo) => setSelected(new Set(combo.map((t) => t.id)))
+  const onBankChange = (e) => {
+    const v = e.target.value.replace(/[^0-9]/g, '')
+    setBankStr(v)
+    // 唯一解直接勾好；多解讓使用者自己點，不替他猜
+    if (v !== '') {
+      const r = findDeferCombos(charges, parseInt(v, 10))
+      if (r.comboCount === 1) pickCombo(r.combos[0])
+    }
+  }
+  const txLabel = (t) => t.merchant || lookups.cat[t.splits?.[0]?.categoryId]?.name || t.note || '未分類'
 
   const rows = charges.slice().sort((a, b) => (a.tradeDate < b.tradeDate ? 1 : -1))
   const picked = rows.filter((t) => selected.has(t.id))
@@ -379,13 +398,27 @@ function DeferSheet({ request, charges, paid, lookups, defaultDate, onClose }) {
         )}
 
         <div>
+          <div className="text-[13px] text-text-secondary mb-1.5">銀行帳單金額（選填，用來反推該延後哪幾筆）</div>
+          <div className="px-3.5 py-2.5 bg-surface border border-line rounded-modal flex items-center gap-1 text-[15px] tabular-nums">
+            <span className="text-text-tertiary text-sm">NT$</span>
+            <input
+              inputMode="numeric"
+              value={bankStr}
+              onChange={onBankChange}
+              placeholder="帳單上的本期應繳"
+              className="w-full outline-none bg-transparent"
+            />
+          </div>
+          {match && <MatchResult match={match} selected={selected} txLabel={txLabel} onPick={pickCombo} />}
+        </div>
+
+        <div>
           <div className="text-[13px] text-text-secondary mb-1.5 px-1">
             要延後的項目（已選 {picked.length}）
           </div>
           <div className="bg-surface border border-line rounded-modal divide-y divide-line-light">
             {rows.map((t) => {
               const on = selected.has(t.id)
-              const cat = lookups.cat[t.splits?.[0]?.categoryId]
               return (
                 <button
                   key={t.id}
@@ -400,9 +433,7 @@ function DeferSheet({ request, charges, paid, lookups, defaultDate, onClose }) {
                     {on && <FontAwesomeIcon icon={faCheck} className="text-[10px]" />}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <div className="text-[14px] font-medium truncate">
-                      {t.merchant || cat?.name || t.note || '未分類'}
-                    </div>
+                    <div className="text-[14px] font-medium truncate">{txLabel(t)}</div>
                     <div className="text-[11px] text-text-tertiary tabular-nums">{formatMd(t.tradeDate)}</div>
                   </div>
                   <span className="text-[14px] font-semibold tabular-nums flex-none">
@@ -439,6 +470,46 @@ function DeferSheet({ request, charges, paid, lookups, defaultDate, onClose }) {
         </button>
       </div>
     </Sheet>
+  )
+}
+
+// 銀行帳單金額的反推結果。只有 App 比銀行多才有組合可找；銀行比較多代表 App 漏記，程式推不出來
+function MatchResult({ match, selected, txLabel, onPick }) {
+  const { diff, combos, comboCount, searched } = match
+  const note = (text, tone = 'text-text-tertiary') => <p className={`text-[12px] mt-1.5 px-1 ${tone}`}>{text}</p>
+  if (diff === 0) return note('與 App 本期金額相同，不需要延後。', 'text-success')
+  if (diff < 0) return note(`銀行比 App 多 ${formatAmount(diff)}，可能有漏記的消費，或上期延後的有一筆已被這期收走。`, 'text-warning-text')
+  if (comboCount === 0) {
+    return note(
+      `App 比銀行多 ${formatAmount(diff)}，但在最晚 ${searched} 筆裡找不到剛好的組合，可能有漏記或金額記錯。`,
+      'text-warning-text',
+    )
+  }
+  return (
+    <div className="mt-1.5">
+      <div className="text-[12px] text-text-tertiary px-1 mb-1.5">
+        App 比銀行多 {formatAmount(diff)}，
+        {comboCount === 1 ? '找到 1 組，已幫你勾好：' : `找到 ${comboCount} 組可能，點選要延後的那組：`}
+        {searched === MAX_CANDIDATES && `（只在最晚 ${MAX_CANDIDATES} 筆裡找）`}
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {combos.map((combo) => {
+          const on = combo.length === selected.size && combo.every((t) => selected.has(t.id))
+          return (
+            <button
+              key={combo.map((t) => t.id).join('|')}
+              onClick={() => onPick(combo)}
+              className={`text-left px-3 py-2 rounded-modal border text-[13px] ${
+                on ? 'border-brand bg-brand-light' : 'border-line bg-surface'
+              }`}
+            >
+              {combo.map((t) => `${formatMd(t.tradeDate)} ${txLabel(t)} ${formatAmount(t.type === 'expense' ? t.amount : -t.amount)}`).join('＋')}
+            </button>
+          )
+        })}
+        {comboCount > combos.length && note(`另有 ${comboCount - combos.length} 組未列出，請手動勾選。`)}
+      </div>
+    </div>
   )
 }
 
@@ -479,7 +550,7 @@ function PaySheet({ request, card, usedAmount, defaultFundingId, accounts, onClo
   }
 
   return (
-    <Sheet open={open} onClose={onClose} title={period ? '信用卡繳費' : '信用卡繳款'} bodyClassName="overflow-y-auto">
+    <Sheet open={open} onClose={onClose} title={period ? '繳這期帳單' : '額外繳款'} bodyClassName="overflow-y-auto">
       <div className="p-[18px] flex flex-col gap-3.5">
         <div>
           <div className="text-[13px] text-text-secondary mb-1.5">繳款金額</div>
@@ -537,7 +608,7 @@ function PaySheet({ request, card, usedAmount, defaultFundingId, accounts, onClo
           disabled={!canPay || busy}
           className="flex items-center justify-center gap-1.5 h-[42px] rounded-btn bg-brand text-white text-[13px] font-semibold disabled:opacity-40"
         >
-          <FontAwesomeIcon icon={faCheck} className="text-xs" /> {period ? '確認繳費' : '確認繳款'}（轉帳 {formatBalance(-amount)}）
+          <FontAwesomeIcon icon={faCheck} className="text-xs" /> {period ? '確認繳費' : '確認額外繳款'}（轉帳 {formatBalance(-amount)}）
         </button>
       </div>
 

@@ -8,7 +8,7 @@
 
 共用：`id` / `name` / `type` enum(`cash` `bank` `credit_card` `securities`) / `currency`(預設`'TWD'`) / `icon` / `color` / `openingBalance` int / `openingDate` date / `isArchived` bool / `sortOrder` int / `note?` / `createdAt` / `updatedAt`。
 
-信用卡專屬：`creditLimit` int / `statementDay` int(出帳日) / `paymentDueDay` int(繳費日) / `linkedDebitAccountId` ref→Account?(自動扣繳來源) / `sharedLimitGroupId` string?(額度共用群組)。
+信用卡專屬：`creditLimit` int / `statementDay` int(出帳日) / `paymentDueDay` int(繳費日) / `linkedDebitAccountId` ref→Account?(自動扣繳來源) / `autoPay` bool?(自動扣款：繳款日到了開 App 時自動補記該期繳費，需有 `linkedDebitAccountId`) / `autoPaySince` date?(開啟自動扣款當天；繳款日早於此日的帳單不自動補記) / `autoPayLastPeriodEnd` date?(最後一期已自動補記的 periodEnd，只由自動補記寫入，表單不寫，事後刪掉那筆轉帳也不會再補) / `sharedLimitGroupId` string?(額度共用群組)。
 
 證券專屬：`defaultSettlementBankId` ref→Account(預設交割銀行，指向 bank 帳戶) / `defaultBrokerId` ref→Broker?。
 

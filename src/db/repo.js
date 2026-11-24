@@ -416,10 +416,15 @@ export async function deleteTagCleanup(tagId) {
 // 「銀行→卡」轉帳＋帳單繳款快照以 writeBatch 原子綁定，避免轉帳成功但快照漏記。
 // period 省略＝不綁帳單的繳款（預繳／補繳／溢繳）：只寫轉帳、不寫快照。快照一寫該期就算已繳，
 // 本期還在累計時先繳，之後刷的消費也會被當成已繳，卡費推播就不再提醒這一期。
-export async function payCreditCardStatement({ card, fundingAccountId, amount, postingDate, period = null }) {
+//
+// auto＝自動扣款（lib/autoPay）：id 依「卡＋期」固定，多裝置同時補記只會寫到同一份文件；
+// 同批把卡片的 autoPayLastPeriodEnd 推到這期，使用者事後刪掉這筆轉帳也不會被再補回來。
+export async function payCreditCardStatement({ card, fundingAccountId, amount, postingDate, period = null, auto = false }) {
+  if (auto && !period) throw new Error('自動扣款必須綁定帳單期')
   const ts = now()
+  const autoKey = auto ? `autopay_${card.id}_${period.periodEnd}` : null
   const payment = {
-    id: newId(),
+    id: autoKey ?? newId(),
     type: 'transfer',
     currency: 'TWD',
     fromAccountId: fundingAccountId,
@@ -428,7 +433,7 @@ export async function payCreditCardStatement({ card, fundingAccountId, amount, p
     fee: 0,
     tradeDate: postingDate,
     postingDate,
-    note: '信用卡繳費',
+    note: auto ? '信用卡自動扣款' : '信用卡繳費',
     tagIds: [],
     isReconciled: false,
     createdAt: ts,
@@ -438,7 +443,7 @@ export async function payCreditCardStatement({ card, fundingAccountId, amount, p
   batch.set(ref('transactions', payment.id), stripUndefined(payment))
   if (period) {
     const statement = {
-      id: newId(),
+      id: autoKey ?? newId(),
       accountId: card.id,
       periodStart: period.periodStart,
       periodEnd: period.periodEnd,
@@ -453,6 +458,7 @@ export async function payCreditCardStatement({ card, fundingAccountId, amount, p
     }
     batch.set(ref('creditCardStatements', statement.id), stripUndefined(statement))
   }
+  if (auto) batch.update(ref('accounts', card.id), { autoPayLastPeriodEnd: period.periodEnd, updatedAt: ts })
   await batch.commit()
   return payment
 }

@@ -339,7 +339,9 @@ function NotificationsSheet({ open, reminders, cardDues, shortfalls, onClose }) 
                       )}
                     </div>
                     <div className="text-xs text-text-tertiary tabular-nums">
-                      應繳 {formatAmount(d.amount)}・截止 {formatMd(d.dueDate)}
+                      {d.autoPay
+                        ? `${formatMd(d.dueDate)} 自動扣款 ${formatAmount(d.amount)}・確認${d.debitAccount?.name ?? '扣繳帳戶'}餘額`
+                        : `應繳 ${formatAmount(d.amount)}・截止 ${formatMd(d.dueDate)}`}
                     </div>
                   </div>
                   <button

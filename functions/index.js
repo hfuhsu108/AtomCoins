@@ -211,14 +211,17 @@ async function runMorning(uid, today) {
       let stage = null
       if (due.dueDate === d7) stage = 'd7'
       else if (due.dueDate === d1) stage = 'd1'
-      else if (due.dueDate < today) stage = 'overdue'
+      else if (due.overdue) stage = 'overdue'
       if (!stage) continue
+      // 自動扣款期 overdue 恆為 false，只會在 D-7／D-1 提醒扣款帳戶餘額
+      const debitName = due.debitAccount?.name ?? '扣繳帳戶'
       queue.push({
         key: `card|${due.account.id}|${due.periodEnd}|${stage}`,
         payload: {
-          title: '信用卡繳費提醒',
-          body:
-            stage === 'overdue'
+          title: due.autoPay ? '信用卡自動扣款預告' : '信用卡繳費提醒',
+          body: due.autoPay
+            ? `${due.account.name} ${due.dueDate} 將自動扣款 NT$${fmt(due.amount)}，請確認${debitName}餘額足夠`
+            : stage === 'overdue'
               ? `${due.account.name} 已逾期，應繳 NT$${fmt(due.amount)}`
               : `${due.account.name} ${due.dueDate} 到期，應繳 NT$${fmt(due.amount)}`,
           url: `#/card/${due.account.id}`,

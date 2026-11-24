@@ -1,6 +1,6 @@
 // 通知聚合：信用卡繳費到期＋T+2 交割缺口＋週期提醒／扣款預告。皆為純查詢，
 // 供首頁鈴鐺通知區顯示，並被 Cloud Functions（Web Push 推播）複製共用同一套口徑。
-import { statementPeriods, availableForSettlement, paidStatementSet } from './engine'
+import { statementPeriods, availableForSettlement, paidStatementSet, isAutoPayPeriod } from './engine'
 import { todayStr, addDays } from './date'
 
 // 已出帳、未繳、金額>0，且繳款日已逾期或在 asOf 起 days 天內的信用卡帳單。
@@ -15,12 +15,16 @@ export function dueCardPayments(accounts, txns, statements, asOf = todayStr(), d
       if (p.isOpen || p.total <= 0) continue
       if (paid.has(`${card.id}|${p.periodEnd}`)) continue
       if (p.dueDate > limit) continue
+      // 自動扣款期：銀行會自己扣、App 開啟時會補記，所以不算逾期，改提醒扣款帳戶的餘額
+      const autoPay = isAutoPayPeriod(card, p)
       out.push({
         account: card,
         periodEnd: p.periodEnd,
         dueDate: p.dueDate,
         amount: p.total,
-        overdue: p.dueDate < asOf,
+        overdue: !autoPay && p.dueDate < asOf,
+        autoPay,
+        debitAccount: autoPay ? accounts.find((a) => a.id === card.linkedDebitAccountId) ?? null : null,
       })
     }
   }

@@ -272,6 +272,27 @@ export function paidStatementSet(statements, txns) {
   return out
 }
 
+// 該期是否由自動扣款處理：卡片開了自動扣款、有扣款帳戶，且繳款日不早於開啟當天。
+// 開啟前就到期的舊帳單照舊手動繳——一開就補記一串舊轉帳，使用者無從核對。
+export function isAutoPayPeriod(card, period) {
+  return !!(card.autoPay && card.linkedDebitAccountId && card.autoPaySince && period.dueDate >= card.autoPaySince)
+}
+
+// 該由自動扣款補記的帳單期（舊到新）：已出帳、繳款日已到、屬自動扣款、還沒處理過
+// （autoPayLastPeriodEnd 之後）、有金額且未繳。txns 傳 null 只看日期條件——
+// 呼叫端用它先篩，沒有候選期就不必去讀交易。
+export function dueAutoPayPeriods(card, txns, statements, asOf = todayStr()) {
+  const last = card.autoPayLastPeriodEnd ?? ''
+  const byDate = statementPeriods(card, txns ?? [], { months: 3, asOf }).filter(
+    (p) => !p.isOpen && p.dueDate <= asOf && p.periodEnd > last && isAutoPayPeriod(card, p),
+  )
+  if (txns === null) return byDate
+  const paid = paidStatementSet(statements, txns)
+  return byDate
+    .filter((p) => p.total > 0 && !paid.has(`${card.id}|${p.periodEnd}`))
+    .sort((a, b) => (a.periodEnd < b.periodEnd ? -1 : 1))
+}
+
 // 應收/應付未結清 = amount − Σ 還款
 export function outstanding(tx) {
   const paid = (tx.repayments ?? []).reduce((s, r) => s + r.amount, 0)

@@ -6,6 +6,7 @@ import { collection, onSnapshot } from 'firebase/firestore'
 import { firestore } from '../lib/firebase'
 import { useAuth } from '../hooks/useAuth'
 import { processRecurringRules } from '../lib/recurring'
+import { processAutoPayments } from '../lib/autoPay'
 import { ensureSeeded, ensureBrokerSeed, SETTINGS_ID } from './seed'
 
 export const COLLECTIONS = [
@@ -40,6 +41,7 @@ export function DataProvider({ children }) {
     ensureSeeded(user.uid)
       .then(() => ensureBrokerSeed(user.uid))
       .then(() => processRecurringRules())
+      .then(() => processAutoPayments())
       .catch((e) => console.error('登入後初始化失敗', e))
   }, [user])
 
