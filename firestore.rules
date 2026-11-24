@@ -1,8 +1,16 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // 單人自用：只放行擁有者的 Google 帳號。少了這道，任何人登入後都能在自己的 users/{uid}
+    // 下寫發票，再呼叫 Cloud Functions 用掉擁有者的 OpenAI 額度。信箱須與 functions/index.js 的 OWNER_EMAIL 一致。
+    // 爬蟲走 firebase-admin，不受 rules 限制。
+    function isOwner() {
+      return request.auth != null
+        && request.auth.token.email == 'hfuhsu108@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
     match /users/{uid}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if isOwner() && request.auth.uid == uid;
     }
   }
 }

@@ -10,7 +10,7 @@ import { processAutoPayments } from '../lib/autoPay'
 import { ensureSeeded, ensureBrokerSeed, SETTINGS_ID } from './seed'
 
 export const COLLECTIONS = [
-  'accounts', 'categories', 'tags', 'projects', 'counterparties',
+  'accounts', 'categories', 'tags', 'counterparties',
   'transactions', 'invoices', 'brokers', 'stockTransactions', 'stockPrices',
   'settings', 'creditCardStatements', 'installmentPlans', 'recurringRules',
   'netWorthSnapshots', 'templates', 'merchantAliases',
@@ -25,6 +25,9 @@ const SUBSCRIBED = [...COLLECTIONS, ...DERIVED_COLLECTIONS]
 const EMPTY = Object.freeze(Object.fromEntries(SUBSCRIBED.map((n) => [n, []])))
 
 const DataContext = createContext(EMPTY)
+// 已收到伺服器確認快照的 collection 名稱。空陣列分不出「真的沒資料」與「還沒到」，
+// 會寫回雲端的衍生動作（每日快照）必須等這裡齊了才做，否則可能用半套資料蓋掉正確值。
+const SyncedContext = createContext(new Set())
 
 // 模組級防重入：StrictMode 雙掛載或 Provider 重建時，同一 uid 的登入後啟動任務只跑一次，
 // 避免 processRecurringRules 並發雙跑造成重複入帳（原本在 main.jsx 啟動期只跑一次的等價保證）
@@ -33,6 +36,7 @@ let startupRanFor = null
 export function DataProvider({ children }) {
   const user = useAuth()
   const [data, setData] = useState(EMPTY)
+  const [synced, setSynced] = useState(() => new Set())
 
   useEffect(() => {
     if (!user || startupRanFor === user.uid) return
@@ -47,22 +51,46 @@ export function DataProvider({ children }) {
 
   useEffect(() => {
     // undefined（確認中）與 null（未登入）都不訂閱；登出時清空避免殘留上一位使用者資料
+    setSynced(new Set())
     if (!user) {
       setData(EMPTY)
       return
     }
-    const unsubs = SUBSCRIBED.map((name) =>
-      onSnapshot(
+    const unsubs = SUBSCRIBED.map((name) => {
+      let first = true
+      return onSnapshot(
         collection(firestore, 'users', user.uid, name),
-        (snap) => setData((prev) => ({ ...prev, [name]: snap.docs.map((d) => d.data()) })),
+        // 伺服器資料與本地快取相同時不會再發一次快照，fromCache 會一直停在 true；
+        // 要拿到「已與伺服器確認」的訊號只能訂閱 metadata 變化
+        { includeMetadataChanges: true },
+        (snap) => {
+          // 純 metadata 變化（寫入確認、快取轉線上）不換陣列，免得每次都觸發全站 useMemo 重算
+          if (first || snap.docChanges().length > 0) {
+            setData((prev) => ({ ...prev, [name]: snap.docs.map((d) => d.data()) }))
+          }
+          first = false
+          if (!snap.metadata.fromCache) {
+            setSynced((prev) => (prev.has(name) ? prev : new Set(prev).add(name)))
+          }
+        },
         // 訂閱錯誤（rules 拒絕、斷線逾時）浮現到 console，不吞錯；M2 切換後再視需要接 UI
         (err) => console.error(`[DataProvider] ${name} 訂閱失敗`, err),
-      ),
-    )
+      )
+    })
     return () => unsubs.forEach((u) => u())
   }, [user])
 
-  return <DataContext.Provider value={data}>{children}</DataContext.Provider>
+  return (
+    <DataContext.Provider value={data}>
+      <SyncedContext.Provider value={synced}>{children}</SyncedContext.Provider>
+    </DataContext.Provider>
+  )
+}
+
+// 給定的 collection 是否都已收到伺服器確認的快照（離線時一直為 false）
+export function useSynced(names) {
+  const synced = useContext(SyncedContext)
+  return names.every((n) => synced.has(n))
 }
 
 export function useCollection(name) {

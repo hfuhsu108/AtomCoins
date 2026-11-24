@@ -87,8 +87,6 @@ export default function CounterpartyEditSheet({ open, counterparty = null, onClo
         isOpening: true,
         repayments: [],
         tagIds: [],
-        projectId: null,
-        isReconciled: false,
       }))
     }
   }

@@ -201,7 +201,7 @@ App 讀寫已全部走 Firestore，Dexie 只剩依賴與遷移工具殘留。
 
 **工作項**
 1. **探勘（本階段第一步，估時前提）**：手動走一遍財政部整合服務平台登入（手機條碼＋驗證碼），DevTools 記錄請求流程；確認圖形驗證碼型態；優先找可直接重放的 JSON endpoint，退而求其次才解析 HTML。
-2. 建 `atomcoins-scraper/`（**repo 外**）：Python venv；`.env`（手機條碼、驗證碼密碼、`OPENAI_API_KEY`、service account 路徑、Firebase `uid`——從 App Settings 頁複製）。
+2. 建 `atomcoins-scraper/`（**repo 外**）：Python venv；`.env`（手機條碼、驗證碼密碼、`OPENAI_API_KEY`、service account 路徑、Firebase `uid`——2026-11-25 起設定頁不再顯示，改從 App 匯出的 JSON 備份的 `uid` 欄，或 Firebase Console → Authentication 的使用者 UID 欄取得）。
 3. 登入自動化：requests session 為主，必要時 Playwright；圖形驗證碼截圖 → OpenAI Vision API 辨識（使用者已有 key；備援方案 ddddocr）；辨識失敗重試 3 次。
 4. 抓最近 7 天發票（表頭＋品項），欄位對齊 `docs/01 §3.7`（`source='carrier_api'`、`status='inbox'`、`lineItems` 帶入）。
 5. `firebase-admin` upsert 到 `users/{uid}/invoices`，docId＝`invoiceNumber`（冪等；**已存在且 status≠inbox 的發票不覆寫 status**，避免蓋掉歸帳狀態）。

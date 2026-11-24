@@ -85,11 +85,6 @@ export default function TransactionPreview({ tx, lookups, hidden, onClose, onOpe
               分期
             </span>
           )}
-          {tx.isReconciled && (
-            <span className="text-[11px] font-medium text-success bg-success-bg rounded-pill px-2 py-0.5">
-              已對帳
-            </span>
-          )}
         </div>
       </div>
 

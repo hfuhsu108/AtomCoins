@@ -36,6 +36,10 @@ const VAPID_PUBLIC_KEY = 'BAbj7oqk3xprNUmk9kRYilYY6TFEFxcF6EK7V3HFgOsvCG7N3BetSs
 const VAPID_PRIVATE_KEY = defineSecret('VAPID_PRIVATE_KEY')
 const VAPID_SUBJECT = 'mailto:hfuhsu108@gmail.com'
 
+// 單人自用：callable 不經過 firestore.rules，必須自己擋，否則任何 Google 帳號登入後都能
+// 呼叫分類函式用掉 OpenAI 額度。只看登入 token，不需額外 IAM 權限。信箱須與 firestore.rules 的 isOwner() 一致。
+const OWNER_EMAIL = 'hfuhsu108@gmail.com'
+
 // 發票自動分類第二層用（第一層歷史比對不需金鑰）。設定方式：firebase functions:secrets:set OPENAI_API_KEY
 const OPENAI_API_KEY = defineSecret('OPENAI_API_KEY')
 // 分類是輕量任務，用 nano 級即可；換 model 只改這一行
@@ -57,7 +61,6 @@ const DEFAULT_PREFS = {
   card: true,
   settlement: true,
   recurring: true,
-  scraperHealth: false,
 }
 
 // ── 共用工具 ────────────────────────────────────────────────
@@ -89,20 +92,26 @@ async function readCol(uid, name) {
 
 // 列出所有 users/{uid}（單人使用＝1 個，仍寫成通用迴圈）。users 文件多半只有 subcollection、
 // 本身無欄位，故用 listDocuments()（get() 會漏掉沒有欄位的 parent doc）。
+// 不另過濾擁有者：rules 已擋他人寫入，別人的路徑沒有訂閱也沒有資料，跑過去不會發送也不會呼叫 LLM。
 async function listUserIds() {
   const docs = await db.collection('users').listDocuments()
   return docs.map((d) => d.id)
+}
+
+function isOwnerAuth(auth) {
+  return auth?.token?.email === OWNER_EMAIL && auth.token.email_verified === true
+}
+
+function requireOwner(request, action) {
+  if (!request.auth) throw new HttpsError('unauthenticated', `需登入才能${action}`)
+  if (!isOwnerAuth(request.auth)) throw new HttpsError('permission-denied', '此帳號沒有使用權限')
+  return request.auth.uid
 }
 
 async function getPrefs(uid) {
   const snap = await userCol(uid, 'settings').doc('singleton').get()
   const prefs = snap.exists ? (snap.data().pushPrefs ?? {}) : {}
   return { ...DEFAULT_PREFS, ...prefs }
-}
-
-async function getScraperStatus(uid) {
-  const snap = await userCol(uid, 'meta').doc('scraperStatus').get()
-  return snap.exists ? snap.data() : null
 }
 
 // 去重紀錄：meta/pushLog 單文件 map { dedupeKey: sentAtISO }。
@@ -120,10 +129,6 @@ function canSend(log, key, minGapHours = null) {
 }
 
 function configureWebpush() {
-  if (VAPID_PUBLIC_KEY === 'REPLACE_WITH_VAPID_PUBLIC_KEY') {
-    // fail loud：金鑰未填就發送必然 401，明確報錯而非靜默失敗
-    throw new Error('VAPID_PUBLIC_KEY 尚未填入（見 functions/index.js 與 src/lib/push.js）')
-  }
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY.value())
 }
 
@@ -278,25 +283,6 @@ async function runMorning(uid, today) {
     }
   }
 
-  // G 爬蟲停擺告警（選配）：lastRunAt 距今 >48h，最多 3 天推一次
-  if (prefs.scraperHealth) {
-    const status = await getScraperStatus(uid)
-    if (status?.lastRunAt) {
-      const hours = (Date.now() - Date.parse(status.lastRunAt)) / 3.6e6
-      if (hours > 48) {
-        queue.push({
-          key: 'scraper|health',
-          minGapHours: 72,
-          payload: {
-            title: '發票同步停擺',
-            body: `爬蟲已 ${Math.floor(hours / 24)} 天沒有成功同步，請檢查排程`,
-            url: '#/settings',
-            tag: 'scraper-health',
-          },
-        })
-      }
-    }
-  }
 
   // 逐則發送（套去重）
   for (const item of queue) {
@@ -346,8 +332,7 @@ export const onScraperStatus = onDocumentWritten(
 export const sendTestPush = onCall(
   { secrets: [VAPID_PRIVATE_KEY] },
   async (request) => {
-    if (!request.auth) throw new HttpsError('unauthenticated', '需登入才能發送測試通知')
-    const uid = request.auth.uid
+    const uid = requireOwner(request, '發送測試通知')
     const subs = await readCol(uid, 'pushSubscriptions')
     if (subs.length === 0) {
       throw new HttpsError('failed-precondition', '這個裝置尚未訂閱推播')
@@ -557,9 +542,9 @@ async function classifyInbox(uid) {
 export const suggestInvoiceCategories = onCall(
   { secrets: [OPENAI_API_KEY] },
   async (request) => {
-    if (!request.auth) throw new HttpsError('unauthenticated', '需登入才能分析發票')
+    const uid = requireOwner(request, '分析發票')
     try {
-      return await classifyInbox(request.auth.uid)
+      return await classifyInbox(uid)
     } catch (err) {
       logger.error('[autoCategory] 手動分析失敗', err)
       throw new HttpsError('internal', err?.message ?? '分析失敗')

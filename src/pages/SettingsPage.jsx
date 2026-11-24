@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPlus, faChevronRight, faChevronLeft, faTrashCan, faRepeat, faPercent, faCopy, faFileArrowDown, faBookmark, faStore, faWallet, faCloud, faTag, faTags, faBell, faUserGroup, faMagnifyingGlass, faXmark, faCircleHalfStroke } from '@fortawesome/free-solid-svg-icons'
+import { faPlus, faChevronRight, faChevronLeft, faTrashCan, faRepeat, faPercent, faFileArrowDown, faBookmark, faStore, faWallet, faCloud, faTag, faTags, faBell, faUserGroup, faMagnifyingGlass, faXmark, faCircleHalfStroke } from '@fortawesome/free-solid-svg-icons'
 import { faGoogle } from '@fortawesome/free-brands-svg-icons'
 import { httpsCallable } from 'firebase/functions'
 import { useCollection, useAllCollections, useSettings } from '../db/DataProvider'
@@ -116,7 +116,6 @@ export default function SettingsPage() {
   const [theme, setThemeState] = useState(getTheme)
   const pwa = usePwa()
   const [authError, setAuthError] = useState(null)
-  const [uidCopied, setUidCopied] = useState(false)
   const { run: runAlias, error: aliasError } = useAsyncAction()
   const { run: runOrder } = useAsyncAction()
   const { run: runBroker, error: brokerError } = useAsyncAction()
@@ -172,12 +171,6 @@ export default function SettingsPage() {
     }
   }
 
-  async function copyUid() {
-    await navigator.clipboard.writeText(user.uid)
-    setUidCopied(true)
-    setTimeout(() => setUidCopied(false), 2000)
-  }
-
   const balances = accountBalances(accounts, txns, todayStr())
   const sorted = [...accounts].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
 
@@ -197,7 +190,6 @@ export default function SettingsPage() {
         accounts: allData.accounts,
         categories: allData.categories,
         tags: allData.tags,
-        projects: allData.projects,
         counterparties: allData.counterparties,
         stockTransactions: allData.stockTransactions,
       }),
@@ -472,14 +464,6 @@ export default function SettingsPage() {
                 登出
               </button>
             </div>
-            <div className="flex items-center gap-2 mt-2 text-xs text-text-tertiary">
-              <span className="flex-none">uid</span>
-              <code className="truncate">{user.uid}</code>
-              <button onClick={copyUid} className="w-7 h-7 flex-none flex items-center justify-center">
-                <FontAwesomeIcon icon={faCopy} />
-              </button>
-              {uidCopied && <span className="text-success flex-none">已複製</span>}
-            </div>
           </div>
         )}
         {authError && <div className="text-xs text-error mt-2">登入失敗：{authError}</div>}
@@ -640,7 +624,6 @@ const DEFAULT_PUSH_PREFS = {
   card: true,
   settlement: true,
   recurring: true,
-  scraperHealth: false,
 }
 
 const PUSH_SCENARIOS = [
@@ -649,7 +632,6 @@ const PUSH_SCENARIOS = [
   { key: 'card', label: '信用卡繳費', desc: '繳款日前 7 天、前 1 天、逾期' },
   { key: 'settlement', label: '交割款不足', desc: '股票交割日餘額不足時（每日）' },
   { key: 'recurring', label: '週期收支提醒', desc: '待確認提醒、明日自動扣款預告' },
-  { key: 'scraperHealth', label: '發票同步異常', desc: '爬蟲逾 48 小時沒成功（預設關）' },
 ]
 
 function PushSettings() {

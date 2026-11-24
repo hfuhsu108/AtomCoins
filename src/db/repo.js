@@ -372,10 +372,6 @@ export async function setPostingDates(entries) {
   await batch.commit()
 }
 
-export async function createProject(data) {
-  return createDoc('projects', buildRecord({ isArchived: false, ...data }))
-}
-
 export async function createTag(data) {
   const record = { ...data, id: data.id ?? newId(), createdAt: now() }
   return createDoc('tags', record)
@@ -435,7 +431,6 @@ export async function payCreditCardStatement({ card, fundingAccountId, amount, p
     postingDate,
     note: auto ? '信用卡自動扣款' : '信用卡繳費',
     tagIds: [],
-    isReconciled: false,
     createdAt: ts,
     updatedAt: ts,
   }
@@ -481,7 +476,6 @@ export async function createInstallmentPlan({ expense, periods, startDate, fundi
     postingDate: purchaseDate, // 全額於刷卡日入卡帳
     installmentPlanId: planId,
     note: expense.note ?? `分期 ${periods} 期`,
-    isReconciled: false,
     createdAt: ts,
     updatedAt: ts,
   }
@@ -502,8 +496,7 @@ export async function createInstallmentPlan({ expense, periods, startDate, fundi
       postingDate: date,
       note: `分期 ${k + 1}/${periods}`,
       tagIds: [],
-      isReconciled: false,
-      installmentPlanId: planId,
+        installmentPlanId: planId,
       createdAt: ts,
       updatedAt: ts,
     })
@@ -553,6 +546,23 @@ export async function createRecurringRule(data) {
 
 export async function updateRecurringRule(id, patch) {
   await patchDoc('recurringRules', id, patch)
+}
+
+// 週期規則入帳（沿用 payCreditCardStatement 的 auto 做法）：交易 id 依「規則＋日期」固定，
+// 與規則的 nextDate 推進同批原子寫入。多裝置同時補記只會寫到同一份文件；中途關掉 App
+// 也不會留下「交易已建、nextDate 沒推」的半套狀態，下次啟動因此不會再建一筆。
+export function recurringOccurrenceId(ruleId, date) {
+  return `recur_${ruleId}_${date}`
+}
+
+export async function commitRecurringRun(ruleId, occurrences, rulePatch) {
+  const batch = writeBatch(firestore)
+  for (const o of occurrences) {
+    const rec = buildRecord({ ...o, id: recurringOccurrenceId(ruleId, o.tradeDate) })
+    batch.set(ref('transactions', rec.id), stripUndefined(rec))
+  }
+  batch.update(ref('recurringRules', ruleId), stripUndefined({ ...rulePatch, updatedAt: now() }))
+  await batch.commit()
 }
 
 export async function deleteRecurringRule(id) {
@@ -628,11 +638,6 @@ export async function upsertNetWorthSnapshot({ date, total, holdingsValue }) {
 }
 
 // ── Settings（單例，docId＝SETTINGS_ID）──────────────────────────
-export async function getSettings() {
-  const snap = await getDoc(ref('settings', SETTINGS_ID))
-  return snap.exists() ? snap.data() : undefined
-}
-
 export async function updateSettings(patch) {
   await updateDoc(ref('settings', SETTINGS_ID), stripUndefined(patch))
 }

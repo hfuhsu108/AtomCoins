@@ -3,7 +3,6 @@ import {
   faRightLeft,
   faHandHoldingDollar,
   faArrowsSplitUpAndLeft,
-  faCircleCheck,
   faLayerGroup,
   faScaleBalanced,
 } from '@fortawesome/free-solid-svg-icons'
@@ -150,7 +149,6 @@ export default function TransactionRow({ tx, lookups, onClick, actions }) {
     hidden,
     pending,
     installment,
-    reconciled: tx.isReconciled,
     pendingDate: tx.postingDate,
     onClick,
   }
@@ -171,7 +169,7 @@ export default function TransactionRow({ tx, lookups, onClick, actions }) {
   )
 }
 
-function Row({ view: d, hidden, pending, installment, reconciled, pendingDate, onClick }) {
+function Row({ view: d, hidden, pending, installment, pendingDate, onClick }) {
   return (
     <button
       onClick={onClick}
@@ -208,9 +206,6 @@ function Row({ view: d, hidden, pending, installment, reconciled, pendingDate, o
             <span className="flex-none text-[11px] font-medium text-warning-text bg-warning-bg rounded-pill px-2 py-0.5">
               未入帳 {formatMd(pendingDate)}
             </span>
-          )}
-          {reconciled && (
-            <FontAwesomeIcon icon={faCircleCheck} className="flex-none text-success text-[12px]" title="已對帳" />
           )}
         </div>
         <div className="flex items-center gap-2 mt-0.5 min-w-0">

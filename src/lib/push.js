@@ -6,10 +6,6 @@ import { upsertPushSubscription, deletePushSubscription } from '../db/repo'
 // 換金鑰時須與 functions/index.js 的同名常數同步（成對產生，不配對會 403）。
 const VAPID_PUBLIC_KEY ='BAbj7oqk3xprNUmk9kRYilYY6TFEFxcF6EK7V3HFgOsvCG7N3BetSsiNWhyuLkAwkMkX0WQ-4KSKiB3EwblZNwc'
 
-function isKeyReady() {
-  return !!VAPID_PUBLIC_KEY && VAPID_PUBLIC_KEY !== 'REPLACE_WITH_VAPID_PUBLIC_KEY'
-}
-
 // VAPID 公鑰（base64url）→ Uint8Array，供 applicationServerKey 使用。
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -27,13 +23,11 @@ function endpointId(endpoint) {
   return `sub_${h.toString(36)}`
 }
 
-// serviceWorker/PushManager/Notification 皆具備，且 VAPID 公鑰已填。
 export function isPushSupported() {
   return (
     'serviceWorker' in navigator &&
     'PushManager' in window &&
-    'Notification' in window &&
-    isKeyReady()
+    'Notification' in window
   )
 }
 

@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useAuth } from './useAuth'
-import { useCollection, useSettings } from '../db/DataProvider'
+import { useCollection, useSettings, useSynced } from '../db/DataProvider'
 import { upsertNetWorthSnapshot } from '../db/repo'
 import { todayStr } from '../lib/date'
 import useNetWorth from './useNetWorth'
@@ -11,14 +11,19 @@ import useNetWorth from './useNetWorth'
 // 寫入前另查 netWorthSnapshots 有無今日 doc（重整後 module 變數已重置但 doc 仍在 → 不重寫）。
 let snapshotRanFor = null
 
+// 淨資產算式用到的全部 collection，加上用來判斷「今日已寫過」的快照本身。
+// 少等任何一個，就可能拿空陣列算出偏低的總額，或誤判今日還沒寫而覆寫
+const NEEDED = ['settings', 'netWorthSnapshots', 'accounts', 'transactions', 'stockTransactions', 'stockPrices']
+
 export default function useDailySnapshot() {
   const user = useAuth()
   const settings = useSettings()
   const snapshots = useCollection('netWorthSnapshots')
+  const ready = useSynced(NEEDED)
   const { total, holdingsValue } = useNetWorth()
 
   useEffect(() => {
-    if (!user || !settings) return
+    if (!user || !settings || !ready) return
     const day = todayStr()
     const key = `${user.uid}:${day}`
     if (snapshotRanFor === key) return
@@ -32,5 +37,5 @@ export default function useDailySnapshot() {
       console.error('淨資產快照寫入失敗', e)
       snapshotRanFor = null // 失敗解鎖，容後重試
     })
-  }, [user, settings, snapshots, total, holdingsValue])
+  }, [user, settings, ready, snapshots, total, holdingsValue])
 }

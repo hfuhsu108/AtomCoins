@@ -3,9 +3,9 @@
 //   immediate — nextDate ≤ 今天即自動入帳（落後多期會逐期補齊）
 //   deferred  — 提前產生未來占位交易（postingDate 未到 → 未入帳），到日自動入帳
 //   reminder  — 不自動建立，列入通知待確認，使用者點「記一筆」才入帳
-import { collection, getDocs } from 'firebase/firestore'
+import { collection, getDocs, query, where } from 'firebase/firestore'
 import { firestore, auth } from './firebase'
-import { createTransaction, updateRecurringRule } from '../db/repo'
+import { commitRecurringRun, recurringOccurrenceId } from '../db/repo'
 import { todayStr, advanceDate, addDays } from './date'
 
 const MAX_CATCHUP = 24 // 單一規則單次最多補齊期數，防呆避免落後過久時暴衝
@@ -26,7 +26,8 @@ function occurrenceFromRule(rule, date) {
 export async function processRecurringRules(asOf = todayStr()) {
   const user = auth.currentUser
   if (!user) return 0
-  const snap = await getDocs(collection(firestore, 'users', user.uid, 'recurringRules'))
+  const col = (name) => collection(firestore, 'users', user.uid, name)
+  const snap = await getDocs(col('recurringRules'))
   const rules = snap.docs.map((d) => d.data())
   let created = 0
   for (const rule of rules) {
@@ -39,20 +40,29 @@ export async function processRecurringRules(asOf = todayStr()) {
       if (rule.nextDate) advanceDate(rule.nextDate, rule.frequency)
       const limit = rule.postingMode === 'deferred' ? addDays(asOf, DEFERRED_LEAD_DAYS) : asOf
       let nextDate = rule.nextDate
+      if (!nextDate || nextDate > limit) continue
+
+      // 已存在的期數跳過不重建：固定 id 只擋得住改版後建的；改版前的舊交易是隨機 id，
+      // 改用日期比對。若不跳過，這次的 set 會蓋掉使用者對該期做過的修改。
+      const existing = await getDocs(query(col('transactions'), where('recurringRuleId', '==', rule.id)))
+      const existingIds = new Set(existing.docs.map((d) => d.id))
+      const existingDates = new Set(existing.docs.map((d) => d.data().tradeDate))
+
+      const occurrences = []
       let runs = 0
-      let dirty = false
       while (nextDate && nextDate <= limit && runs < MAX_CATCHUP) {
         if (rule.endDate && nextDate > rule.endDate) break
-        await createTransaction(occurrenceFromRule(rule, nextDate))
-        created++
+        if (!existingIds.has(recurringOccurrenceId(rule.id, nextDate)) && !existingDates.has(nextDate)) {
+          occurrences.push(occurrenceFromRule(rule, nextDate))
+        }
         nextDate = advanceDate(nextDate, rule.frequency)
         runs++
-        dirty = true
       }
-      if (dirty) {
+      if (runs > 0) {
         const patch = { nextDate, lastRunAt: asOf }
         if (rule.endDate && nextDate > rule.endDate) patch.isActive = false
-        await updateRecurringRule(rule.id, patch)
+        await commitRecurringRun(rule.id, occurrences, patch)
+        created += occurrences.length
       }
     } catch (e) {
       console.error(`週期規則 ${rule.id} 處理失敗，已跳過`, e)
@@ -65,10 +75,10 @@ export async function processRecurringRules(asOf = todayStr()) {
 export { dueReminders } from './notifications'
 
 // 使用者確認某提醒 → 建立該期交易並推進 nextDate（落後多期僅補當前一期）
+// 連點或兩台裝置各按一次：固定 id 讓兩次寫到同一份文件，nextDate 也推到同一個值
 export async function fireReminder(rule, asOf = todayStr()) {
-  await createTransaction(occurrenceFromRule(rule, rule.nextDate))
   const nextDate = advanceDate(rule.nextDate, rule.frequency)
   const patch = { nextDate, lastRunAt: asOf }
   if (rule.endDate && nextDate > rule.endDate) patch.isActive = false
-  await updateRecurringRule(rule.id, patch)
+  await commitRecurringRun(rule.id, [occurrenceFromRule(rule, rule.nextDate)], patch)
 }

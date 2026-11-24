@@ -88,7 +88,6 @@ function stateFromTx(tx) {
     toAccountId: tx.toAccountId ?? null,
     feeExpr: tx.fee ? String(tx.fee) : '',
     counterpartyId: tx.counterpartyId ?? null,
-    reconciled: tx.isReconciled ?? false,
     installment: null, // 編輯既有交易不重新設定分期/週期/代墊
     recurring: null,
     advancedBy: null,
@@ -149,7 +148,6 @@ function stateFromInvoice(invoice, aliases, suggestion = null) {
     toAccountId: null,
     feeExpr: '',
     counterpartyId: null,
-    reconciled: false,
     installment: null,
     recurring: null,
     advancedBy: null,
@@ -174,7 +172,6 @@ function stateFromTemplate(template) {
     feeExpr: p.fee ? String(p.fee) : '',
     counterpartyId: p.counterpartyId ?? null,
     merchant: p.merchant ?? '',
-    reconciled: false,
     installment: null,
     recurring: null,
     advancedBy: null,
@@ -272,7 +269,6 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           toAccountId: null,
           feeExpr: '',
           counterpartyId: null,
-          reconciled: false,
           installment: null, // { periods, startDate, fundingAccountId }
           // 事先設定規則時 RecurringBox 常駐且沒有開關，故一進來就要有值
           recurring: ruleMode ? { unit: 'month', interval: 1, mode: 'immediate' } : null, // { unit, interval, mode }
@@ -575,8 +571,6 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           note,
           merchant,
           tagIds: [],
-          projectId: null,
-          isReconciled: state.reconciled,
           // 標籤的唯一真值在拆帳列上；交易層的 tagIds 留空（見上方）
           splits: normal.map((s) => ({
             categoryId: s.categoryId || fallback,
@@ -598,9 +592,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           // 這列被拆成獨立的應收（沒有 splits），標籤只能存在交易層，否則使用者打的標籤會靜默消失。
           // 應收本金不進收支統計，所以不會影響專案花費合計。
           tagIds: adv.tagIds,
-          projectId: null,
           repayments: [],
-          isReconciled: false,
         })
       }
       // 由他人代墊：同額同帳戶的應付與這筆支出相抵 → 現金淨變動 0，但支出照算、欠款掛著。
@@ -615,9 +607,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           postingDate,
           note,
           tagIds: [],
-          projectId: null,
           repayments: [],
-          isReconciled: false,
         })
       }
       return list
@@ -636,7 +626,6 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           postingDate,
           note,
           tagIds: [],
-          isReconciled: state.reconciled,
         },
       ]
     }
@@ -655,12 +644,10 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
         postingDate,
         note,
         tagIds: [],
-        projectId: null,
         // 編輯既有借還款時給 undefined：stripUndefined 會剝掉這個 key，而 updateTransaction
         // 走 updateDoc（patch 語義）→ 已登錄的還款原樣保留。刻意不從表單 state 讀回再寫回，
         // 否則表單開著時他裝置新增的還款會被這份陳舊快照覆寫。
         repayments: editingSameLoanType ? undefined : [],
-        isReconciled: state.reconciled,
       },
     ]
   }
@@ -753,8 +740,6 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           postingDate: tradeDate,
           note: state.note.trim() || null,
           tagIds: [],
-          projectId: null,
-          isReconciled: state.reconciled,
           splits: [{ categoryId, amount: total, note: null, tagIds: src?.tagIds ?? [] }],
         }
         await settle(createInstallmentPlan({
@@ -1187,19 +1172,12 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
                   suggestions={merchantSugg}
                   onSetAlias={initialInvoice ? () => setAliasSheetOpen(true) : null}
                 />
-                {/* 規則本身沒有「入帳日」「已對帳」，那是每期實際產生交易時才有的概念 */}
+                {/* 規則本身沒有「入帳日」，那是每期實際產生交易時才有的概念 */}
                 {!state.installment && !payloadOnly && (
                   <PostingDateRow
                     tradeDate={state.tradeDate}
                     postingDate={state.postingDate}
                     onChange={(v) => set({ postingDate: v })}
-                  />
-                )}
-                {!payloadOnly && (
-                  <ToggleRow
-                    label="已對帳"
-                    on={state.reconciled}
-                    onToggle={() => set({ reconciled: !state.reconciled })}
                   />
                 )}
 
@@ -1247,11 +1225,6 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
               postingDate={state.postingDate}
               onChange={(v) => set({ postingDate: v })}
             />
-            <ToggleRow
-              label="已對帳"
-              on={state.reconciled}
-              onToggle={() => set({ reconciled: !state.reconciled })}
-            />
             <NoteRow note={state.note} onChange={(v) => set({ note: v })} />
           </div>
         )}
@@ -1279,11 +1252,6 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
               tradeDate={state.tradeDate}
               postingDate={state.postingDate}
               onChange={(v) => set({ postingDate: v })}
-            />
-            <ToggleRow
-              label="已對帳"
-              on={state.reconciled}
-              onToggle={() => set({ reconciled: !state.reconciled })}
             />
             <NoteRow note={state.note} onChange={(v) => set({ note: v })} />
           </div>
@@ -1769,15 +1737,6 @@ function Chip({ active, onClick, children }) {
     >
       {children}
     </button>
-  )
-}
-
-function ToggleRow({ label, on, onToggle }) {
-  return (
-    <div className="flex items-center justify-between px-4 py-3 bg-surface border border-line rounded-modal">
-      <span className="text-sm text-text-secondary">{label}</span>
-      <Toggle checked={on} onChange={onToggle} label={label} />
-    </div>
   )
 }
 

@@ -38,7 +38,7 @@
 
 `id` / `name` / `description?` / `color?` / `startDate?` / `endDate?` / `budgetAmount?` int(**保留，預算暫不實作**) / `isArchived` / `createdAt` / `updatedAt`。
 
-**目前未實作**（`projects` collection 與 `repo.createProject` 存在但無 UI 與呼叫端）。「一個項目可以有多個標籤」的需求已由 §3.3 Tag 涵蓋，不再另做這個單值維度，避免兩套重疊的分群概念。
+**已移除**（2026-11-25：`projects` 不再訂閱、不進備份，`repo.createProject` 與交易的 `projectId` 欄位一併拿掉，CSV 匯出少了「專案」欄）。「一個項目可以有多個標籤」的需求已由 §3.3 Tag 涵蓋，不再另做這個單值維度，避免兩套重疊的分群概念。
 
 ## 3.5 Counterparty 對象
 
@@ -56,7 +56,7 @@
 - `tradeDate` date / `postingDate` date（預設=tradeDate；信用卡消費可手動延後，見 `docs/02 §4.1.1`）
 - `note?`（**明細寫這裡**） / `merchant?`（商家，交易層、不入拆帳列，僅 expense/income 適用，docs/09 批次 3） / `tagIds: array<ref→Tag>`（**平常留空**，真值在 `splits[].tagIds`；見 §3.3 的代墊例外） / `projectId` ref→Project?（未實作）
 - `invoiceId` ref→Invoice?（自發票匣歸帳時帶入） / `templateId` ref→Template?
-- `isReconciled` bool（對帳用）
+- ~~`isReconciled`~~（2026-11-25 移除：只是手動勾的標記，沒有任何篩選或報表用到；舊資料殘留的欄位無害、不讀）
 - `linkGroupId` string?（已拍板採用；把同一筆消費拆出的「自己支出＋代墊應收」或「支出＋他人代墊應付」綁在一起，刪除時整組刪）
 - `createdAt` / `updatedAt`
 
@@ -147,7 +147,7 @@
 ## 3.16 pushLog／pushPrefs（docs/09 批次 7）
 
 - **pushLog**：`users/{uid}/meta/pushLog` 單文件 map `{ [dedupeKey]: sentAtISO }`。發送前查、發送後 `set(merge)`。key 規則：信用卡 `card|{accountId}|{periodEnd}|{stage}`（stage∈d7/d1/overdue，一次性）；週期扣款 `recur|{ruleId}|{nextDate}`（一次性）；爬蟲健康 `scraper|health`（≥72h 才再發）。交割缺口／週期提醒每日掃一次天然去重、不記 log。
-- **pushPrefs**：存於 `settings/singleton` 的 `pushPrefs` 欄位 `{ daily, invoice, card, settlement, recurring, scraperHealth }`（前五預設 true、scraperHealth 預設 false）。前端 `SettingsPage` 情境開關寫入，後端 Functions 發送前逐情境檢查。前後端各有一份 `DEFAULT_PREFS`（不同 bundle 無法共用，須同步）。
+- **pushPrefs**：存於 `settings/singleton` 的 `pushPrefs` 欄位 `{ daily, invoice, card, settlement, recurring }`（皆預設 true；原第六項 `scraperHealth` 爬蟲停擺告警已於 2026-11-25 移除）。前端 `SettingsPage` 情境開關寫入，後端 Functions 發送前逐情境檢查。前後端各有一份 `DEFAULT_PREFS`（不同 bundle 無法共用，須同步）。
 
 > **scraperStatus.newCount**（爬蟲寫入 `meta/scraperStatus`）：本次同步全新入匣（inbox）張數（=`created`）。Cloud Functions 的 `onScraperStatus` trigger 見 `newCount>0` 即推「N 張新發票待歸帳」（情境 B），並順帶補跑自動分類（見 3.17）。
 
