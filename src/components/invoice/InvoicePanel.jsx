@@ -8,7 +8,9 @@ import { useCollection } from '../../db/DataProvider'
 import { useScraperStatus } from '../../hooks/useScraperStatus'
 import { filterInvoices } from '../../lib/search'
 import { useAsyncAction, settle } from '../../hooks/useAsyncAction'
-import { updateInvoice, unrecordInvoice, updateSettings } from '../../db/repo'
+import { updateInvoice, recordInvoice, unrecordInvoice, updateSettings } from '../../db/repo'
+import { quickRecordPlan } from '../../lib/invoiceRecord'
+import { newId } from '../../lib/id'
 import useUnseenInvoices from '../../hooks/useUnseenInvoices'
 import { nextSeenAt } from '../../lib/unseenInvoices'
 import { formatDateTime } from '../../lib/date'
@@ -31,6 +33,8 @@ export default function InvoicePanel({ hidden, keyword = '' }) {
   const merchantAliases = useCollection('merchantAliases')
   const categories = useCollection('categories')
   const suggestions = useCollection('invoiceSuggestions')
+  const transactions = useCollection('transactions')
+  const accounts = useCollection('accounts')
   const status = useScraperStatus()
   const [sub, setSub] = useState('inbox') // inbox | processed
   const [preview, setPreview] = useState(null) // 單擊預覽中的發票
@@ -90,7 +94,25 @@ export default function InvoicePanel({ hidden, keyword = '' }) {
     return m
   }, [suggestions, categories])
 
-  const { run, error } = useAsyncAction()
+  // 分類與帳戶都篤定的未歸帳發票 → 可在列上直接歸帳（條件見 quickRecordPlan）
+  const quickPlans = useMemo(() => {
+    const bySugg = new Map(suggestions.map((s) => [s.invoiceId, s]))
+    const m = new Map()
+    for (const inv of inbox) {
+      const plan = quickRecordPlan(inv, {
+        suggestion: bySugg.get(inv.id),
+        transactions,
+        invoices,
+        aliases: merchantAliases,
+        categories,
+        accounts,
+      })
+      if (plan) m.set(inv.id, plan)
+    }
+    return m
+  }, [inbox, suggestions, transactions, invoices, merchantAliases, categories, accounts])
+
+  const { run, busy, error } = useAsyncAction()
   const { confirm, confirmElement } = useConfirm()
 
   // 略過後的行內回饋（可復原）：略過是單一 × 動作、無提示，容易誤點
@@ -136,6 +158,29 @@ export default function InvoicePanel({ hidden, keyword = '' }) {
     setIgnoredNotice(null)
     if (inv) onRestore(inv)
   }
+  // 直接歸帳後的行內回饋（可復原）：沒經過表單，使用者要看得到記去哪個帳戶，記錯能一鍵撤回
+  const [recordedNotice, setRecordedNotice] = useState(null) // { invoiceId, txId, accountName }
+  const recordTimer = useRef(null)
+  useEffect(() => () => clearTimeout(recordTimer.current), [])
+  const onQuickRecord = (inv) => {
+    const plan = quickPlans.get(inv.id)
+    if (!plan) return
+    run(async () => {
+      // id 先產好：離線時 settle 不等 ack、拿不到回傳值，復原仍要知道刪哪一筆
+      const txId = newId()
+      await settle(recordInvoice(inv.id, [{ ...plan.tx, id: txId }]))
+      setRecordedNotice({ invoiceId: inv.id, txId, accountName: plan.account.name })
+      clearTimeout(recordTimer.current)
+      recordTimer.current = setTimeout(() => setRecordedNotice(null), 6000)
+    })
+  }
+  const undoQuickRecord = () => {
+    const n = recordedNotice
+    clearTimeout(recordTimer.current)
+    setRecordedNotice(null)
+    if (n) run(async () => { await settle(unrecordInvoice({ id: n.invoiceId, transactionId: n.txId })) })
+  }
+
   const onUnrecord = async (inv) => {
     if (!(await confirm({ title: '取消歸帳', message: '取消歸帳將刪除這張發票對應的交易，發票回到未歸帳。確定？', danger: true }))) return
     run(async () => { await settle(unrecordInvoice(inv)) })
@@ -197,6 +242,15 @@ export default function InvoicePanel({ hidden, keyword = '' }) {
         </div>
       )}
 
+      {recordedNotice && (
+        <div className="mb-3 flex items-center gap-2 px-4 py-2.5 bg-surface border border-line rounded-card text-[13px] text-text-secondary">
+          <span className="flex-1 min-w-0 truncate">已歸帳到「{recordedNotice.accountName}」</span>
+          <button onClick={undoQuickRecord} className="flex items-center gap-1.5 text-brand font-semibold flex-none">
+            <FontAwesomeIcon icon={faRotateLeft} className="text-xs" /> 復原
+          </button>
+        </div>
+      )}
+
       {/* 子分頁 */}
       <div className="flex gap-1.5 p-1 mb-3 bg-surface-alt rounded-modal">
         <SubTab active={sub === 'inbox'} onClick={() => setSub('inbox')} label="未歸帳" count={inbox.length} />
@@ -223,6 +277,9 @@ export default function InvoicePanel({ hidden, keyword = '' }) {
                 suggestion={inv.status === 'inbox' ? (suggestionView.get(inv.id) ?? null) : null}
                 hidden={hidden}
                 onRecord={() => navigate(`/add?invoiceId=${inv.id}`)}
+                quickAccountName={quickPlans.get(inv.id)?.account.name ?? null}
+                onQuickRecord={() => onQuickRecord(inv)}
+                busy={busy}
                 onPreview={() => setPreview(inv)}
               />
             </SwipeRow>

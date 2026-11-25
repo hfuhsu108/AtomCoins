@@ -10,12 +10,17 @@ export default function AddTransactionPage() {
   const id = params.get('id')
   const stxId = params.get('stxId')
   const invoiceId = params.get('invoiceId')
+  // ?ruleId= 從週期提醒「記一筆」進來；?date= 從日曆選日進來（格式不對就當沒給）
+  const ruleId = params.get('ruleId')
+  const dateParam = params.get('date')
+  const initialDate = /^\d{4}-\d{2}-\d{2}$/.test(dateParam ?? '') ? dateParam : null
   // 從 PWA 捷徑／推播冷啟動時本頁是第一筆 history，回不去就落回首頁（見 useCloseView）
   const close = useCloseView()
 
   const txns = useCollection('transactions')
   const stockTxns = useCollection('stockTransactions')
   const invoices = useCollection('invoices')
+  const rules = useCollection('recurringRules')
   // hooks 必須在任何 early return 之前呼叫（rules-of-hooks）
   const { requestDelete, confirmElement, busy: deleteBusy, error: deleteError } = useDeleteTransaction()
 
@@ -27,6 +32,8 @@ export default function AddTransactionPage() {
   if (id && editTx === undefined) return null
   if (stxId && editStock === undefined) return null
   if (invoiceId && editInvoice === undefined) return null
+  const fireRule = ruleId ? rules.find((r) => r.id === ruleId) : null
+  if (ruleId && fireRule === undefined) return null
   // 餘額調整不是記帳表單認得的型別（沒有分類、沒有拆帳），硬進來會被當支出存回去而毀資料。
   // 正常入口已分流到 BalanceAdjustSheet，這裡擋的是手打 URL 或舊書籤。
   if (editTx?.type === 'adjust') return <Navigate to="/transactions" replace />
@@ -45,6 +52,8 @@ export default function AddTransactionPage() {
           initialTx={editTx ?? null}
           initialStock={editStock ?? null}
           initialInvoice={editInvoice ?? null}
+          fireRule={fireRule ?? null}
+          initialDate={initialDate}
           onClose={close}
           onSaved={close}
           onDelete={id || stxId ? handleDelete : undefined}

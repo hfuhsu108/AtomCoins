@@ -44,8 +44,9 @@ import { settlementStatus } from '../../lib/engine'
 import { resolveMerchant, merchantSuggestions } from '../../lib/merchant'
 import { suggestAccountFromHistory, suggestFromHistory } from '../../lib/autoCategory'
 import { todayStr, formatMd, advanceDate, addDays, dayOfMonth, parseDate, WEEKDAYS } from '../../lib/date'
-import { processRecurringRules } from '../../lib/recurring'
+import { processRecurringRules, fireReminder } from '../../lib/recurring'
 import { formatNumber } from '../../lib/format'
+import { invoiceItemsSummary } from '../../lib/invoiceRecord'
 import { getIcon, ACCOUNT_TYPE_ICON } from '../../lib/icons'
 import { toAmount, hasOperator, prettyExpr, applyKey } from '../../lib/calc'
 import NumberPad from './NumberPad'
@@ -105,21 +106,6 @@ function stateFromTx(tx) {
     base.amountExpr = tx.amount ? String(tx.amount) : ''
   }
   return base
-}
-
-// 發票品項明細 → 備註摘要（歸帳時帶入，docs/09 需求1）：「品名×數量 $金額、品名 $金額…」
-// 數量 1 不贅述；金額缺值時只留品名，不印 $0——爬蟲偶有品項沒帶 amount，印 0 會誤導對帳。
-function invoiceItemsSummary(invoice) {
-  const items = invoice.lineItems ?? []
-  return items
-    .map((it) => {
-      if (!it.name) return null
-      const qty = it.qty > 1 ? `×${it.qty}` : ''
-      const amount = it.amount == null ? '' : ` $${formatNumber(it.amount)}`
-      return `${it.name}${qty}${amount}`
-    })
-    .filter(Boolean)
-    .join('、')
 }
 
 // 自動分類建議 → 拆帳列。建議可能有多列（全聯這種一次買生鮮＋日用品的，後端會依品項金額拆），
@@ -227,7 +213,30 @@ function stateFromTemplateEdit(template) {
   return stateFromTx({ ...(template.payload ?? {}), tradeDate: todayStr(), postingDate: null })
 }
 
-export default function TransactionForm({ initialTx = null, initialStock = null, initialInvoice = null, ruleMode = false, initialRule = null, templateMode = false, initialTemplate = null, onClose, onSaved, onDelete, deleteBusy = false, deleteError = null }) {
+// 新增用的空白表單；「存檔並再記一筆」重設時也用它，只把型別、日期、帳戶帶過去
+function blankState(overrides = {}) {
+  return {
+    type: 'expense',
+    tradeDate: todayStr(),
+    postingDate: null, // null = 跟隨記錄日
+    note: '',
+    merchant: '',
+    splits: [emptySplit()],
+    activeSplit: 0,
+    amountExpr: '',
+    accountId: null,
+    fromAccountId: null,
+    toAccountId: null,
+    feeExpr: '',
+    counterpartyId: null,
+    installment: null, // { periods, startDate, fundingAccountId }
+    recurring: null, // { unit, interval, mode }
+    advancedBy: null, // 由他人代墊：對象 id
+    ...overrides,
+  }
+}
+
+export default function TransactionForm({ initialTx = null, initialStock = null, initialInvoice = null, fireRule = null, initialDate = null, ruleMode = false, initialRule = null, templateMode = false, initialTemplate = null, onClose, onSaved, onDelete, deleteBusy = false, deleteError = null }) {
   const settings = useSettings()
   const accounts = useCollection('accounts')
   const categories = useCollection('categories')
@@ -255,26 +264,23 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           merchantAliases,
           invoiceSuggestions.find((s) => s.invoiceId === initialInvoice.id) ?? null,
         )
-        : {
-          type: initialStock ? 'stock' : 'expense',
-          tradeDate: todayStr(),
-          postingDate: null, // null = 跟隨記錄日
-          note: '',
-          merchant: '',
-          splits: [emptySplit()],
-          activeSplit: 0,
-          amountExpr: '',
-          accountId: null,
-          fromAccountId: null,
-          toAccountId: null,
-          feeExpr: '',
-          counterpartyId: null,
-          installment: null, // { periods, startDate, fundingAccountId }
-          // 事先設定規則時 RecurringBox 常駐且沒有開關，故一進來就要有值
-          recurring: ruleMode ? { unit: 'month', interval: 1, mode: 'immediate' } : null, // { unit, interval, mode }
-          advancedBy: null, // 由他人代墊：對象 id
-        },
+        : fireRule
+          // 提醒型規則：帶入範本內容與本期日期，使用者可先改金額再存（如電費每期不同）
+          ? stateFromTx({ ...(fireRule.payload ?? {}), tradeDate: fireRule.nextDate, postingDate: null })
+          : blankState({
+            type: initialStock ? 'stock' : 'expense',
+            tradeDate: initialDate ?? todayStr(),
+            // 事先設定規則時 RecurringBox 常駐且沒有開關，故一進來就要有值
+            recurring: ruleMode ? { unit: 'month', interval: 1, mode: 'immediate' } : null,
+          }),
   )
+  // 「存檔並再記一筆」成功後的短暫提示（表單不關，使用者要知道上一筆確實記下了）
+  const [savedFlash, setSavedFlash] = useState(null)
+  useEffect(() => {
+    if (!savedFlash) return
+    const t = setTimeout(() => setSavedFlash(null), 2500)
+    return () => clearTimeout(t)
+  }, [savedFlash])
   // 開啟中的選擇器：{ kind:'category'|'account'|'counterparty', target }
   const [picker, setPicker] = useState(null)
   // 歸帳時預設展開進階區，讓帶入的商家（別名解析後）與「設別名」快捷可見
@@ -663,9 +669,24 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
     return lookups.cat[catId]?.name || typeMeta?.label || '週期項目'
   }
 
-  const save = () => {
+  // 「存檔並再記一筆」只給純新增：編輯、歸帳、規則、範本、提醒入帳、股票都是一次一筆的情境
+  const canSaveAgain = !initialTx && !initialInvoice && !initialStock && !payloadOnly && !fireRule && !isStock
+  // 連記幾筆通常是同一天、同一個付款帳戶，這兩樣與型別保留，其他清空
+  const resetForAnother = (savedLabel) => {
+    setState((s) => blankState({
+      type: s.type,
+      tradeDate: s.tradeDate,
+      accountId: s.accountId,
+      fromAccountId: s.fromAccountId,
+    }))
+    setAdvOpen(false)
+    setSavedFlash(`已記下 ${savedLabel}`)
+  }
+
+  const save = (again = false) => {
     // 範本可以只有分類沒有金額（套用時再填），故換一套可存判準
     if (templateMode ? !canSaveTemplate : !canSave) return
+    const savedLabel = amountStr
 
     run(async () => {
       if (isStock) {
@@ -748,12 +769,21 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
           startDate: state.installment.startDate,
           fundingAccountId: state.installment.fundingAccountId,
         }))
-        onSaved?.()
+        if (again) resetForAnother(savedLabel)
+        else onSaved?.()
         return
       }
 
       const list = buildList()
       if (list.length === 0) return
+
+      // 週期提醒入帳：交易與規則推進同批寫入（見 fireReminder），不走下面一般新增的路徑
+      if (fireRule) {
+        await settle(fireReminder(fireRule, list))
+        onSaved?.()
+        return
+      }
+
       if (initialTx) {
         // 改掉借還款的型別（含應收↔應付互換）會讓已登錄的還款失去意義而被清除，先明示筆數
         const oldRepayments = initialTx.repayments ?? []
@@ -804,13 +834,14 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
         }))
       }
 
-      onSaved?.()
+      if (again && canSaveAgain) resetForAnother(savedLabel)
+      else onSaved?.()
     })
   }
 
   // ── 範本（docs/09 批次 2）───────────────────────────────────
   // 顯示範本 chips：純新增（非編輯／歸帳／股票）且有範本
-  const showTemplateChips = !initialTx && !initialInvoice && !payloadOnly && !isStock && templates.length > 0
+  const showTemplateChips = !initialTx && !initialInvoice && !payloadOnly && !fireRule && !isStock && templates.length > 0
   const applyTemplate = (t) => setState(stateFromTemplate(t))
 
   // 存為範本可用性：股票／分期／週期／代墊（雙向）不可存；且需有實質內容
@@ -890,7 +921,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
             ? initialRule ? '編輯週期規則' : '新增週期規則'
             : templateMode
               ? initialTemplate ? '編輯範本' : '新增範本'
-              : initialTx ? '編輯記錄' : initialInvoice ? '歸帳' : '記帳'}
+              : initialTx ? '編輯記錄' : initialInvoice ? '歸帳' : fireRule ? (fireRule.name ?? '週期項目') : '記帳'}
         </span>
         <div className="flex items-center gap-2">
           {onDelete && (
@@ -902,8 +933,17 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
               <FontAwesomeIcon icon={faTrash} className="text-sm" />
             </button>
           )}
+          {canSaveAgain && (
+            <button
+              onClick={() => save(true)}
+              disabled={!canSave || busy}
+              className="flex items-center gap-1.5 h-[38px] px-3 rounded-btn bg-surface-alt text-text-primary text-[13px] font-semibold disabled:opacity-40"
+            >
+              <FontAwesomeIcon icon={faPlus} className="text-xs" /> 再記一筆
+            </button>
+          )}
           <button
-            onClick={save}
+            onClick={() => save()}
             disabled={(templateMode ? !canSaveTemplate : !canSave) || busy}
             className="flex items-center gap-1.5 h-[38px] px-4 rounded-btn bg-brand text-white text-[13px] font-semibold disabled:opacity-40"
           >
@@ -916,13 +956,19 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
       {(error || deleteError) && (
         <div className="px-3.5 py-2 bg-error-bg text-error text-[13px] flex-none">{error || deleteError}</div>
       )}
+      {savedFlash && !error && (
+        <div className="px-3.5 py-2 bg-success-bg text-success text-[13px] flex-none flex items-center gap-1.5">
+          <FontAwesomeIcon icon={faCheck} className="text-xs" /> {savedFlash}
+        </div>
+      )}
 
       {/* type pills */}
       <div className="flex gap-2 px-3.5 py-3 bg-surface border-b border-line overflow-x-auto flex-none">
         {TYPES
           .filter((t) => t.id !== 'stock' || isStock || !initialTx)
           // 週期規則只支援收支（與原本「記一筆順便設週期」的能力一致）；範本另外支援轉帳與借還款，只排除股票
-          .filter((t) => !ruleMode || t.id === 'expense' || t.id === 'income')
+          // 提醒入帳沿用規則的收支型別，不讓它變成股票（股票不走 buildList，存不進規則這期）
+          .filter((t) => !(ruleMode || fireRule) || t.id === 'expense' || t.id === 'income')
           .filter((t) => !templateMode || t.id !== 'stock')
           .map((t) => {
             const active = t.id === type
@@ -1183,7 +1229,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
 
                 {/* 分期付款（僅支出＋信用卡帳戶；新增時可設定；歸帳不提供）
                     與「由他人代墊」互斥：分期只寫 expense＋N 筆轉帳，會靜默丟掉應付那筆 */}
-                {type === 'expense' && !initialTx && !initialInvoice && !state.advancedBy && !payloadOnly && (
+                {type === 'expense' && !initialTx && !initialInvoice && !fireRule && !state.advancedBy && !payloadOnly && (
                   <InstallmentBox
                     enabled={isCardAccount}
                     installment={state.installment}
@@ -1198,7 +1244,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
                 {/* 週期性收支（新增、非分期時可設定；歸帳不提供）
                     與「由他人代墊」互斥：規則 payload 只留主筆，每期都會漏記應付 */}
                 {/* ruleMode 時這一區改為常駐在備註上方（規則設定是主角，不該摺在進階裡）*/}
-                {!initialTx && !initialInvoice && !state.installment && !state.advancedBy && !payloadOnly && (
+                {!initialTx && !initialInvoice && !fireRule && !state.installment && !state.advancedBy && !payloadOnly && (
                   <RecurringBox recurring={state.recurring} onToggle={toggleRecurring} onSet={setRecurring} />
                 )}
               </div>
@@ -1258,7 +1304,7 @@ export default function TransactionForm({ initialTx = null, initialStock = null,
         )}
 
         {/* 存為範本（純新增模式；股票／分期／週期／代墊拆帳不可存）*/}
-        {!initialTx && !initialInvoice && !payloadOnly && (
+        {!initialTx && !initialInvoice && !payloadOnly && !fireRule && (
           <div className="px-3.5 pb-4">
             <button
               onClick={() => setTplNameOpen(true)}

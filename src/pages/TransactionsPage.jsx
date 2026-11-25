@@ -254,6 +254,7 @@ export default function TransactionsPage() {
               hidden={hidden}
               onRowClick={setPreviewTx}
               rowActions={rowActions}
+              onAddOnDate={(date) => navigate(`/add?date=${date}`)}
             />
           ) : days.length === 0 ? (
             <EmptyState

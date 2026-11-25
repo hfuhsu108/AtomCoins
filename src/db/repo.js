@@ -565,6 +565,25 @@ export async function commitRecurringRun(ruleId, occurrences, rulePatch) {
   await batch.commit()
 }
 
+// 提醒型規則由使用者在表單確認後入帳：主筆 id 依「規則＋本期日」固定（使用者把日期改掉也一樣），
+// 代墊拆出的關聯筆與 linkGroupId 也由主筆 id 推導，連點或兩台裝置各存一次都寫到同一批文件。
+export async function commitReminderOccurrence(ruleId, occurrenceDate, list, rulePatch) {
+  const mainId = recurringOccurrenceId(ruleId, occurrenceDate)
+  const linkGroupId = list.length > 1 ? `grp_${mainId}` : undefined
+  const batch = writeBatch(firestore)
+  list.forEach((d, i) => {
+    const rec = buildRecord({
+      ...d,
+      id: i === 0 ? mainId : `${mainId}_${i}`,
+      linkGroupId,
+      recurringRuleId: i === 0 ? ruleId : undefined,
+    })
+    batch.set(ref('transactions', rec.id), stripUndefined(rec))
+  })
+  batch.update(ref('recurringRules', ruleId), stripUndefined({ ...rulePatch, updatedAt: now() }))
+  await batch.commit()
+}
+
 export async function deleteRecurringRule(id) {
   await deleteDoc(ref('recurringRules', id))
 }

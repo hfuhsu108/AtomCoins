@@ -1,5 +1,5 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowDown, faReceipt } from '@fortawesome/free-solid-svg-icons'
+import { faArrowDown, faBolt, faReceipt } from '@fortawesome/free-solid-svg-icons'
 import { formatAmount } from '../../lib/format'
 import { formatMd } from '../../lib/date'
 import { resolveMerchant } from '../../lib/merchant'
@@ -11,7 +11,8 @@ import { getIcon } from '../../lib/icons'
 // 顯示名稱套用商家別名（原始名 invoice.merchant 永不改寫）。
 // suggestion＝自動分類建議 { label, icon, color, source, splitCount, detail }，僅未歸帳列顯示，
 // 點歸帳時會預填（splitCount > 1 代表歸帳表單會直接開好多列拆帳）。
-export default function InvoiceRow({ invoice, aliases, suggestion = null, hidden, onRecord, onPreview }) {
+// quickAccountName 有值＝可「直接歸帳」到該帳戶（判定在 InvoicePanel 的 quickRecordPlan）。
+export default function InvoiceRow({ invoice, aliases, suggestion = null, hidden, onRecord, onPreview, quickAccountName = null, onQuickRecord, busy = false }) {
   const displayName = resolveMerchant(invoice.merchant, aliases)
   const items = invoice.lineItems ?? []
   const status = invoice.status
@@ -61,10 +62,23 @@ export default function InvoiceRow({ invoice, aliases, suggestion = null, hidden
       </button>
 
       <div className="flex items-center gap-1.5 flex-none">
+        {/* 分類與帳戶都篤定時多一顆「直接歸帳」當主按鈕，原本的「歸帳」降為次要（要改內容時用） */}
+        {status === 'inbox' && quickAccountName && (
+          <button
+            onClick={onQuickRecord}
+            disabled={busy}
+            title={`直接記到「${quickAccountName}」，記完可復原`}
+            className="flex items-center gap-1 h-8 px-3 rounded-chip bg-brand text-white text-[13px] font-semibold disabled:opacity-40"
+          >
+            <FontAwesomeIcon icon={faBolt} className="text-xs" /> 直接歸帳
+          </button>
+        )}
         {status === 'inbox' && (
           <button
             onClick={onRecord}
-            className="flex items-center gap-1 h-8 px-3 rounded-chip bg-brand text-white text-[13px] font-semibold"
+            className={`flex items-center gap-1 h-8 px-3 rounded-chip text-[13px] font-semibold ${
+              quickAccountName ? 'bg-surface-alt text-text-primary' : 'bg-brand text-white'
+            }`}
           >
             <FontAwesomeIcon icon={faArrowDown} className="text-xs" /> 歸帳
           </button>

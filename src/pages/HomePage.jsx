@@ -19,7 +19,7 @@ import {
   loanTotals,
   pendingByAccount,
 } from '../lib/engine'
-import { dueReminders, fireReminder } from '../lib/recurring'
+import { dueReminders } from '../lib/recurring'
 import { dueCardPayments, settlementShortfalls } from '../lib/notifications'
 import { formatBalance, formatSigned, formatAmount } from '../lib/format'
 import { todayStr, parseDate, monthLabel, formatMd } from '../lib/date'
@@ -389,7 +389,7 @@ function NotificationsSheet({ open, reminders, cardDues, shortfalls, onClose }) 
                     <div className="text-xs text-text-tertiary tabular-nums">到期 {formatMd(r.nextDate)}</div>
                   </div>
                   <button
-                    onClick={() => fireReminder(r)}
+                    onClick={() => go(`/add?ruleId=${encodeURIComponent(r.id)}`)}
                     className="flex items-center gap-1.5 h-[34px] px-3 rounded-btn bg-brand text-white text-[13px] font-semibold flex-none"
                   >
                     <FontAwesomeIcon icon={faCheck} className="text-xs" /> 記一筆

@@ -3,6 +3,7 @@ import { DataProvider } from './db/DataProvider'
 import { PwaProvider } from './components/PwaProvider'
 import { HiddenAmountProvider } from './components/HiddenAmountProvider'
 import PwaUpdateBanner from './components/PwaUpdateBanner'
+import OfflineBanner from './components/OfflineBanner'
 import AppLayout from './layouts/AppLayout'
 import HomePage from './pages/HomePage'
 import AddTransactionPage from './pages/AddTransactionPage'
@@ -19,6 +20,7 @@ export default function App() {
       {/* 遮金額須涵蓋 add 與 card/:id——它們在 AppLayout 之外，掛在 AppLayout 會讓卡片頁取不到 */}
       <HiddenAmountProvider>
       <PwaUpdateBanner />
+      <OfflineBanner />
       <Routes>
         <Route element={<AppLayout />}>
           <Route index element={<HomePage />} />

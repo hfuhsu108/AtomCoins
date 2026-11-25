@@ -1,4 +1,6 @@
 import { useMemo, useState, useEffect } from 'react'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faPlus } from '@fortawesome/free-solid-svg-icons'
 import { WEEKDAYS, todayStr, daysInMonth, formatMd, weekday } from '../../lib/date'
 import { formatWan, formatAmount, MASK_SHORT } from '../../lib/format'
 import EmptyState from '../EmptyState'
@@ -6,7 +8,7 @@ import TransactionRow from './TransactionRow'
 
 // 月曆檢視（docs/09 批次 5）：7 欄（週日起始）× 5-6 列；每格日數字＋當日支出（有才顯示），
 // 有收入另加小圓點；今日格框線高亮。點日期列該日交易。日聚合直接重用 TransactionsPage 的 days。
-export default function CalendarView({ ym, days, lookups, hidden, onRowClick, rowActions }) {
+export default function CalendarView({ ym, days, lookups, hidden, onRowClick, rowActions, onAddOnDate }) {
   const today = todayStr()
   const prefix = `${ym.year}-${String(ym.month).padStart(2, '0')}`
 
@@ -84,12 +86,23 @@ export default function CalendarView({ ym, days, lookups, hidden, onRowClick, ro
               <span className="text-[15px] font-semibold">{formatMd(selected)}</span>
               <span className="text-[13px] text-text-tertiary">{weekday(selected)}</span>
             </div>
-            {selDay && (
-              <div className="flex gap-2.5 text-xs font-semibold tabular-nums">
-                {selDay.dayIn > 0 && <span className="text-income">{formatAmount(selDay.dayIn, { hidden })}</span>}
-                {selDay.dayOut > 0 && <span className="text-expense">{formatAmount(selDay.dayOut, { hidden })}</span>}
-              </div>
-            )}
+            <div className="flex items-center gap-2.5">
+              {selDay && (
+                <div className="flex gap-2.5 text-xs font-semibold tabular-nums">
+                  {selDay.dayIn > 0 && <span className="text-income">{formatAmount(selDay.dayIn, { hidden })}</span>}
+                  {selDay.dayOut > 0 && <span className="text-expense">{formatAmount(selDay.dayOut, { hidden })}</span>}
+                </div>
+              )}
+              {/* 補記漏掉的那天：表單日期直接帶這一天 */}
+              {onAddOnDate && (
+                <button
+                  onClick={() => onAddOnDate(selected)}
+                  className="flex items-center gap-1 h-7 px-2.5 rounded-chip bg-surface-alt text-text-primary text-xs font-semibold"
+                >
+                  <FontAwesomeIcon icon={faPlus} className="text-[10px]" /> 記一筆
+                </button>
+              )}
+            </div>
           </div>
           {selDay?.items?.length ? (
             <div className="bg-surface border border-line rounded-card shadow-card overflow-hidden divide-y divide-line-light">

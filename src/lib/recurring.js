@@ -5,7 +5,7 @@
 //   reminder  — 不自動建立，列入通知待確認，使用者點「記一筆」才入帳
 import { collection, getDocs, query, where } from 'firebase/firestore'
 import { firestore, auth } from './firebase'
-import { commitRecurringRun, recurringOccurrenceId } from '../db/repo'
+import { commitRecurringRun, commitReminderOccurrence, recurringOccurrenceId } from '../db/repo'
 import { todayStr, advanceDate, addDays } from './date'
 
 const MAX_CATCHUP = 24 // 單一規則單次最多補齊期數，防呆避免落後過久時暴衝
@@ -74,11 +74,11 @@ export async function processRecurringRules(asOf = todayStr()) {
 // dueReminders 已移至 notifications.js（純檔，供 Cloud Functions 推播共用），此處 re-export 保持相容。
 export { dueReminders } from './notifications'
 
-// 使用者確認某提醒 → 建立該期交易並推進 nextDate（落後多期僅補當前一期）
-// 連點或兩台裝置各按一次：固定 id 讓兩次寫到同一份文件，nextDate 也推到同一個值
-export async function fireReminder(rule, asOf = todayStr()) {
+// 使用者在記帳表單確認某提醒（可先改金額、日期）→ 建立該期交易並推進 nextDate（落後多期僅補當前一期）。
+// 連點或兩台裝置各存一次：固定 id 讓兩次寫到同一份文件，nextDate 也推到同一個值
+export async function fireReminder(rule, list, asOf = todayStr()) {
   const nextDate = advanceDate(rule.nextDate, rule.frequency)
   const patch = { nextDate, lastRunAt: asOf }
   if (rule.endDate && nextDate > rule.endDate) patch.isActive = false
-  await commitRecurringRun(rule.id, [occurrenceFromRule(rule, rule.nextDate)], patch)
+  await commitReminderOccurrence(rule.id, rule.nextDate, list, patch)
 }
